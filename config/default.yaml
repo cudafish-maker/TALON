@@ -1,0 +1,68 @@
+# default.yaml
+# Default configuration shared by both server and client.
+# These values are used unless overridden by server.yaml or client.yaml.
+
+# Application info
+app:
+  name: "T.A.L.O.N."
+  version: "0.1.0"
+
+# Heartbeat settings — how often clients ping the server
+# to confirm they are still connected and operational.
+heartbeat:
+  # Interval in seconds for high-bandwidth connections (Yggdrasil, I2P)
+  broadband_interval: 60
+  # Interval in seconds for low-bandwidth connections (RNode LoRa)
+  lora_interval: 120
+  # Number of missed heartbeats before server marks client as STALE
+  missed_threshold: 3
+
+# Lease settings — controls the soft-lock timer on client machines.
+# If a client doesn't sync with the server within this window,
+# the app locks and requires server operator approval to re-open.
+lease:
+  # Time in hours before the client soft-locks
+  expiry_hours: 24
+
+# Sync settings — controls how data is synchronized between
+# clients and the server.
+sync:
+  # Priority order for data types during sync (highest first).
+  # 1 = syncs first, 10 = syncs last.
+  # Over low-bandwidth (LoRa), lower-priority items may be delayed.
+  priority:
+    system: 1       # lease renewal, revocation checks, auth
+    alerts: 2       # FLASH/FLASH OVERRIDE SITREPs
+    chat: 3         # text messages
+    sitreps: 4      # situation reports
+    assets: 5       # asset positions and status changes
+    missions: 6     # objective status updates
+    routes: 7       # route and waypoint data
+    zones: 7        # zone boundary data
+    profiles: 8     # operator skill/info changes
+    documents: 9    # file transfers (broadband only)
+    map_tiles: 10   # bulk tile downloads (broadband only)
+
+# SITREP importance levels — controls notification behavior.
+# Each level triggers increasingly urgent VISUAL alerts on all clients.
+# IMPORTANT: Audio alerts are ALWAYS opt-in per operator. They are OFF
+# by default to protect field operators from being compromised by
+# unexpected sound. Each operator controls their own audio settings.
+sitrep:
+  importance_levels:
+    - ROUTINE         # subtle badge indicator on SITREP tab
+    - PRIORITY        # visible banner, subtle visual pulse on tab
+    - IMMEDIATE       # persistent banner, persistent visual pulse
+    - FLASH           # overlay popup, screen flash, audio IF operator enabled
+    - FLASH_OVERRIDE  # full screen takeover until acknowledged, audio IF operator enabled
+
+# Map settings
+map:
+  # Available tile layers
+  layers:
+    - openstreetmap
+    - satellite
+    - topography
+  # Default zoom levels to cache for an Area of Operations
+  cache_zoom_min: 10
+  cache_zoom_max: 17

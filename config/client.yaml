@@ -1,0 +1,101 @@
+# client.yaml
+# Client-specific configuration. Overrides values from default.yaml.
+# This file is used only when running talon-client.
+
+# Reticulum node configuration
+# Clients act as Transport Nodes on the RNode interface so they can
+# relay traffic for other clients that are out of direct radio range
+# of the server. This enables mesh networking over LoRa.
+reticulum:
+  # Clients are NOT propagation nodes (only the server stores messages)
+  propagation_node: false
+  # Enable transport node on RNode — allows this client to relay
+  # radio traffic for other nearby clients
+  transport_node: true
+
+# Network interfaces this client uses to reach the server.
+# The client tries each in priority order and falls back automatically.
+interfaces:
+  # Yggdrasil — tried first (fastest, encrypted, no IP exposure).
+  # Connects to the server's Yggdrasil IPv6 address over TCP.
+  yggdrasil:
+    enabled: true
+    # The server's Yggdrasil IPv6 address.
+    # Get this from the server operator.
+    target_host: ""
+    # The port the server is listening on over Yggdrasil.
+    # Must match the server's listen_port for Yggdrasil.
+    target_port: 4243
+  # I2P — tried second (anonymous overlay, no IP exposure).
+  # Connects through the local I2P router to the server's I2P tunnel.
+  i2p:
+    enabled: true
+    # The server's I2P base32 address.
+    # Get this from the server operator.
+    # Example: "abcdefghijklmnop.b32.i2p"
+    i2p_address: ""
+    target_port: 4244
+  # TCP — direct connection over standard internet.
+  # *** WARNING: Using TCP exposes your real IP address to the network. ***
+  # *** Your physical location may be determined from your IP address. ***
+  # *** Only use this if you are on a trusted network or behind a VPN. ***
+  tcp:
+    enabled: false
+    # The server's IP address or hostname
+    target_host: ""
+    # The server's TCP port
+    target_port: 4242
+  # RNode — LoRa radio (915MHz, no internet needed).
+  # Fully functional on cached map tiles. Can relay traffic
+  # for other clients via mesh networking.
+  rnode:
+    enabled: true
+    # Serial port where the RNode hardware is connected
+    port: "/dev/ttyUSB0"
+    # Frequency in Hz (915MHz band for US)
+    frequency: 915000000
+    # Bandwidth in Hz — must match the server's RNode setting.
+    # 125000 (125kHz) is the default balance of range and speed.
+    bandwidth: 125000
+    # Spreading factor — must match the server's RNode setting.
+    # SF10 gives good range (~5-10km) with usable speed.
+    spreading_factor: 10
+    # Coding rate — must match the server's RNode setting.
+    # 5 (4/5) is minimal error correction, fastest throughput.
+    coding_rate: 5
+    # Transmit power in dBm.
+    # Max legal power varies by region (US: 30dBm / 1W on 915MHz).
+    tx_power: 17
+
+# Client database
+# Local encrypted cache of operational data.
+# This data is subject to lease expiry (soft-lock after 24hrs)
+# and secure shredding if the client is revoked.
+database:
+  # Path to the encrypted SQLCipher database file
+  path: "data/talon_client.db"
+
+# Notification preferences
+# Each operator controls their own alert behavior.
+# IMPORTANT: Audio is OFF by default to protect field operators.
+notifications:
+  # Show alerts on the OS lock screen (Android)
+  lock_screen_alerts: false
+  # Play audio on FLASH and FLASH OVERRIDE SITREPs
+  # WARNING: Audio can compromise your position in the field.
+  # Only enable this if you are in a secure location.
+  audio_alerts: false
+  # Minimum SITREP importance level that triggers a notification.
+  # Options: ROUTINE, PRIORITY, IMMEDIATE, FLASH, FLASH_OVERRIDE
+  alert_threshold: "ROUTINE"
+
+# Map tile cache
+# Tiles are pre-downloaded from the server so the map works fully
+# even when the only connection is low-bandwidth LoRa radio.
+tiles:
+  cache_dir: "data/tile_cache"
+
+# Document cache
+# Downloaded manuals and files are stored locally.
+documents:
+  cache_dir: "data/documents"

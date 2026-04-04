@@ -1,0 +1,206 @@
+# .github/workflows/build.yml
+# GitHub Actions workflow for T.A.L.O.N.
+#
+# This workflow runs on every push and pull request:
+#   - Runs the test suite (pytest)
+#   - Builds Linux and Windows binaries (PyInstaller)
+#   - Builds the Android APK (Buildozer)
+#
+# All jobs run on GitHub's hosted runners (cloud VMs).
+# Releases are created automatically when a tag is pushed (e.g., v0.1.0).
+
+name: Build T.A.L.O.N.
+
+on:
+  push:
+    branches: [dev, main]
+    tags: ['v*']
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  # ------------------------------------------------------------------
+  # Job 1: Run tests
+  # ------------------------------------------------------------------
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlcipher-dev libsodium-dev
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  # ------------------------------------------------------------------
+  # Job 2: Build Linux binary
+  # ------------------------------------------------------------------
+  build-linux:
+    name: Build Linux
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlcipher-dev libsodium-dev
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build server binary
+        run: pyinstaller build/talon-server.spec
+
+      - name: Build client binary
+        run: pyinstaller build/talon-client.spec
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: talon-linux
+          path: |
+            dist/talon-server/
+            dist/talon-client/
+
+  # ------------------------------------------------------------------
+  # Job 3: Build Windows binary
+  # ------------------------------------------------------------------
+  build-windows:
+    name: Build Windows
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build server binary
+        run: pyinstaller build/talon-server.spec
+
+      - name: Build client binary
+        run: pyinstaller build/talon-client.spec
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: talon-windows
+          path: |
+            dist/talon-server/
+            dist/talon-client/
+
+  # ------------------------------------------------------------------
+  # Job 4: Build Android APK
+  # ------------------------------------------------------------------
+  build-android:
+    name: Build Android APK
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Buildozer dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            python3-dev \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libsqlcipher-dev \
+            libsodium-dev \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            openjdk-17-jdk
+
+      - name: Install Buildozer
+        run: pip install buildozer
+
+      # Cache the Android SDK/NDK so subsequent builds are much faster.
+      # The first build downloads ~2GB of SDK/NDK tools.
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('build/buildozer.spec') }}
+
+      - name: Build Android APK
+        run: |
+          cd build
+          buildozer -v android debug
+        timeout-minutes: 60
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: talon-android
+          path: build/bin/*.apk
+
+  # ------------------------------------------------------------------
+  # Job 5: Create release (only on tag push)
+  # ------------------------------------------------------------------
+  release:
+    name: Create Release
+    needs: [build-linux, build-windows, build-android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create archives
+        run: |
+          tar czf talon-linux.tar.gz -C talon-linux .
+          zip -r talon-windows.zip talon-windows/
+          cp talon-android/*.apk talon-android.apk || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            talon-linux.tar.gz
+            talon-windows.zip
+            talon-android.apk
+          generate_release_notes: true
