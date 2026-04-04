@@ -1,0 +1,214 @@
+# kv/server_main.kv
+# Server main screen layout — always desktop (three-column).
+#
+#   ┌──────┬──────────────────────┬────────────────────┐
+#   │ Rail │       Map            │   Content panel    │
+#   └──────┴──────────────────────┴────────────────────┘
+#   Status bar
+
+<ServerMainScreen>:
+    md_bg_color: "#0a0e14"
+
+    MDBoxLayout:
+        orientation: "vertical"
+
+        # Main three-column row
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: 1
+
+            # --- Server nav rail ---
+            MDBoxLayout:
+                orientation: "vertical"
+                size_hint_x: None
+                width: "72dp"
+                md_bg_color: "#0f1520"
+                padding: [0, "8dp", 0, "8dp"]
+                spacing: "4dp"
+
+                # Title block
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "56dp"
+                    padding: ["8dp", "8dp"]
+
+                    MDLabel:
+                        text: "SRV"
+                        font_style: "Caption"
+                        bold: True
+                        halign: "center"
+                        theme_text_color: "Custom"
+                        text_color: "#f5a623"
+
+                MDDivider:
+                    color: "#1e2d3d"
+
+                ServerNavButton:
+                    icon: "view-dashboard-outline"
+                    label: "DASH"
+                    is_active: root.active_section == "dashboard"
+                    on_release: root.on_nav_item_selected("dashboard")
+                    badge_count: 0
+
+                ServerNavButton:
+                    icon: "account-group-outline"
+                    label: "CLIENTS"
+                    is_active: root.active_section == "registry"
+                    on_release: root.on_nav_item_selected("registry")
+                    badge_count: root.online_count
+
+                ServerNavButton:
+                    icon: "shield-account-outline"
+                    label: "REAUTH"
+                    is_active: root.active_section == "reauth"
+                    on_release: root.on_nav_item_selected("reauth")
+                    badge_count: root.pending_reauth
+
+                ServerNavButton:
+                    icon: "text-box-outline"
+                    label: "AUDIT"
+                    is_active: root.active_section == "audit"
+                    on_release: root.on_nav_item_selected("audit")
+                    badge_count: 0
+
+                ServerNavButton:
+                    icon: "account-plus-outline"
+                    label: "ENROLL"
+                    is_active: root.active_section == "enrollment"
+                    on_release: root.on_nav_item_selected("enrollment")
+                    badge_count: 0
+
+                Widget:
+
+                # Uptime at bottom of rail
+                MDLabel:
+                    text: root.uptime_text
+                    font_style: "Caption"
+                    halign: "center"
+                    theme_text_color: "Custom"
+                    text_color: "#3d4f63"
+                    size_hint_y: None
+                    height: "24dp"
+
+            MDDivider:
+                orientation: "vertical"
+                color: "#1e2d3d"
+
+            # --- Map (centre) ---
+            MDBoxLayout:
+                size_hint_x: 0.55
+                md_bg_color: "#0a0e14"
+
+                MapWidget:
+                    id: server_map
+
+            MDDivider:
+                orientation: "vertical"
+                color: "#1e2d3d"
+
+            # --- Content panel (right) ---
+            MDBoxLayout:
+                id: server_content
+                orientation: "vertical"
+                size_hint_x: 0.4
+                md_bg_color: "#0f1520"
+
+        # --- Server status bar ---
+        MDBoxLayout:
+            size_hint_y: None
+            height: "28dp"
+            md_bg_color: "#0a0e14"
+            padding: ["12dp", "4dp"]
+            spacing: "24dp"
+
+            # Online indicator
+            MDLabel:
+                text: "● SERVER ONLINE"
+                font_style: "Caption"
+                bold: True
+                theme_text_color: "Custom"
+                text_color: "#00e5a0"
+                size_hint_x: None
+                width: "160dp"
+
+            MDLabel:
+                text: f"[b]{root.online_count}[/b] clients online"
+                markup: True
+                font_style: "Caption"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_x: None
+                width: "160dp"
+
+            MDLabel:
+                text: f"[b]{root.pending_reauth}[/b] pending re-auth" if root.pending_reauth else ""
+                markup: True
+                font_style: "Caption"
+                theme_text_color: "Custom"
+                text_color: "#f5a623" if root.pending_reauth else "#3d4f63"
+                size_hint_x: None
+                width: "180dp"
+
+            Widget:
+
+            MDLabel:
+                text: f"uptime {root.uptime_text}"
+                font_style: "Caption"
+                theme_text_color: "Custom"
+                text_color: "#3d4f63"
+                size_hint_x: None
+                width: "96dp"
+                halign: "right"
+
+
+# --- Server nav rail button ---
+<ServerNavButton@MDBoxLayout>:
+    is_active: False
+    icon: "circle"
+    label: ""
+    badge_count: 0
+    orientation: "vertical"
+    size_hint_y: None
+    height: "64dp"
+    padding: ["4dp", "4dp"]
+    spacing: "2dp"
+    md_bg_color: "#1c2637" if self.is_active else "#0f1520"
+    radius: [4, 4, 4, 4]
+
+    MDBoxLayout:
+        size_hint_y: None
+        height: "36dp"
+
+        MDIconButton:
+            icon: root.icon
+            theme_icon_color: "Custom"
+            icon_color: "#f5a623" if root.is_active else "#8a9bb0"
+            pos_hint: {"center_x": 0.5}
+            on_release: root.dispatch("on_release")
+
+        # Badge dot (shown when badge_count > 0)
+        MDLabel:
+            text: str(root.badge_count) if root.badge_count else ""
+            font_size: "9sp"
+            size_hint: None, None
+            size: "16dp", "16dp"
+            halign: "center"
+            valign: "middle"
+            theme_text_color: "Custom"
+            text_color: "#0a0e14"
+            canvas.before:
+                Color:
+                    rgba: (1, 0.231, 0.231, 1) if root.badge_count else (0, 0, 0, 0)
+                Ellipse:
+                    pos: self.pos
+                    size: self.size
+
+    MDLabel:
+        text: root.label
+        halign: "center"
+        font_style: "Caption"
+        font_size: "9sp"
+        theme_text_color: "Custom"
+        text_color: "#f5a623" if root.is_active else "#8a9bb0"
+        size_hint_y: None
+        height: self.texture_size[1]
