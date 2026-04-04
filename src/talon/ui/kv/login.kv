@@ -1,0 +1,128 @@
+# kv/login.kv
+# Layout for the LoginScreen.
+#
+# Visual structure:
+#
+#   ┌──────────────────────────────────────┐
+#   │          (dark background)           │
+#   │                                      │
+#   │           T.A.L.O.N.                 │
+#   │    Tactical Awareness & Linked       │
+#   │       Operations Network             │
+#   │                                      │
+#   │    ┌──────────────────────────┐      │
+#   │    │  Passphrase              │      │
+#   │    └──────────────────────────┘      │
+#   │                                      │
+#   │           [  LOGIN  ]                │
+#   │                                      │
+#   │    (error text in red, if any)       │
+#   │                                      │
+#   └──────────────────────────────────────┘
+
+<LoginScreen>:
+    md_bg_color: app.theme_cls.backgroundColor
+
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "32dp"
+        spacing: "0dp"
+
+        # Push content to vertical centre
+        Widget:
+            size_hint_y: 0.25
+
+        # --- Logo / title block ---
+        MDBoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: "8dp"
+            padding: [0, 0, 0, "32dp"]
+
+            MDLabel:
+                text: "T.A.L.O.N."
+                halign: "center"
+                font_style: "H4"
+                bold: True
+                theme_text_color: "Custom"
+                text_color: "#00e5a0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDLabel:
+                text: "Tactical Awareness & Linked Operations Network"
+                halign: "center"
+                font_style: "Caption"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+        # --- Form card ---
+        MDCard:
+            orientation: "vertical"
+            padding: "24dp"
+            spacing: "16dp"
+            size_hint: None, None
+            size: min(root.width - 64, 400), self.minimum_height
+            pos_hint: {"center_x": 0.5}
+            md_bg_color: "#151d2b"
+            radius: [8, 8, 8, 8]
+
+            MDLabel:
+                text: "OPERATOR LOGIN"
+                font_style: "Overline"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDTextField:
+                id: passphrase_field
+                hint_text: "Passphrase"
+                password: True
+                mode: "rectangle"
+                line_color_focus: "#00e5a0"
+                text_color_focus: "#e8edf4"
+                hint_text_color_normal: "#3d4f63"
+                fill_color_normal: "#0f1520"
+                fill_color_focus: "#0f1520"
+                on_text: root.on_passphrase_text(self, self.text)
+                on_text_validate: root.on_submit()
+
+            # Error message (hidden when empty)
+            MDLabel:
+                text: root.error_text
+                theme_text_color: "Custom"
+                text_color: "#ff3b3b"
+                font_style: "Caption"
+                size_hint_y: None
+                height: self.texture_size[1] if root.error_text else 0
+                opacity: 1 if root.error_text else 0
+
+            MDRaisedButton:
+                text: "AUTHENTICATING..." if root.is_loading else "LOGIN"
+                disabled: root.is_loading
+                on_release: root.on_submit()
+                md_bg_color: "#00e5a0" if not root.is_loading else "#1c2637"
+                theme_text_color: "Custom"
+                text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
+                size_hint_x: 1
+                height: "48dp"
+                font_size: "14sp"
+                bold: True
+
+        # Push content up slightly from centre
+        Widget:
+            size_hint_y: 0.3
+
+        # Version / build info at bottom
+        MDLabel:
+            text: "T.A.L.O.N. v0.1.0 — For authorized personnel only"
+            halign: "center"
+            font_style: "Caption"
+            theme_text_color: "Custom"
+            text_color: "#3d4f63"
+            size_hint_y: None
+            height: self.texture_size[1]

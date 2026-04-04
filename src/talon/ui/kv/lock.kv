@@ -1,0 +1,78 @@
+# kv/lock.kv
+# Layout for the LockScreen (soft-lock / session expired).
+#
+#   ┌──────────────────────────────────────┐
+#   │                                      │
+#   │         [lock icon]                  │
+#   │                                      │
+#   │      SESSION LOCKED                  │
+#   │   Your session has expired.          │
+#   │                                      │
+#   │  [ REQUEST RE-AUTHENTICATION ]       │
+#   │                                      │
+#   └──────────────────────────────────────┘
+
+<LockScreen>:
+    md_bg_color: app.theme_cls.backgroundColor
+
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "32dp"
+        spacing: "16dp"
+
+        Widget:
+            size_hint_y: 0.2
+
+        MDIcon:
+            icon: "lock-outline"
+            halign: "center"
+            font_size: "64sp"
+            theme_text_color: "Custom"
+            text_color: "#f5a623"
+
+        MDLabel:
+            text: "SESSION LOCKED"
+            halign: "center"
+            font_style: "H5"
+            bold: True
+            theme_text_color: "Custom"
+            text_color: "#f5a623"
+            size_hint_y: None
+            height: self.texture_size[1]
+
+        MDLabel:
+            text: root.status_text
+            halign: "center"
+            font_style: "Body1"
+            theme_text_color: "Custom"
+            text_color: "#8a9bb0"
+            size_hint_y: None
+            height: self.texture_size[1]
+
+        MDLabel:
+            text: "Contact the server operator to approve re-authentication."
+            halign: "center"
+            font_style: "Caption"
+            theme_text_color: "Custom"
+            text_color: "#3d4f63"
+            size_hint_y: None
+            height: self.texture_size[1]
+
+        Widget:
+            size_hint_y: None
+            height: "16dp"
+
+        MDRaisedButton:
+            text: "REQUESTING..." if root.is_requesting else "REQUEST RE-AUTHENTICATION"
+            disabled: root.is_requesting or root.is_approved
+            on_release: root.on_request_reauth()
+            md_bg_color: "#f5a623" if not root.is_requesting else "#1c2637"
+            theme_text_color: "Custom"
+            text_color: "#0a0e14" if not root.is_requesting else "#3d4f63"
+            size_hint: None, None
+            size: min(root.width - 64, 360), "48dp"
+            pos_hint: {"center_x": 0.5}
+            bold: True
+
+        Widget:
+            size_hint_y: 0.3

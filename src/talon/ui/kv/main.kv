@@ -1,0 +1,244 @@
+# kv/main.kv
+# Layout for the MainScreen.
+#
+# Two layouts are defined, selected by app.is_mobile_layout:
+#   False (desktop)  → three-column: nav rail | map | context panel
+#   True  (mobile)   → two-row: map top | content bottom, with bottom nav
+#
+# The FLASH banner floats above everything when flash_text is set.
+
+<MainScreen>:
+    md_bg_color: "#0a0e14"
+
+    # --- Root stack: FLASH banner floats on top of everything ---
+    FloatLayout:
+
+        # === DESKTOP LAYOUT ===
+        MDBoxLayout:
+            orientation: "horizontal"
+            opacity: 0 if app.is_mobile_layout else 1
+            size_hint: (1, 1) if not app.is_mobile_layout else (0, 0)
+
+            # --- Navigation rail (left column) ---
+            MDBoxLayout:
+                orientation: "vertical"
+                size_hint_x: None
+                width: "72dp"
+                md_bg_color: "#0f1520"
+                padding: [0, "8dp", 0, "8dp"]
+                spacing: "4dp"
+
+                # App logo / branding
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "56dp"
+                    padding: ["12dp", "8dp"]
+
+                    MDLabel:
+                        text: "T"
+                        font_style: "H5"
+                        bold: True
+                        halign: "center"
+                        theme_text_color: "Custom"
+                        text_color: "#00e5a0"
+
+                MDDivider:
+                    color: "#1e2d3d"
+
+                # Nav items
+                NavRailButton:
+                    icon: "file-alert-outline"
+                    label: "SITREP"
+                    is_active: root.active_section == "sitreps"
+                    on_release: root.on_nav_item_selected("sitreps")
+
+                NavRailButton:
+                    icon: "flag-outline"
+                    label: "MSN"
+                    is_active: root.active_section == "missions"
+                    on_release: root.on_nav_item_selected("missions")
+
+                NavRailButton:
+                    icon: "package-variant"
+                    label: "ASSET"
+                    is_active: root.active_section == "assets"
+                    on_release: root.on_nav_item_selected("assets")
+
+                NavRailButton:
+                    icon: "forum-outline"
+                    label: "CHAT"
+                    is_active: root.active_section == "chat"
+                    on_release: root.on_nav_item_selected("chat")
+
+                NavRailButton:
+                    icon: "file-document-outline"
+                    label: "DOCS"
+                    is_active: root.active_section == "documents"
+                    on_release: root.on_nav_item_selected("documents")
+
+                Widget:  # spacer pushes items to top
+
+                # Status bar at bottom of rail
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "48dp"
+                    padding: ["8dp", "4dp"]
+
+                    MDIcon:
+                        icon: "circle"
+                        font_size: "10sp"
+                        theme_text_color: "Custom"
+                        text_color: "#00e5a0" if root.is_online else "#ff3b3b"
+
+            MDDivider:
+                orientation: "vertical"
+                color: "#1e2d3d"
+
+            # --- Map panel (centre column, always visible) ---
+            MDBoxLayout:
+                size_hint_x: 0.55
+                md_bg_color: "#0a0e14"
+
+                MapWidget:
+                    id: map_widget_desktop
+
+            MDDivider:
+                orientation: "vertical"
+                color: "#1e2d3d"
+
+            # --- Context panel (right column) ---
+            MDBoxLayout:
+                id: content_area
+                orientation: "vertical"
+                size_hint_x: 0.4
+                md_bg_color: "#0f1520"
+                padding: 0
+                spacing: 0
+
+        # === MOBILE LAYOUT ===
+        MDBoxLayout:
+            orientation: "vertical"
+            opacity: 1 if app.is_mobile_layout else 0
+            size_hint: (1, 1) if app.is_mobile_layout else (0, 0)
+
+            # Map (top half)
+            MDBoxLayout:
+                size_hint_y: 0.5
+                md_bg_color: "#0a0e14"
+
+                MapWidget:
+                    id: map_widget_mobile
+
+            MDDivider:
+                color: "#1e2d3d"
+
+            # Content (bottom half)
+            MDBoxLayout:
+                id: content_area_mobile
+                size_hint_y: 0.5
+                orientation: "vertical"
+                md_bg_color: "#0f1520"
+
+            # Bottom navigation bar
+            MDBoxLayout:
+                size_hint_y: None
+                height: "56dp"
+                md_bg_color: "#0f1520"
+                padding: 0
+                spacing: 0
+
+                BottomNavButton:
+                    icon: "file-alert-outline"
+                    is_active: root.active_section == "sitreps"
+                    on_release: root.on_nav_item_selected("sitreps")
+
+                BottomNavButton:
+                    icon: "flag-outline"
+                    is_active: root.active_section == "missions"
+                    on_release: root.on_nav_item_selected("missions")
+
+                BottomNavButton:
+                    icon: "package-variant"
+                    is_active: root.active_section == "assets"
+                    on_release: root.on_nav_item_selected("assets")
+
+                BottomNavButton:
+                    icon: "forum-outline"
+                    is_active: root.active_section == "chat"
+                    on_release: root.on_nav_item_selected("chat")
+
+                BottomNavButton:
+                    icon: "file-document-outline"
+                    is_active: root.active_section == "documents"
+                    on_release: root.on_nav_item_selected("documents")
+
+        # === FLASH BANNER (floats above both layouts) ===
+        MDBoxLayout:
+            orientation: "vertical"
+            size_hint: (1, None)
+            height: "48dp" if root.flash_text else 0
+            opacity: 1 if root.flash_text else 0
+            pos_hint: {"top": 1}
+            md_bg_color: "#ff3b3b"
+            padding: ["16dp", "4dp"]
+
+            MDLabel:
+                text: root.flash_text
+                font_style: "Button"
+                bold: True
+                theme_text_color: "Custom"
+                text_color: "#ffffff"
+                halign: "center"
+                on_touch_down: root.on_flash_tapped() if args[1].pos[1] > self.y else None
+
+
+# ---------- Nav rail button widget ----------
+# Used in the left column on desktop.
+
+<NavRailButton@MDBoxLayout>:
+    is_active: False
+    icon: "circle"
+    label: ""
+    orientation: "vertical"
+    size_hint_y: None
+    height: "64dp"
+    padding: ["4dp", "4dp"]
+    spacing: "2dp"
+    md_bg_color: "#1c2637" if self.is_active else "#0f1520"
+    radius: [4, 4, 4, 4]
+
+    MDIconButton:
+        icon: root.icon
+        theme_icon_color: "Custom"
+        icon_color: "#00e5a0" if root.is_active else "#8a9bb0"
+        pos_hint: {"center_x": 0.5}
+        on_release: root.dispatch("on_release")
+
+    MDLabel:
+        text: root.label
+        halign: "center"
+        font_style: "Caption"
+        font_size: "9sp"
+        theme_text_color: "Custom"
+        text_color: "#00e5a0" if root.is_active else "#8a9bb0"
+        size_hint_y: None
+        height: self.texture_size[1]
+
+
+# ---------- Bottom nav button widget ----------
+# Used in the bottom bar on mobile.
+
+<BottomNavButton@MDBoxLayout>:
+    is_active: False
+    icon: "circle"
+    size_hint_x: 1
+    orientation: "vertical"
+    padding: ["4dp", "8dp"]
+    md_bg_color: "#1c2637" if self.is_active else "#0f1520"
+
+    MDIconButton:
+        icon: root.icon
+        theme_icon_color: "Custom"
+        icon_color: "#00e5a0" if root.is_active else "#8a9bb0"
+        pos_hint: {"center_x": 0.5}
+        on_release: root.dispatch("on_release")
