@@ -239,21 +239,8 @@ class DocumentsPanel(MDBoxLayout):
 
     def _open_file(self, doc):
         """Open the document with the OS default viewer."""
-        import os
-        import subprocess
-
-        path = doc.file_path
-        if not path or not os.path.isfile(path):
-            return
-
-        try:
-            # Works on Linux (xdg-open), Windows (os.startfile), Android
-            if hasattr(os, "startfile"):
-                os.startfile(path)
-            else:
-                subprocess.Popen(["xdg-open", path])
-        except Exception:
-            pass
+        from talon.platform import open_file
+        open_file(doc.file_path)
 
     def _back_to_list(self):
         self.clear_widgets()
@@ -288,8 +275,8 @@ class DocumentsPanel(MDBoxLayout):
         self._dialog.open()
 
     def _submit_upload(self, content):
-        title = content.ids.title_field.text.strip()
-        file_path = content.ids.path_field.text.strip()
+        title = content.title_field.text.strip()
+        file_path = content.path_field.text.strip()
         access = content.selected_access
 
         if not title or not file_path:
@@ -352,8 +339,7 @@ class _UploadContent(MDBoxLayout):
         self._build()
 
     def _build(self):
-        self.add_widget(MDTextField(
-            id="title_field",
+        self.title_field = MDTextField(
             hint_text="Document title",
             mode="rectangle",
             fill_color_normal="#151d2b",
@@ -361,9 +347,9 @@ class _UploadContent(MDBoxLayout):
             line_color_focus="#00e5a0",
             size_hint_y=None,
             height="48dp",
-        ))
-        self.add_widget(MDTextField(
-            id="path_field",
+        )
+        self.add_widget(self.title_field)
+        self.path_field = MDTextField(
             hint_text="File path",
             mode="rectangle",
             fill_color_normal="#151d2b",
@@ -371,7 +357,8 @@ class _UploadContent(MDBoxLayout):
             line_color_focus="#00e5a0",
             size_hint_y=None,
             height="48dp",
-        ))
+        )
+        self.add_widget(self.path_field)
 
         access_label = MDLabel(
             text="Access level",

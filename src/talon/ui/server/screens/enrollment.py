@@ -35,7 +35,6 @@ from kivymd.uix.textfield import MDTextField
 from kivymd.uix.scrollview import MDScrollView
 from kivy.core.clipboard import Clipboard
 
-from talon.server.auth import generate_enrollment_token
 
 
 class EnrollmentPanel(MDBoxLayout):
@@ -44,8 +43,6 @@ class EnrollmentPanel(MDBoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation="vertical", **kwargs)
         self._talon = None
-        # Local store of generated tokens this session: {token: {callsign, generated_at}}
-        self._pending_tokens = {}
         self._last_token = None
         self._last_callsign = None
 
@@ -75,11 +72,42 @@ class EnrollmentPanel(MDBoxLayout):
         self.add_widget(header)
         self.add_widget(MDDivider(color="#1e2d3d"))
 
+        # Server destination hash display
+        dest_hash = ""
+        if self._talon and self._talon.link_manager:
+            raw = self._talon.link_manager.get_destination_hash()
+            if raw:
+                dest_hash = raw.hex()
+
+        if dest_hash:
+            hash_row = MDBoxLayout(
+                size_hint_y=None,
+                height="36dp",
+                padding=["16dp", "4dp"],
+                spacing="8dp",
+                md_bg_color="#0a0e14",
+            )
+            hash_row.add_widget(MDLabel(
+                text=f"SERVER HASH: [font=RobotoMono]{dest_hash}[/font]",
+                markup=True,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#00e5a0",
+            ))
+            hash_row.add_widget(MDIconButton(
+                icon="content-copy",
+                theme_icon_color="Custom",
+                icon_color="#8a9bb0",
+                size_hint_x=None,
+                on_release=lambda x, h=dest_hash: self._copy_token(h),
+            ))
+            self.add_widget(hash_row)
+
         # Instruction text
         self.add_widget(MDLabel(
             text=(
                 "Generate a one-time token for a new operator.\n"
-                "Deliver it in person or over a trusted channel."
+                "Deliver the token AND server hash in person or over a trusted channel."
             ),
             font_style="Caption",
             theme_text_color="Custom",
@@ -131,7 +159,11 @@ class EnrollmentPanel(MDBoxLayout):
         self.add_widget(form)
         self.add_widget(MDDivider(color="#1e2d3d"))
 
-        # Pending tokens list
+        # Pending tokens list (from database)
+        pending_tokens = []
+        if self._talon:
+            pending_tokens = self._talon.get_pending_tokens()
+
         pending_hdr = MDBoxLayout(
             size_hint_y=None,
             height="32dp",
@@ -139,7 +171,7 @@ class EnrollmentPanel(MDBoxLayout):
             md_bg_color="#0a0e14",
         )
         pending_hdr.add_widget(MDLabel(
-            text=f"PENDING TOKENS ({len(self._pending_tokens)} unused)",
+            text=f"PENDING TOKENS ({len(pending_tokens)} unused)",
             font_style="Overline",
             theme_text_color="Custom",
             text_color="#8a9bb0",
@@ -154,7 +186,7 @@ class EnrollmentPanel(MDBoxLayout):
         )
         rows.bind(minimum_height=rows.setter("height"))
 
-        if not self._pending_tokens:
+        if not pending_tokens:
             rows.add_widget(MDLabel(
                 text="No pending tokens.",
                 halign="center",
@@ -165,8 +197,8 @@ class EnrollmentPanel(MDBoxLayout):
                 height="32dp",
             ))
         else:
-            for token, info in reversed(list(self._pending_tokens.items())):
-                rows.add_widget(self._pending_row(token, info))
+            for info in pending_tokens:
+                rows.add_widget(self._pending_row(info["token"], info))
 
         scroll.add_widget(rows)
         self.add_widget(scroll)
@@ -177,26 +209,13 @@ class EnrollmentPanel(MDBoxLayout):
         if not callsign:
             return
 
-        token = generate_enrollment_token()
-        generated_at = time.time()
+        if not self._talon:
+            return
+
+        token = self._talon.create_enrollment_token(callsign)
 
         self._last_token    = token
         self._last_callsign = callsign
-        self._pending_tokens[token] = {
-            "callsign":     callsign,
-            "generated_at": generated_at,
-        }
-
-        # Store in the server's valid_tokens dict so it can be used for enrollment
-        if self._talon and hasattr(self._talon, "valid_tokens"):
-            self._talon.valid_tokens[token] = {"used": False, "callsign": callsign}
-
-        # Log the event
-        from talon.server.audit import log_event
-        log_event(
-            "ENROLLMENT_TOKEN_GENERATED", "Server",
-            details=f"Token generated for {callsign}",
-        )
 
         # Rebuild with the new token shown
         self.clear_widgets()

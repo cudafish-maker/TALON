@@ -90,13 +90,19 @@ class Outbox:
         """
         return json.dumps(self._queue)
 
-    def from_json(self, data: str) -> None:
-        """Load the outbox from a JSON string.
+    @classmethod
+    def from_json(cls, data: str) -> "Outbox":
+        """Create an Outbox from a JSON string.
 
         Called on app startup to restore any pending operations
         from the last session.
 
         Args:
             data: JSON string from to_json().
+
+        Returns:
+            A new Outbox with the restored queue.
         """
-        self._queue = json.loads(data)
+        outbox = cls()
+        outbox._queue = json.loads(data)
+        return outbox

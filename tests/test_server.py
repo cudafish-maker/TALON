@@ -36,7 +36,9 @@ def test_enroll_valid_token():
     token = generate_enrollment_token()
     valid_tokens = {token: {"used": False}}
 
-    result = enroll_client(token, "identity-hash-123", "Alpha", valid_tokens)
+    server_secret = b"test-server-secret-key"
+    result = enroll_client(token, "identity-hash-123", "Alpha", valid_tokens,
+                           server_secret)
     assert result["success"] is True
     assert result["callsign"] == "Alpha"
 
@@ -44,7 +46,9 @@ def test_enroll_valid_token():
 def test_enroll_invalid_token():
     """Enrollment with an invalid token should fail."""
     valid_tokens = {}
-    result = enroll_client("bad-token", "identity-hash", "Alpha", valid_tokens)
+    server_secret = b"test-server-secret-key"
+    result = enroll_client("bad-token", "identity-hash", "Alpha", valid_tokens,
+                           server_secret)
     assert result["success"] is False
 
 
@@ -53,7 +57,9 @@ def test_enroll_used_token():
     token = generate_enrollment_token()
     valid_tokens = {token: {"used": True}}
 
-    result = enroll_client(token, "identity-hash", "Alpha", valid_tokens)
+    server_secret = b"test-server-secret-key"
+    result = enroll_client(token, "identity-hash", "Alpha", valid_tokens,
+                           server_secret)
     assert result["success"] is False
 
 

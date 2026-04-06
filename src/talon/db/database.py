@@ -14,7 +14,7 @@
 import sqlcipher3 as sqlite3
 
 
-def open_database(db_path: str, key: bytes) -> sqlite3.Connection:
+def open_database(db_path: str, key) -> sqlite3.Connection:
     """Open an encrypted SQLCipher database.
 
     If the database file doesn't exist yet, it will be created
@@ -22,9 +22,9 @@ def open_database(db_path: str, key: bytes) -> sqlite3.Connection:
 
     Args:
         db_path: File path to the .db file (e.g., "data/talon_server.db").
-        key: The encryption key as bytes. For clients, this is derived
-             from the operator's passphrase. For the server, it's
-             derived from the server master key.
+        key: The encryption key as bytes or hex string. For clients,
+             this is derived from the operator's passphrase. For the
+             server, it's derived from the server master key.
 
     Returns:
         A database connection object. Use this to run SQL queries.
@@ -34,9 +34,12 @@ def open_database(db_path: str, key: bytes) -> sqlite3.Connection:
     """
     conn = sqlite3.connect(db_path)
 
+    # Normalize key to hex string
+    key_hex = key.hex() if isinstance(key, (bytes, bytearray)) else str(key)
+
     # Pass the encryption key to SQLCipher.
     # The key must be set BEFORE any other operations on the database.
-    conn.execute(f"PRAGMA key = \"x'{key.hex()}'\"")
+    conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
 
     # Use WAL mode for better concurrent read performance.
     # WAL = Write-Ahead Logging — allows reads while writing.
@@ -403,6 +406,19 @@ def initialize_tables(conn: sqlite3.Connection) -> None:
             lease_expires_at REAL,
             revoked_at REAL,
             revoke_reason TEXT
+        )
+    """)
+
+    # --- Enrollment Tokens (server only) ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS enrollment_tokens (
+            token TEXT PRIMARY KEY,
+            callsign TEXT NOT NULL,
+            generated_at REAL NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            used_by TEXT,
+            used_at REAL,
+            description TEXT NOT NULL DEFAULT ''
         )
     """)
 

@@ -18,6 +18,7 @@
 import time
 from talon.net.transport import TransportManager
 from talon.net.heartbeat import HeartbeatSender
+from talon.net.link_manager import ClientLinkManager
 
 
 class ConnectionManager:
@@ -28,18 +29,24 @@ class ConnectionManager:
         heartbeat: The HeartbeatSender for keepalives.
         is_connected: Whether we currently have a server link.
         current_transport: Which transport is active (or None).
+        link_manager: The ClientLinkManager for the active RNS link.
         on_connected: Callback when connection is established.
         on_disconnected: Callback when connection is lost.
     """
 
-    def __init__(self, config: dict, on_connected=None, on_disconnected=None):
+    def __init__(self, config: dict, identity=None,
+                 on_connected=None, on_disconnected=None):
         self.config = config
+        self.identity = identity
         self.transport = TransportManager()
         self.heartbeat = None
+        self.link_manager = None
         self.is_connected = False
         self.current_transport = None
         self.on_connected = on_connected
         self.on_disconnected = on_disconnected
+        self.on_lease_renewal = None
+        self.on_data_changed = None
         self._last_attempt = 0
 
     def detect_transports(self):
@@ -81,9 +88,6 @@ class ConnectionManager:
         available = self.transport.get_all_available()
 
         for transport_type in available:
-            # Attempt connection over this transport
-            # (Actual Reticulum link establishment will be implemented
-            # when we wire up the network layer)
             success = self._try_connect(transport_type, {})
             if success:
                 self.is_connected = True
@@ -100,6 +104,9 @@ class ConnectionManager:
         if self.heartbeat:
             self.heartbeat.stop()
             self.heartbeat = None
+        if self.link_manager:
+            self.link_manager.disconnect()
+            self.link_manager = None
         self.is_connected = False
         self.current_transport = None
         if self.on_disconnected:
@@ -125,8 +132,26 @@ class ConnectionManager:
         self.disconnect()
         return self.connect()
 
-    def _try_connect(self, transport_name: str, config: dict) -> bool:
+    def send_message(self, message: dict) -> dict:
+        """Send a message to the server and wait for the response.
+
+        This is the send_fn bridge for SyncClient.full_sync().
+
+        Args:
+            message: The message dict to send.
+
+        Returns:
+            The server's response dict, or None on failure.
+        """
+        if not self.link_manager or not self.link_manager.is_active():
+            return None
+        return self.link_manager.send_and_receive(message)
+
+    def _try_connect(self, transport_name, config: dict) -> bool:
         """Attempt a connection over a specific transport.
+
+        Creates a ClientLinkManager and tries to establish an
+        RNS link to the server.
 
         Args:
             transport_name: Which transport to use.
@@ -135,9 +160,21 @@ class ConnectionManager:
         Returns:
             True if the connection was established.
         """
-        # Placeholder — actual Reticulum link will go here
-        # For now, return False (no real network yet)
-        return False
+        server_hash = self.config.get("server_destination_hash")
+        if not server_hash:
+            return False
+
+        if isinstance(server_hash, str):
+            server_hash = bytes.fromhex(server_hash)
+
+        self.link_manager = ClientLinkManager(
+            identity=self.identity,
+            server_dest_hash=server_hash,
+        )
+        self.link_manager.on_disconnected = self._on_link_lost
+        self.link_manager.on_push_message = self._on_push_message
+
+        return self.link_manager.connect()
 
     def _start_heartbeat(self):
         """Start sending heartbeats to the server."""
@@ -151,7 +188,38 @@ class ConnectionManager:
         self.heartbeat.is_broadband_callback = self.is_broadband
         self.heartbeat.start()
 
-    def _send_heartbeat(self):
-        """Send a heartbeat packet to the server."""
-        # Placeholder — will send over Reticulum link
-        pass
+    def _send_heartbeat(self, payload=None):
+        """Send a heartbeat packet to the server.
+
+        Args:
+            payload: Optional heartbeat payload dict. If None, sends
+                     a minimal heartbeat with just a timestamp.
+        """
+        if not self.link_manager or not self.link_manager.is_active():
+            return
+        if payload is None:
+            payload = {"timestamp": time.time()}
+        self.link_manager.send_heartbeat(payload)
+
+    def _on_push_message(self, message: dict):
+        """Handle a server-pushed message (not a response to our request).
+
+        Currently handles:
+        - lease_renewal: server approved re-auth, save new lease
+        - data_changed: another client pushed data, trigger sync
+        """
+        msg_type = message.get("type", "")
+        if msg_type == "lease_renewal":
+            if self.on_lease_renewal:
+                self.on_lease_renewal(message)
+        elif msg_type == "data_changed":
+            if self.on_data_changed:
+                self.on_data_changed(message)
+
+    def _on_link_lost(self):
+        """Called when the RNS link drops unexpectedly."""
+        self.is_connected = False
+        self.current_transport = None
+        self.link_manager = None
+        if self.on_disconnected:
+            self.on_disconnected()

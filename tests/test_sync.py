@@ -125,8 +125,7 @@ def test_outbox_json_roundtrip():
     outbox.add("assets", "insert", {"id": "a1", "name": "cache"})
 
     json_str = outbox.to_json()
-    restored = Outbox()
-    restored.from_json(json_str)
+    restored = Outbox.from_json(json_str)
 
     assert restored.count() == 2
     pending = restored.get_pending()

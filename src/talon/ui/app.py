@@ -87,9 +87,26 @@ class TalonApp(MDApp):
     def on_start(self):
         """Called after build(), once the window is ready.
 
-        Navigate to the login screen to collect the passphrase.
+        If the client has never enrolled (no lease file), show the
+        enrollment screen. Otherwise show the login screen.
         """
-        self.screen_manager.current = "login"
+        if self._is_enrolled():
+            self.screen_manager.current = "login"
+        else:
+            self.screen_manager.current = "enroll"
+
+    def _is_enrolled(self) -> bool:
+        """Check if this client has completed enrollment.
+
+        Looks for a lease.json in the data directory.
+        """
+        import os
+        # Check common data paths
+        for data_dir in ["data/client", "data"]:
+            lease_path = os.path.join(data_dir, "lease.json")
+            if os.path.isfile(lease_path):
+                return True
+        return False
 
     def on_stop(self):
         """Called when the user closes the app.
@@ -110,9 +127,11 @@ class TalonApp(MDApp):
         circular imports and to ensure KV files are loaded first.
         """
         from talon.ui.screens.login import LoginScreen
+        from talon.ui.screens.enroll import EnrollScreen
         from talon.ui.screens.main import MainScreen
         from talon.ui.screens.lock import LockScreen
 
+        self.screen_manager.add_widget(EnrollScreen(name="enroll"))
         self.screen_manager.add_widget(LoginScreen(name="login"))
         self.screen_manager.add_widget(MainScreen(name="main"))
         self.screen_manager.add_widget(LockScreen(name="lock"))

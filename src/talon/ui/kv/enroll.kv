@@ -1,0 +1,180 @@
+# kv/enroll.kv
+# Layout for the EnrollScreen — first-run enrollment flow.
+#
+# Visual structure:
+#
+#   +--------------------------------------+
+#   |          (dark background)           |
+#   |                                      |
+#   |           T.A.L.O.N.                 |
+#   |    Tactical Awareness & Linked       |
+#   |       Operations Network             |
+#   |                                      |
+#   |    +----------------------------+    |
+#   |    |  OPERATOR ENROLLMENT       |    |
+#   |    |                            |    |
+#   |    |  Server Hash               |    |
+#   |    |  [____________________]    |    |
+#   |    |                            |    |
+#   |    |  Enrollment Token          |    |
+#   |    |  [____________________]    |    |
+#   |    |                            |    |
+#   |    |  Callsign                  |    |
+#   |    |  [____________________]    |    |
+#   |    |                            |    |
+#   |    |  Passphrase (new)          |    |
+#   |    |  [____________________]    |    |
+#   |    |                            |    |
+#   |    |        [  ENROLL  ]        |    |
+#   |    |                            |    |
+#   |    |  (error/status text)       |    |
+#   |    +----------------------------+    |
+#   |                                      |
+#   +--------------------------------------+
+
+<EnrollScreen>:
+    md_bg_color: app.theme_cls.backgroundColor
+
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "32dp"
+        spacing: "0dp"
+
+        # Push content to vertical centre
+        Widget:
+            size_hint_y: 0.15
+
+        # --- Logo / title block ---
+        MDBoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: "8dp"
+            padding: [0, 0, 0, "24dp"]
+
+            MDLabel:
+                text: "T.A.L.O.N."
+                halign: "center"
+                font_style: "H4"
+                bold: True
+                theme_text_color: "Custom"
+                text_color: "#00e5a0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDLabel:
+                text: "Tactical Awareness & Linked Operations Network"
+                halign: "center"
+                font_style: "Caption"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+        # --- Enrollment form card ---
+        MDCard:
+            orientation: "vertical"
+            padding: "24dp"
+            spacing: "12dp"
+            size_hint: None, None
+            size: min(root.width - 64, 420), self.minimum_height
+            pos_hint: {"center_x": 0.5}
+            md_bg_color: "#151d2b"
+            radius: [8, 8, 8, 8]
+
+            MDLabel:
+                text: "OPERATOR ENROLLMENT"
+                font_style: "Overline"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDLabel:
+                text: "Enter the server hash and token provided by your server operator."
+                font_style: "Caption"
+                theme_text_color: "Custom"
+                text_color: "#3d4f63"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDTextField:
+                id: server_hash_field
+                hint_text: "Server destination hash"
+                mode: "rectangle"
+                line_color_focus: "#00e5a0"
+                text_color_focus: "#e8edf4"
+                hint_text_color_normal: "#3d4f63"
+                fill_color_normal: "#0f1520"
+                fill_color_focus: "#0f1520"
+                on_text: root.on_field_text()
+
+            MDTextField:
+                id: token_field
+                hint_text: "Enrollment token"
+                mode: "rectangle"
+                line_color_focus: "#00e5a0"
+                text_color_focus: "#e8edf4"
+                hint_text_color_normal: "#3d4f63"
+                fill_color_normal: "#0f1520"
+                fill_color_focus: "#0f1520"
+                on_text: root.on_field_text()
+
+            MDTextField:
+                id: callsign_field
+                hint_text: "Your callsign (e.g. WOLF-3)"
+                mode: "rectangle"
+                line_color_focus: "#00e5a0"
+                text_color_focus: "#e8edf4"
+                hint_text_color_normal: "#3d4f63"
+                fill_color_normal: "#0f1520"
+                fill_color_focus: "#0f1520"
+                on_text: root.on_field_text()
+
+            MDTextField:
+                id: passphrase_field
+                hint_text: "Create a passphrase"
+                password: True
+                mode: "rectangle"
+                line_color_focus: "#00e5a0"
+                text_color_focus: "#e8edf4"
+                hint_text_color_normal: "#3d4f63"
+                fill_color_normal: "#0f1520"
+                fill_color_focus: "#0f1520"
+                on_text_validate: root.on_enroll()
+
+            # Error / status message
+            MDLabel:
+                text: root.status_text
+                theme_text_color: "Custom"
+                text_color: "#ff3b3b" if root.is_error else "#00e5a0"
+                font_style: "Caption"
+                size_hint_y: None
+                height: self.texture_size[1] if root.status_text else 0
+                opacity: 1 if root.status_text else 0
+
+            MDRaisedButton:
+                text: "ENROLLING..." if root.is_loading else "ENROLL"
+                disabled: root.is_loading
+                on_release: root.on_enroll()
+                md_bg_color: "#00e5a0" if not root.is_loading else "#1c2637"
+                theme_text_color: "Custom"
+                text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
+                size_hint_x: 1
+                height: "48dp"
+                font_size: "14sp"
+                bold: True
+
+        # Push content up
+        Widget:
+            size_hint_y: 0.25
+
+        # Version
+        MDLabel:
+            text: "T.A.L.O.N. v0.1.0 -- For authorized personnel only"
+            halign: "center"
+            font_style: "Caption"
+            theme_text_color: "Custom"
+            text_color: "#3d4f63"
+            size_hint_y: None
+            height: self.texture_size[1]

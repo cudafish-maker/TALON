@@ -18,29 +18,133 @@
 # - Announce: A broadcast that tells the network "I exist at this
 #   identity." Other nodes can then establish links to you.
 
+import os
+import logging
+
 import RNS
 
+from talon.net.interfaces import build_reticulum_config
+
+log = logging.getLogger(__name__)
 
 # The app name used in Reticulum destinations.
 # All T.A.L.O.N. traffic is identified by this name.
 APP_NAME = "talon"
 
 
-def initialize_reticulum(config_path: str = None) -> RNS.Reticulum:
+def write_reticulum_config(
+    talon_config: dict,
+    is_server: bool,
+    config_dir: str = None,
+    rnode_override: dict = None,
+) -> str:
+    """Generate a Reticulum config file from T.A.L.O.N. YAML settings.
+
+    Translates T.A.L.O.N.'s interface configuration into Reticulum's
+    native config format and writes it to disk. Reticulum reads this
+    file on startup to know which interfaces to activate.
+
+    Args:
+        talon_config: The merged T.A.L.O.N. config dict (default.yaml +
+                      server.yaml or client.yaml).
+        is_server: True for server, False for client.
+        config_dir: Directory to write the config file. Defaults to
+                    the platform data directory.
+        rnode_override: Optional RNode interface config dict (from
+                        RNodeManager.get_interface_config()) to override
+                        the YAML-based RNode config with auto-detected
+                        port and validated parameters.
+
+    Returns:
+        Path to the generated Reticulum config file.
+    """
+    if config_dir is None:
+        from talon.platform import get_data_dir
+        config_dir = os.path.join(get_data_dir(), "reticulum")
+
+    os.makedirs(config_dir, exist_ok=True)
+    config_path = os.path.join(config_dir, "config")
+
+    # Build interface configs from T.A.L.O.N. YAML
+    interfaces = build_reticulum_config(talon_config, is_server)
+
+    # Apply RNode override from hardware detection
+    if rnode_override and rnode_override.get("port"):
+        interfaces["RNode"] = rnode_override
+
+    # Reticulum general settings
+    ret_config = talon_config.get("reticulum", {})
+    enable_transport = ret_config.get("transport_node", False)
+
+    # Write Reticulum config file format
+    lines = ["[reticulum]\n"]
+    lines.append(f"  enable_transport = {'Yes' if enable_transport else 'No'}\n")
+    lines.append(f"  share_instance = Yes\n")
+    lines.append(f"  shared_instance_port = 37428\n")
+    lines.append(f"  instance_control_port = 37429\n")
+    lines.append("\n")
+    lines.append("[interfaces]\n")
+
+    for name, iface in interfaces.items():
+        iface_type = iface.get("type", "")
+        lines.append(f"  [[{name}]]\n")
+        lines.append(f"    type = {iface_type}\n")
+        enabled = iface.get("interface_enabled", True)
+        lines.append(f"    interface_enabled = {'True' if enabled else 'False'}\n")
+
+        # Write interface-specific parameters
+        for key, value in iface.items():
+            if key in ("type", "interface_enabled"):
+                continue
+            if isinstance(value, bool):
+                lines.append(f"    {key} = {'True' if value else 'False'}\n")
+            else:
+                lines.append(f"    {key} = {value}\n")
+        lines.append("\n")
+
+    with open(config_path, "w") as f:
+        f.writelines(lines)
+
+    log.info("Wrote Reticulum config to %s with %d interface(s): %s",
+             config_path, len(interfaces), ", ".join(interfaces.keys()))
+    return config_dir
+
+
+def initialize_reticulum(
+    config_path: str = None,
+    talon_config: dict = None,
+    is_server: bool = False,
+    rnode_override: dict = None,
+) -> RNS.Reticulum:
     """Start the Reticulum network stack.
 
     This must be called before any networking can happen.
-    It reads the Reticulum config file and starts all configured
-    network interfaces (Yggdrasil, I2P, TCP, RNode).
+
+    If talon_config is provided, generates a Reticulum config file
+    from the T.A.L.O.N. YAML settings. Otherwise uses config_path
+    directly (or the Reticulum default at ~/.reticulum/).
 
     Args:
-        config_path: Optional path to a custom Reticulum config file.
-                     If None, uses the default (~/.reticulum/).
+        config_path: Path to an existing Reticulum config directory.
+        talon_config: T.A.L.O.N. config dict — if provided, a
+                      Reticulum config is generated from it.
+        is_server: Whether this is a server instance.
+        rnode_override: RNode interface config from RNodeManager.
 
     Returns:
-        The Reticulum instance. Keep a reference to this — it runs
-        in the background managing all network traffic.
+        The Reticulum instance.
     """
+    if talon_config is not None:
+        config_path = write_reticulum_config(
+            talon_config, is_server,
+            config_dir=config_path,
+            rnode_override=rnode_override,
+        )
+        log.info("Starting Reticulum with generated config at %s", config_path)
+    else:
+        log.info("Starting Reticulum with config at %s",
+                 config_path or "~/.reticulum/")
+
     return RNS.Reticulum(config_path)
 
 

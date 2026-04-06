@@ -25,6 +25,7 @@ from talon.client.sync_client import SyncClient
 from talon.client.connection import ConnectionManager
 from talon.client.notifications import NotificationHandler
 from talon.net.reticulum import initialize_reticulum, create_identity
+from talon.net.rnode import RNodeManager
 
 
 class TalonClient:
@@ -44,8 +45,10 @@ class TalonClient:
         self.notifications = None
         self.reticulum = None
         self.identity = None
+        self.rnode_manager = None
         self.running = False
         self.is_online = False
+        self._sync_thread = None
 
     def load_config(self):
         """Load and merge configuration files.
@@ -88,29 +91,73 @@ class TalonClient:
         self.cache = ClientCache(data_dir)
         self.cache.open(passphrase)
 
+    def setup_rnode(self):
+        """Detect and validate RNode hardware if configured.
+
+        On Android, also handles USB OTG permission requests.
+        Called before setup_network().
+        """
+        rnode_config = self.config.get("interfaces", {}).get("rnode", {})
+        if not rnode_config.get("enabled"):
+            return
+
+        # On Android, check USB permission first
+        from talon.platform import IS_ANDROID
+        if IS_ANDROID:
+            from talon.net.android_usb import (
+                find_usb_serial_device, has_usb_permission,
+                request_usb_permission,
+            )
+            usb_dev = find_usb_serial_device()
+            if usb_dev and not has_usb_permission(usb_dev["device_name"]):
+                request_usb_permission(usb_dev["device_name"])
+
+        self.rnode_manager = RNodeManager(rnode_config)
+        if self.rnode_manager.detect():
+            self.rnode_manager.validate()
+
     def setup_network(self):
         """Initialize Reticulum.
 
         The client runs as a transport node if an RNode is connected.
         This enables mesh relay — other RNodes out of server range can
         route through us to reach the server.
+
+        Generates a Reticulum config from T.A.L.O.N.'s YAML settings,
+        including auto-detected RNode port if available.
         """
         net_config = self.config.get("reticulum", {})
+
+        # Get RNode override from hardware detection
+        rnode_override = None
+        if self.rnode_manager and self.rnode_manager.status == "ready":
+            rnode_override = self.rnode_manager.get_interface_config()
+
         self.reticulum = initialize_reticulum(
-            config_path=net_config.get("config_path")
+            config_path=net_config.get("config_path"),
+            talon_config=self.config,
+            is_server=False,
+            rnode_override=rnode_override,
         )
+
+        if self.rnode_manager and self.rnode_manager.status == "ready":
+            self.rnode_manager.mark_in_use()
+
         self.identity = create_identity(
             identity_path=net_config.get("identity_path")
         )
 
     def setup_services(self):
         """Start sync, connection manager, and notification handler."""
-        # Connection manager
+        # Connection manager (pass identity for RNS link establishment)
         self.connection = ConnectionManager(
             config=self.config,
+            identity=self.identity,
             on_connected=self._on_connected,
             on_disconnected=self._on_disconnected,
         )
+        self.connection.on_lease_renewal = self._on_lease_renewal
+        self.connection.on_data_changed = lambda msg: self._trigger_sync()
 
         # Sync client
         self.sync = SyncClient(
@@ -148,6 +195,7 @@ class TalonClient:
 
         self.setup_auth(data_dir)
         self.setup_cache(data_dir, passphrase)
+        self.setup_rnode()
         self.setup_network()
         self.setup_services()
 
@@ -165,8 +213,7 @@ class TalonClient:
 
         if connected:
             self.is_online = True
-            # Immediate sync on connect
-            # (Actual sync call will happen via the Reticulum link)
+            self._trigger_sync()
         else:
             # No server available — fall back to cached data
             self.is_online = False
@@ -181,11 +228,40 @@ class TalonClient:
         if self.cache:
             self.cache.close()
 
+    def trigger_sync(self):
+        """Public API for forcing a sync (e.g., from UI button)."""
+        if self.is_online:
+            self._trigger_sync()
+
     # ---------- Internal callbacks ----------
 
-    def _on_connected(self, transport_name: str):
+    def _trigger_sync(self):
+        """Run a full sync cycle in a background thread.
+
+        Uses connection.send_message as the transport function —
+        this sends over the active RNS link and waits for the
+        server's response.
+        """
+        import threading
+
+        if self.sync.is_syncing:
+            return
+
+        def _run():
+            self.sync.full_sync(self.connection.send_message)
+
+        self._sync_thread = threading.Thread(target=_run, daemon=True)
+        self._sync_thread.start()
+
+    def _on_lease_renewal(self, message: dict):
+        """Called when the server pushes a new lease (re-auth approved)."""
+        if self.auth and "lease" in message:
+            self.auth.save_lease(message["lease"])
+
+    def _on_connected(self, transport_name):
         """Called when a server connection is established."""
         self.is_online = True
+        self._trigger_sync()
 
     def _on_disconnected(self):
         """Called when the server connection is lost."""

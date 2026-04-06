@@ -234,17 +234,43 @@ class ReauthPanel(MDBoxLayout):
 
         try:
             from talon.server.auth import approve_reauth
-            # approve_reauth() generates a new lease token, signs it,
-            # and queues it for delivery to the client over Reticulum.
-            approve_reauth(
-                client_id,
-                self._talon.client_registry,
-                self._talon.identity,
-            )
-            from talon.server.audit import log_event
-            log_event("REAUTH_APPROVED", "Server", target=callsign)
+
+            result = approve_reauth(client_id, self._talon.server_secret)
+
+            if result.get("success"):
+                # Hex-encode bytes for JSON transport
+                lease = result["lease"]
+                if isinstance(lease.get("token"), bytes):
+                    lease["token"] = lease["token"].hex()
+                sig = result["signature"]
+                if isinstance(sig, bytes):
+                    sig = sig.hex()
+
+                # Push the new lease to the client over RNS
+                lease_msg = {
+                    "type": "lease_renewal",
+                    "lease": lease,
+                    "signature": sig,
+                    "reauth": True,
+                }
+                if self._talon.link_manager:
+                    self._talon.link_manager.send_to_client(
+                        client_id, lease_msg
+                    )
+
+                # Update client status back to ONLINE
+                self._talon.client_registry.update_heartbeat(client_id)
+
+                from talon.server.audit import log_event
+                log_event("REAUTH_APPROVED", "Server", target=callsign)
+            else:
+                self._show_result(
+                    f"Approval failed: {result.get('error', 'unknown')}",
+                    "#ff3b3b",
+                )
+                return
+
         except Exception as e:
-            # Show error briefly without crashing
             self._show_result(f"Approval failed: {e}", "#ff3b3b")
             return
 

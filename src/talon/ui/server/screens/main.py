@@ -152,10 +152,7 @@ class ServerMainScreen(MDScreen):
         online = self._talon.client_registry.get_online_clients()
         self.online_count = len(online)
 
-        # Count pending re-auths
-        if self._talon.auth if hasattr(self._talon, "auth") else False:
-            pass  # TODO: expose pending reauth count from server auth module
-        # For now, check any clients with soft-locked status
+        # Count pending re-auths from soft-locked clients
         self.pending_reauth = sum(
             1 for c in self._talon.client_registry.clients.values()
             if c.get("status") == "SOFT_LOCKED"

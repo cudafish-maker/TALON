@@ -323,7 +323,7 @@ class ChatPanel(MDBoxLayout):
         self._dialog.open()
 
     def _submit_new_channel(self, content):
-        name = content.ids.name_field.text.strip()
+        name = content.name_field.text.strip()
         if not name:
             return
         callsign = self._get_my_callsign()
@@ -358,8 +358,7 @@ class _NewChannelContent(MDBoxLayout):
             **kwargs,
         )
         self.bind(minimum_height=self.setter("height"))
-        self.add_widget(MDTextField(
-            id="name_field",
+        self.name_field = MDTextField(
             hint_text="Channel name",
             mode="rectangle",
             fill_color_normal="#151d2b",
@@ -367,4 +366,5 @@ class _NewChannelContent(MDBoxLayout):
             line_color_focus="#00e5a0",
             size_hint_y=None,
             height="48dp",
-        ))
+        )
+        self.add_widget(self.name_field)

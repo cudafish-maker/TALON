@@ -268,18 +268,25 @@ class AssetsPanel(MDBoxLayout):
 
     def _submit_new_asset(self, content):
         callsign = self._get_my_callsign()
-        name = content.ids.name_field.text.strip()
+        name = content.name_field.text.strip()
         category = content.selected_category
-        notes = content.ids.notes_field.text.strip()
+        notes = content.notes_field.text.strip()
 
         if not name:
             return
+
+        lat_text = content.lat_field.text.strip()
+        lon_text = content.lon_field.text.strip()
+        latitude = float(lat_text) if lat_text else None
+        longitude = float(lon_text) if lon_text else None
 
         asset = Asset(
             name=name,
             category=category,
             created_by=callsign,
             notes=notes,
+            latitude=latitude,
+            longitude=longitude,
         )
 
         errors = validate_asset(asset)
@@ -325,8 +332,7 @@ class _AssetAddContent(MDBoxLayout):
         self._build()
 
     def _build(self):
-        self.add_widget(MDTextField(
-            id="name_field",
+        self.name_field = MDTextField(
             hint_text="Asset name",
             mode="rectangle",
             fill_color_normal="#151d2b",
@@ -334,7 +340,8 @@ class _AssetAddContent(MDBoxLayout):
             line_color_focus="#00e5a0",
             size_hint_y=None,
             height="48dp",
-        ))
+        )
+        self.add_widget(self.name_field)
 
         # Category picker (simple row of buttons)
         cat_label = MDLabel(
@@ -359,8 +366,33 @@ class _AssetAddContent(MDBoxLayout):
             )
             self.add_widget(btn)
 
-        self.add_widget(MDTextField(
-            id="notes_field",
+        # Coordinate fields
+        coord_row = MDBoxLayout(
+            size_hint_y=None,
+            height="48dp",
+            spacing="8dp",
+        )
+        self.lat_field = MDTextField(
+            hint_text="Latitude (optional)",
+            mode="rectangle",
+            fill_color_normal="#151d2b",
+            fill_color_focus="#151d2b",
+            line_color_focus="#00e5a0",
+            input_filter="float",
+        )
+        self.lon_field = MDTextField(
+            hint_text="Longitude (optional)",
+            mode="rectangle",
+            fill_color_normal="#151d2b",
+            fill_color_focus="#151d2b",
+            line_color_focus="#00e5a0",
+            input_filter="float",
+        )
+        coord_row.add_widget(self.lat_field)
+        coord_row.add_widget(self.lon_field)
+        self.add_widget(coord_row)
+
+        self.notes_field = MDTextField(
             hint_text="Notes (optional)",
             mode="rectangle",
             fill_color_normal="#151d2b",
@@ -368,7 +400,8 @@ class _AssetAddContent(MDBoxLayout):
             line_color_focus="#00e5a0",
             size_hint_y=None,
             height="48dp",
-        ))
+        )
+        self.add_widget(self.notes_field)
 
     def _select_category(self, cat):
         self.selected_category = cat

@@ -1,53 +1,90 @@
 # build/talon-client.spec
 # PyInstaller spec file for building the T.A.L.O.N. client binary.
 #
-# Builds the desktop client (Linux and Windows). The Android build
+# Builds the desktop client (Linux, Windows, macOS). The Android build
 # uses Buildozer instead — see build/buildozer.spec.
 #
-# To build manually:
-#   cd /path/to/talon
-#   pyinstaller build/talon-client.spec
+# To build:
+#   python build.py client
+#   (or: cd /path/to/talon && pyinstaller build/talon-client.spec)
 #
-# The output goes to dist/talon-client/
+# Output: dist/talon-client/
 
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+import sys
+import platform
+
 block_cipher = None
+ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
+
+# Collect data files
+datas = [
+    (os.path.join(ROOT, 'config', '*.yaml'), 'config'),
+    (os.path.join(ROOT, 'src', 'talon', 'ui', 'kv', '*.kv'), os.path.join('talon', 'ui', 'kv')),
+]
+
+# On Windows, include the SQLCipher DLL if present in deps/
+binaries = []
+if platform.system() == 'Windows':
+    dll_path = os.path.join(ROOT, 'deps', 'sqlcipher.dll')
+    if os.path.isfile(dll_path):
+        binaries.append((dll_path, '.'))
 
 a = Analysis(
-    # Entry point script
-    ['../src/talon/client/app.py'],
-
-    # Where to find our source code
-    pathex=['../src'],
-
-    # Binary dependencies
-    binaries=[],
-
-    # Non-Python files to include
-    datas=[
-        ('../config/*.yaml', 'config'),
-    ],
-
-    # Hidden imports — Kivy and KivyMD use a lot of dynamic loading
+    [os.path.join(ROOT, 'talon-client.py')],
+    pathex=[os.path.join(ROOT, 'src')],
+    binaries=binaries,
+    datas=datas,
     hiddenimports=[
         'rns',
+        'rns.vendor',
         'lxmf',
         'nacl',
+        'nacl.bindings',
+        'nacl.pwhash',
         'argon2',
+        'argon2.low_level',
         'yaml',
         'sqlcipher3',
         'kivy',
         'kivymd',
+        'kivymd.uix',
+        'kivymd.uix.boxlayout',
+        'kivymd.uix.label',
+        'kivymd.uix.button',
+        'kivymd.uix.textfield',
+        'kivymd.uix.dialog',
+        'kivymd.uix.list',
+        'kivymd.uix.scrollview',
+        'kivymd.uix.screen',
+        'kivymd.uix.screenmanager',
+        'kivymd.uix.divider',
+        'kivymd.uix.snackbar',
         'mapview',
-        # Kivy's internal modules that PyInstaller misses
         'kivy.core.window',
         'kivy.core.text',
         'kivy.core.image',
         'kivy.core.audio',
         'kivy.graphics',
+        'serial',
+        'serial.tools',
+        'serial.tools.list_ports',
+        'talon.platform',
+        'talon.db.migrations',
+        'talon.db.database',
+        'talon.db.models',
+        'talon.crypto.keys',
+        'talon.net.reticulum',
+        'talon.net.link_manager',
+        'talon.net.transport',
+        'talon.net.heartbeat',
+        'talon.net.rnode',
+        'talon.net.android_usb',
+        'talon.net.interfaces',
+        'talon.sync.protocol',
     ],
-
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -70,7 +107,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # Client is a GUI app — no terminal window
+    console=False,  # GUI app — no console window
 )
 
 coll = COLLECT(

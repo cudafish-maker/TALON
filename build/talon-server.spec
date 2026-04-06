@@ -1,50 +1,91 @@
 # build/talon-server.spec
 # PyInstaller spec file for building the T.A.L.O.N. server binary.
 #
-# PyInstaller bundles the Python interpreter and all dependencies into
-# a single executable (or folder). This spec file tells it exactly
-# what to include.
+# To build:
+#   python build.py server
+#   (or: cd /path/to/talon && pyinstaller build/talon-server.spec)
 #
-# To build manually:
-#   cd /path/to/talon
-#   pyinstaller build/talon-server.spec
-#
-# The output goes to dist/talon-server/ (folder mode) or
-# dist/talon-server (one-file mode).
-#
-# GitHub Actions uses this file automatically — see .github/workflows/build.yml
+# Output: dist/talon-server/
 
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+import sys
+import platform
+
 block_cipher = None
+ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
+
+# Collect data files
+datas = [
+    (os.path.join(ROOT, 'config', '*.yaml'), 'config'),
+    (os.path.join(ROOT, 'src', 'talon', 'ui', 'kv', '*.kv'), os.path.join('talon', 'ui', 'kv')),
+    (os.path.join(ROOT, 'src', 'talon', 'ui', 'server', 'kv', '*.kv'), os.path.join('talon', 'ui', 'server', 'kv')),
+]
+
+# On Windows, include the SQLCipher DLL if present in deps/
+binaries = []
+if platform.system() == 'Windows':
+    dll_path = os.path.join(ROOT, 'deps', 'sqlcipher.dll')
+    if os.path.isfile(dll_path):
+        binaries.append((dll_path, '.'))
 
 a = Analysis(
-    # Entry point script
-    ['../src/talon/server/app.py'],
-
-    # Where to find our source code
-    pathex=['../src'],
-
-    # Binary dependencies (native libraries like libsodium, sqlcipher)
-    binaries=[],
-
-    # Non-Python files to include (configs, templates)
-    datas=[
-        ('../config/*.yaml', 'config'),
-    ],
-
-    # Hidden imports that PyInstaller can't detect automatically.
-    # Reticulum and its dependencies use dynamic imports that
-    # PyInstaller's static analysis misses.
+    [os.path.join(ROOT, 'talon-server.py')],
+    pathex=[os.path.join(ROOT, 'src')],
+    binaries=binaries,
+    datas=datas,
     hiddenimports=[
         'rns',
+        'rns.vendor',
         'lxmf',
         'nacl',
+        'nacl.bindings',
+        'nacl.pwhash',
         'argon2',
+        'argon2.low_level',
         'yaml',
         'sqlcipher3',
+        'kivy',
+        'kivymd',
+        'kivymd.uix',
+        'kivymd.uix.boxlayout',
+        'kivymd.uix.label',
+        'kivymd.uix.button',
+        'kivymd.uix.textfield',
+        'kivymd.uix.dialog',
+        'kivymd.uix.list',
+        'kivymd.uix.scrollview',
+        'kivymd.uix.screen',
+        'kivymd.uix.screenmanager',
+        'kivymd.uix.divider',
+        'kivymd.uix.snackbar',
+        'kivy.core.window',
+        'kivy.core.text',
+        'kivy.core.image',
+        'kivy.graphics',
+        'serial',
+        'serial.tools',
+        'serial.tools.list_ports',
+        'talon.platform',
+        'talon.db.migrations',
+        'talon.db.database',
+        'talon.db.models',
+        'talon.crypto.keys',
+        'talon.net.reticulum',
+        'talon.net.link_manager',
+        'talon.net.transport',
+        'talon.net.heartbeat',
+        'talon.net.rnode',
+        'talon.net.android_usb',
+        'talon.net.interfaces',
+        'talon.sync.protocol',
+        'talon.server.sync_engine',
+        'talon.server.tile_server',
+        'talon.server.client_registry',
+        'talon.server.audit',
+        'talon.server.auth',
     ],
-
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -67,7 +108,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,  # Server runs in a terminal
+    console=True,  # Server runs with console output
 )
 
 coll = COLLECT(
