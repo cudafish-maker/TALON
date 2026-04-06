@@ -214,7 +214,32 @@ jobs:
           path: build/bin/*.apk
 
   # ------------------------------------------------------------------
-  # Job 6: Create release (only on tag push)
+  # Job 6: Release Linux (on tag push — does not wait for Android/Windows)
+  # ------------------------------------------------------------------
+  release-linux:
+    name: Release Linux
+    needs: build-linux
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: talon-linux
+
+      - name: Create archive
+        run: tar czf talon-linux.tar.gz talon-server/ talon-client/
+
+      - name: Create GitHub Release (Linux)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: talon-linux.tar.gz
+          generate_release_notes: true
+
+  # ------------------------------------------------------------------
+  # Job 7: Release all platforms (on tag push — waits for all builds)
   # ------------------------------------------------------------------
   release:
     name: Create Release
