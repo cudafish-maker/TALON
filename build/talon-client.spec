@@ -38,9 +38,9 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=[
-        'rns',
-        'rns.vendor',
-        'lxmf',
+        'RNS',
+        'RNS.vendor',
+        'LXMF',
         'nacl',
         'nacl.bindings',
         'nacl.pwhash',
