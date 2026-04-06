@@ -60,7 +60,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev libsodium-dev
+          sudo apt-get install -y libsqlcipher-dev libsodium-dev libcairo2-dev
 
       - name: Install Python dependencies
         run: |
@@ -89,7 +89,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libsqlcipher-dev libsodium-dev \
+            libsqlcipher-dev libsodium-dev libcairo2-dev \
             libmtdev-dev xvfb
 
       - name: Install Python dependencies
