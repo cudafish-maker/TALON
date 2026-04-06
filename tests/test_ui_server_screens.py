@@ -92,6 +92,64 @@ class TestServerLoginSubmit:
 
 
 # ================================================================
+# Server SetupScreen (first-run passphrase setup)
+# ================================================================
+
+from talon.ui.server.screens.setup import MIN_PASSPHRASE_LENGTH, ServerSetupScreen
+
+
+class TestServerSetupDefaults:
+    def test_error_text_empty(self):
+        screen = ServerSetupScreen(name="server_setup")
+        assert screen.error_text == ""
+
+    def test_is_loading_false(self):
+        screen = ServerSetupScreen(name="server_setup")
+        assert screen.is_loading is False
+
+
+class TestServerSetupSubmit:
+    def _make_ids(self, passphrase, confirm):
+        ids = MagicMock()
+        ids.passphrase_field.text = passphrase
+        ids.confirm_field.text = confirm
+        return ids
+
+    def test_empty_passphrase_sets_error(self):
+        screen = ServerSetupScreen(name="server_setup")
+        screen.ids = self._make_ids("", "")
+        screen.on_submit()
+        assert screen.error_text == "Passphrase is required."
+
+    def test_too_short_passphrase_sets_error(self):
+        screen = ServerSetupScreen(name="server_setup")
+        screen.ids = self._make_ids("short", "short")
+        screen.on_submit()
+        assert "at least" in screen.error_text
+
+    def test_mismatched_passphrases_set_error(self):
+        screen = ServerSetupScreen(name="server_setup")
+        good = "x" * MIN_PASSPHRASE_LENGTH
+        screen.ids = self._make_ids(good, good + "y")
+        screen.on_submit()
+        assert screen.error_text == "Passphrases do not match."
+
+    def test_valid_passphrase_calls_do_login(self):
+        screen = ServerSetupScreen(name="server_setup")
+        good = "x" * MIN_PASSPHRASE_LENGTH
+        screen.ids = self._make_ids(good, good)
+
+        mock_app = MagicMock()
+        with patch("kivy.app.App") as MockApp:
+            MockApp.get_running_app.return_value = mock_app
+            screen.on_submit()
+
+        assert screen.is_loading is True
+        assert screen.error_text == ""
+        mock_app.do_login.assert_called_once_with(good)
+
+
+# ================================================================
 # Server MainScreen
 # ================================================================
 

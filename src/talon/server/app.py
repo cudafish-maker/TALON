@@ -75,6 +75,20 @@ class TalonServer:
                 server_config = yaml.safe_load(f) or {}
             self.config.update(server_config)
 
+    def is_first_run(self) -> bool:
+        """Return True if no server database has been initialised yet.
+
+        First run is detected by the absence of the salt file that
+        setup_database() writes on first launch. The UI calls this
+        before showing a login screen so it can route a fresh install
+        through the setup (passphrase + confirm) screen instead.
+        """
+        if not self.config:
+            self.load_config()
+        db_config = self.config.get("database", {})
+        db_path = db_config.get("path", "data/server.db")
+        return not os.path.isfile(db_path + ".salt")
+
     def setup_database(self, passphrase: str):
         """Initialize the encrypted database.
 

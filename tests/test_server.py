@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from talon.server.app import TalonServer
 from talon.server.audit import (
     format_audit_entry,
     log_event,
@@ -18,6 +19,28 @@ from talon.server.notifications import (
     chat_notification,
     sitrep_notification,
 )
+
+# ---------- First-run detection ----------
+
+
+def test_is_first_run_true_when_no_salt(tmp_path):
+    """is_first_run should return True when the salt file does not exist."""
+    server = TalonServer()
+    server.config = {"database": {"path": str(tmp_path / "server.db")}}
+    assert server.is_first_run() is True
+
+
+def test_is_first_run_false_when_salt_present(tmp_path):
+    """is_first_run should return False once setup_database has written a salt."""
+    db_path = tmp_path / "server.db"
+    salt_path = str(db_path) + ".salt"
+    with open(salt_path, "wb") as f:
+        f.write(b"x" * 16)
+
+    server = TalonServer()
+    server.config = {"database": {"path": str(db_path)}}
+    assert server.is_first_run() is False
+
 
 # ---------- Auth / Enrollment ----------
 

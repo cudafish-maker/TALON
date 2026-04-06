@@ -65,7 +65,13 @@ class TalonServerApp(MDApp):
         return self.screen_manager
 
     def on_start(self):
-        self.screen_manager.current = "server_login"
+        # Fresh installs (no salt file yet) start in setup so the
+        # operator chooses and confirms the master passphrase. Returning
+        # operators get the regular unlock screen.
+        if self.talon.is_first_run():
+            self.screen_manager.current = "server_setup"
+        else:
+            self.screen_manager.current = "server_login"
 
     def on_stop(self):
         if self.talon.running:
@@ -78,8 +84,10 @@ class TalonServerApp(MDApp):
     def _register_screens(self):
         from talon.ui.server.screens.login import ServerLoginScreen
         from talon.ui.server.screens.main import ServerMainScreen
+        from talon.ui.server.screens.setup import ServerSetupScreen
 
         self.screen_manager.add_widget(ServerLoginScreen(name="server_login"))
+        self.screen_manager.add_widget(ServerSetupScreen(name="server_setup"))
         self.screen_manager.add_widget(ServerMainScreen(name="server_main"))
 
     # ------------------------------------------------------------------
@@ -91,11 +99,14 @@ class TalonServerApp(MDApp):
         Clock.schedule_once(lambda dt: self._start_server(passphrase), 0.1)
 
     def _start_server(self, passphrase: str):
+        # Report errors back to whichever entry screen the user is on
+        # (setup on first run, login afterwards).
+        origin = self.screen_manager.current
         try:
             self.talon.start(passphrase)
         except Exception as e:
-            login = self.screen_manager.get_screen("server_login")
-            login.show_error(str(e))
+            if origin in ("server_setup", "server_login"):
+                self.screen_manager.get_screen(origin).show_error(str(e))
             return
 
         self.screen_manager.current = "server_main"

@@ -1,0 +1,142 @@
+# kv/server_setup.kv
+# First-run server setup screen layout.
+# Same visual treatment as server_login but two passphrase fields and
+# the heading clearly identifies this as the initial setup.
+
+<ServerSetupScreen>:
+    md_bg_color: app.theme_cls.backgroundColor
+
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "32dp"
+
+        Widget:
+            size_hint_y: 0.2
+
+        MDBoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: "8dp"
+            padding: [0, 0, 0, "32dp"]
+
+            MDLabel:
+                text: "T.A.L.O.N."
+                halign: "center"
+                font_style: "Headline"
+                role: "medium"
+                bold: True
+                theme_text_color: "Custom"
+                text_color: "#f5a623"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDLabel:
+                text: "INITIAL SERVER SETUP"
+                halign: "center"
+                font_style: "Label"
+                role: "small"
+                theme_text_color: "Custom"
+                text_color: "#f5a623"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDLabel:
+                text: "Choose the master passphrase for this server"
+                halign: "center"
+                font_style: "Body"
+                role: "small"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+        MDCard:
+            orientation: "vertical"
+            padding: "24dp"
+            spacing: "16dp"
+            size_hint: None, None
+            size: min(root.width - 64, 440), self.minimum_height
+            pos_hint: {"center_x": 0.5}
+            md_bg_color: "#151d2b"
+            radius: [8, 8, 8, 8]
+
+            MDLabel:
+                text: "CREATE SERVER PASSPHRASE"
+                font_style: "Label"
+                role: "small"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            MDLabel:
+                text: "This passphrase encrypts the server database and signs operator leases. It cannot be recovered if forgotten — write it down somewhere safe."
+                font_style: "Body"
+                role: "small"
+                theme_text_color: "Custom"
+                text_color: "#8a9bb0"
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+
+            MDTextField:
+                id: passphrase_field
+                hint_text: "New passphrase (min 12 characters)"
+                password: True
+                mode: "outlined"
+                line_color_focus: "#f5a623"
+                text_color_focus: "#e8edf4"
+                hint_text_color_normal: "#3d4f63"
+                fill_color_normal: "#0f1520"
+                fill_color_focus: "#0f1520"
+                on_text: root.on_passphrase_text(self, self.text)
+
+            MDTextField:
+                id: confirm_field
+                hint_text: "Confirm passphrase"
+                password: True
+                mode: "outlined"
+                line_color_focus: "#f5a623"
+                text_color_focus: "#e8edf4"
+                hint_text_color_normal: "#3d4f63"
+                fill_color_normal: "#0f1520"
+                fill_color_focus: "#0f1520"
+                on_text: root.on_passphrase_text(self, self.text)
+                on_text_validate: root.on_submit()
+
+            MDLabel:
+                text: root.error_text
+                theme_text_color: "Custom"
+                text_color: "#ff3b3b"
+                font_style: "Body"
+                role: "small"
+                size_hint_y: None
+                height: self.texture_size[1] if root.error_text else 0
+                opacity: 1 if root.error_text else 0
+
+            MDButton:
+                disabled: root.is_loading
+                on_release: root.on_submit()
+                md_bg_color: "#f5a623" if not root.is_loading else "#1c2637"
+                size_hint_x: 1
+                height: "48dp"
+
+                MDButtonText:
+                    text: "INITIALISING..." if root.is_loading else "INITIALISE SERVER"
+                    bold: True
+                    theme_text_color: "Custom"
+                    text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
+
+        Widget:
+            size_hint_y: 0.3
+
+        MDLabel:
+            text: "Authorized personnel only — all actions are audited"
+            halign: "center"
+            font_style: "Body"
+            role: "small"
+            theme_text_color: "Custom"
+            text_color: "#3d4f63"
+            size_hint_y: None
+            height: self.texture_size[1]
