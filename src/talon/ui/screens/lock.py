@@ -8,9 +8,9 @@
 #   3. Polls for approval (server sends a new lease token)
 #   4. On approval, transitions to the main screen
 
-from kivymd.uix.screen import MDScreen
-from kivy.properties import StringProperty, BooleanProperty
 from kivy.clock import Clock
+from kivy.properties import BooleanProperty, StringProperty
+from kivymd.uix.screen import MDScreen
 
 
 class LockScreen(MDScreen):
@@ -22,9 +22,9 @@ class LockScreen(MDScreen):
         is_approved:    True after the server approves re-auth.
     """
 
-    status_text   = StringProperty("Your session has expired.")
+    status_text = StringProperty("Your session has expired.")
     is_requesting = BooleanProperty(False)
-    is_approved   = BooleanProperty(False)
+    is_approved = BooleanProperty(False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -35,9 +35,7 @@ class LockScreen(MDScreen):
 
         Start polling for server approval every 30 seconds.
         """
-        self._poll_event = Clock.schedule_interval(
-            self._poll_for_approval, 30
-        )
+        self._poll_event = Clock.schedule_interval(self._poll_for_approval, 30)
 
     def on_leave(self):
         """Called when navigating away from this screen."""
@@ -51,6 +49,7 @@ class LockScreen(MDScreen):
         Sends a re-auth request to the server via the connection manager.
         """
         from kivy.app import App
+
         app = App.get_running_app()
 
         if not app.talon.connection:
@@ -75,6 +74,7 @@ class LockScreen(MDScreen):
         Called every 30 seconds by the Clock scheduler.
         """
         from kivy.app import App
+
         app = App.get_running_app()
 
         if not app.talon.auth:
@@ -92,6 +92,7 @@ class LockScreen(MDScreen):
     def _transition_to_main(self, dt):
         """Navigate to the main screen after approval."""
         from kivy.app import App
+
         app = App.get_running_app()
         app.screen_manager.current = "main"
         main = app.screen_manager.get_screen("main")

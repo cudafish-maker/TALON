@@ -25,6 +25,7 @@ from talon.net.link_manager import ClientLinkManager, ServerLinkManager
 # Helpers
 # ================================================================
 
+
 def make_mock_identity(hexhash="abc123"):
     """Create a mock RNS.Identity."""
     identity = MagicMock(spec=RNS.Identity)
@@ -58,14 +59,13 @@ def make_mock_destination():
 # ServerLinkManager
 # ================================================================
 
-class TestServerLinkManager:
 
+class TestServerLinkManager:
     def test_start_creates_destination_and_announces(self):
         identity = make_mock_identity()
         slm = ServerLinkManager(identity)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         assert slm.destination is not None
@@ -76,8 +76,7 @@ class TestServerLinkManager:
         identity = make_mock_identity()
         slm = ServerLinkManager(identity)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         assert slm.get_destination_hash() == b"\x01\x02\x03\x04"
@@ -92,8 +91,7 @@ class TestServerLinkManager:
         connected_calls = []
         slm.on_client_connected = lambda h, _l: connected_calls.append(h)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-abc")
@@ -108,8 +106,7 @@ class TestServerLinkManager:
         disconnected_calls = []
         slm.on_client_disconnected = lambda h: disconnected_calls.append(h)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-abc")
@@ -125,14 +122,14 @@ class TestServerLinkManager:
         slm = ServerLinkManager(identity)
 
         responses = []
+
         def on_sync(client_hash, message):
             responses.append((client_hash, message))
             return {"type": "sync_response", "updates": {}}
 
         slm.on_sync_message = on_sync
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -158,8 +155,7 @@ class TestServerLinkManager:
         heartbeats = []
         slm.on_heartbeat = lambda h, p: heartbeats.append((h, p))
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -177,8 +173,7 @@ class TestServerLinkManager:
         slm = ServerLinkManager(identity)
         slm.on_sync_message = MagicMock()
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link()
@@ -191,8 +186,7 @@ class TestServerLinkManager:
         identity = make_mock_identity()
         slm = ServerLinkManager(identity)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -215,8 +209,7 @@ class TestServerLinkManager:
         identity = make_mock_identity()
         slm = ServerLinkManager(identity)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -232,8 +225,8 @@ class TestServerLinkManager:
 # ClientLinkManager
 # ================================================================
 
-class TestClientLinkManager:
 
+class TestClientLinkManager:
     def test_connect_success(self):
         identity = make_mock_identity("my-client")
         server_hash = b"\x01\x02\x03\x04"
@@ -257,11 +250,12 @@ class TestClientLinkManager:
         mock_link_cls.ACTIVE = RNS.Link.ACTIVE
         mock_link_cls.CLOSED = RNS.Link.CLOSED
 
-        with patch("talon.net.link_manager.RNS.Identity") as mock_id_cls, \
-             patch("talon.net.link_manager.RNS.Destination",
-                   return_value=mock_dest), \
-             patch("talon.net.link_manager.RNS.Link", mock_link_cls), \
-             patch("talon.net.link_manager.RNS.Transport"):
+        with (
+            patch("talon.net.link_manager.RNS.Identity") as mock_id_cls,
+            patch("talon.net.link_manager.RNS.Destination", return_value=mock_dest),
+            patch("talon.net.link_manager.RNS.Link", mock_link_cls),
+            patch("talon.net.link_manager.RNS.Transport"),
+        ):
             mock_id_cls.recall = MagicMock(return_value=mock_server_identity)
             result = clm.connect(timeout=1)
 
@@ -273,8 +267,7 @@ class TestClientLinkManager:
         identity = make_mock_identity("my-client")
         clm = ClientLinkManager(identity, b"\x01\x02\x03\x04")
 
-        with patch("talon.net.link_manager.RNS.Identity") as mock_id_cls, \
-             patch("talon.net.link_manager.RNS.Transport"):
+        with patch("talon.net.link_manager.RNS.Identity") as mock_id_cls, patch("talon.net.link_manager.RNS.Transport"):
             mock_id_cls.recall = MagicMock(return_value=None)
             result = clm.connect(timeout=0.5)
 
@@ -293,11 +286,12 @@ class TestClientLinkManager:
         mock_link_cls.ACTIVE = RNS.Link.ACTIVE
         mock_link_cls.CLOSED = RNS.Link.CLOSED
 
-        with patch("talon.net.link_manager.RNS.Identity") as mock_id_cls, \
-             patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()), \
-             patch("talon.net.link_manager.RNS.Link", mock_link_cls), \
-             patch("talon.net.link_manager.RNS.Transport"):
+        with (
+            patch("talon.net.link_manager.RNS.Identity") as mock_id_cls,
+            patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()),
+            patch("talon.net.link_manager.RNS.Link", mock_link_cls),
+            patch("talon.net.link_manager.RNS.Transport"),
+        ):
             mock_id_cls.recall = MagicMock(return_value=mock_server_identity)
             result = clm.connect(timeout=1)
 
@@ -336,9 +330,7 @@ class TestClientLinkManager:
         with patch("talon.net.link_manager.RNS.Packet") as mock_packet_cls:
             mock_pkt = MagicMock()
             mock_packet_cls.return_value = mock_pkt
-            result = clm.send_and_receive(
-                {"type": "sync_request", "versions": {}}, timeout=2
-            )
+            result = clm.send_and_receive({"type": "sync_request", "versions": {}}, timeout=2)
 
         t.join()
         assert result is not None
@@ -422,9 +414,7 @@ class TestClientLinkManager:
             with patch("talon.net.link_manager.RNS.Packet") as mock_packet_cls:
                 mock_pkt = MagicMock()
                 mock_packet_cls.return_value = mock_pkt
-                result_holder[0] = clm.send_and_receive(
-                    {"type": "test"}, timeout=5
-                )
+                result_holder[0] = clm.send_and_receive({"type": "test"}, timeout=5)
 
         t = threading.Thread(target=do_send)
         t.start()
@@ -441,8 +431,8 @@ class TestClientLinkManager:
 # ConnectionManager
 # ================================================================
 
-class TestConnectionManager:
 
+class TestConnectionManager:
     def test_send_message_delegates_to_link_manager(self):
         from talon.client.connection import ConnectionManager
 
@@ -453,9 +443,7 @@ class TestConnectionManager:
 
         result = cm.send_message({"type": "sync_request"})
         assert result == {"ok": True}
-        cm.link_manager.send_and_receive.assert_called_once_with(
-            {"type": "sync_request"}
-        )
+        cm.link_manager.send_and_receive.assert_called_once_with({"type": "sync_request"})
 
     def test_send_message_returns_none_when_no_link(self):
         from talon.client.connection import ConnectionManager
@@ -474,8 +462,7 @@ class TestConnectionManager:
         mock_clm = MagicMock()
         mock_clm.connect.return_value = True
 
-        with patch("talon.client.connection.ClientLinkManager",
-                   return_value=mock_clm):
+        with patch("talon.client.connection.ClientLinkManager", return_value=mock_clm):
             result = cm._try_connect(TransportType.YGGDRASIL, {})
 
         assert result is True
@@ -541,9 +528,7 @@ class TestConnectionManager:
         cm.link_manager.is_active.return_value = True
 
         cm._send_heartbeat({"timestamp": 42})
-        cm.link_manager.send_heartbeat.assert_called_once_with(
-            {"timestamp": 42}
-        )
+        cm.link_manager.send_heartbeat.assert_called_once_with({"timestamp": 42})
 
     def test_send_heartbeat_default_payload(self):
         from talon.client.connection import ConnectionManager
@@ -561,18 +546,19 @@ class TestConnectionManager:
 # Server app wiring
 # ================================================================
 
-class TestServerAppWiring:
 
+class TestServerAppWiring:
     def _make_server(self):
         """Create a TalonServer with mocked dependencies."""
-        with patch("talon.server.app.initialize_reticulum"), \
-             patch("talon.server.app.create_identity",
-                   return_value=make_mock_identity("server-id")), \
-             patch("talon.server.app.ServerLinkManager") as mock_slm_cls, \
-             patch("talon.server.app.HeartbeatMonitor"), \
-             patch("talon.server.app.TileServer"):
-
+        with (
+            patch("talon.server.app.initialize_reticulum"),
+            patch("talon.server.app.create_identity", return_value=make_mock_identity("server-id")),
+            patch("talon.server.app.ServerLinkManager") as mock_slm_cls,
+            patch("talon.server.app.HeartbeatMonitor"),
+            patch("talon.server.app.TileServer"),
+        ):
             from talon.server.app import TalonServer
+
             server = TalonServer.__new__(TalonServer)
             server.config = {}
             server.db = MagicMock()
@@ -594,15 +580,12 @@ class TestServerAppWiring:
     def test_on_sync_message_routes_to_engine(self):
         server = self._make_server()
         server.sync_engine = MagicMock()
-        server.sync_engine.handle_message.return_value = {
-            "type": "sync_response"
-        }
+        server.sync_engine.handle_message.return_value = {"type": "sync_response"}
         server.client_registry.get_client.return_value = None
 
         from talon.server.app import TalonServer
-        result = TalonServer._on_sync_message(
-            server, "client-1", {"type": "sync_request", "versions": {}}
-        )
+
+        result = TalonServer._on_sync_message(server, "client-1", {"type": "sync_request", "versions": {}})
 
         server.sync_engine.handle_message.assert_called_once()
         assert result["type"] == "sync_response"
@@ -613,55 +596,43 @@ class TestServerAppWiring:
         server.client_registry = MagicMock()
 
         from talon.server.app import TalonServer
-        TalonServer._on_heartbeat(
-            server, "client-1",
-            {"type": "heartbeat", "callsign": "WOLF-1", "timestamp": 42}
-        )
+
+        TalonServer._on_heartbeat(server, "client-1", {"type": "heartbeat", "callsign": "WOLF-1", "timestamp": 42})
 
         server.heartbeat_monitor.record_heartbeat.assert_called_once_with(
-            "WOLF-1", {"type": "heartbeat", "callsign": "WOLF-1",
-                       "timestamp": 42}
+            "WOLF-1", {"type": "heartbeat", "callsign": "WOLF-1", "timestamp": 42}
         )
-        server.client_registry.update_heartbeat.assert_called_once_with(
-            "client-1"
-        )
+        server.client_registry.update_heartbeat.assert_called_once_with("client-1")
 
     def test_on_client_link_registers(self):
         server = self._make_server()
         server.sync_engine = MagicMock()
-        server.client_registry.get_client.return_value = {
-            "callsign": "WOLF-1"
-        }
+        server.client_registry.get_client.return_value = {"callsign": "WOLF-1"}
 
         from talon.server.app import TalonServer
+
         TalonServer._on_client_link(server, "client-1", MagicMock())
 
-        server.sync_engine.register_client.assert_called_once_with(
-            "client-1", "WOLF-1", "reticulum"
-        )
+        server.sync_engine.register_client.assert_called_once_with("client-1", "WOLF-1", "reticulum")
 
     def test_on_client_unlink_unregisters(self):
         server = self._make_server()
         server.sync_engine = MagicMock()
 
         from talon.server.app import TalonServer
+
         TalonServer._on_client_unlink(server, "client-1")
 
-        server.sync_engine.unregister_client.assert_called_once_with(
-            "client-1"
-        )
+        server.sync_engine.unregister_client.assert_called_once_with("client-1")
 
     def test_on_data_changed_notifies_other_clients(self):
         server = self._make_server()
         server.link_manager = MagicMock()
-        server.link_manager.get_connected_clients.return_value = [
-            "client-1", "client-2", "client-3"
-        ]
+        server.link_manager.get_connected_clients.return_value = ["client-1", "client-2", "client-3"]
 
         from talon.server.app import TalonServer
-        TalonServer._on_data_changed(
-            server, "client-1", {"sitreps": [{"id": "s1"}]}
-        )
+
+        TalonServer._on_data_changed(server, "client-1", {"sitreps": [{"id": "s1"}]})
 
         # Should notify client-2 and client-3 but NOT client-1
         calls = server.link_manager.send_to_client.call_args_list
@@ -677,6 +648,7 @@ class TestServerAppWiring:
 
         with patch("talon.server.app.log_event"):
             from talon.server.app import TalonServer
+
             TalonServer.shutdown(server)
 
         server.link_manager.stop.assert_called_once()
@@ -687,8 +659,8 @@ class TestServerAppWiring:
 # Client app wiring
 # ================================================================
 
-class TestClientAppWiring:
 
+class TestClientAppWiring:
     def test_trigger_sync_calls_full_sync(self):
         from talon.client.app import TalonClient
 
@@ -704,9 +676,7 @@ class TestClientAppWiring:
         if client._sync_thread:
             client._sync_thread.join(timeout=2)
 
-        client.sync.full_sync.assert_called_once_with(
-            client.connection.send_message
-        )
+        client.sync.full_sync.assert_called_once_with(client.connection.send_message)
 
     def test_trigger_sync_skips_when_already_syncing(self):
         from talon.client.app import TalonClient

@@ -16,10 +16,13 @@
 #   - Manually by the operator (force sync button)
 
 import time
-from talon.sync.protocol import (
-    build_sync_request, build_client_changes, apply_sync_response,
-)
+
 from talon.sync.priority import filter_for_transport
+from talon.sync.protocol import (
+    apply_sync_response,
+    build_client_changes,
+    build_sync_request,
+)
 
 
 class SyncClient:
@@ -54,14 +57,13 @@ class SyncClient:
         # If on LoRa, filter out broadband-only tables from the request
         if not is_broadband:
             from talon.constants import TransportType
+
             allowed = filter_for_transport(
                 list(request.get("versions", {}).keys()),
                 TransportType.RNODE,
             )
             versions = request.get("versions", {})
-            request["versions"] = {
-                k: v for k, v in versions.items() if k in allowed
-            }
+            request["versions"] = {k: v for k, v in versions.items() if k in allowed}
 
         return request
 

@@ -9,21 +9,21 @@
 # (validation, computed fields, formatting) for each model type.
 
 from talon.db.models import (
-    Operator,
+    SITREP,
     Asset,
     AssetCategoryCustom,
-    SITREP,
-    SITREPEntry,
-    Mission,
-    Objective,
-    MissionNote,
-    Waypoint,
-    Route,
-    Zone,
-    Channel,
-    Message,
-    Document,
     AuditEntry,
+    Channel,
+    Document,
+    Message,
+    Mission,
+    MissionNote,
+    Objective,
+    Operator,
+    Route,
+    SITREPEntry,
+    Waypoint,
+    Zone,
 )
 
 __all__ = [

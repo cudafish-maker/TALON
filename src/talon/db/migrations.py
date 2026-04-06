@@ -70,10 +70,7 @@ def _is_fresh_database(conn) -> bool:
     Returns:
         True if the database has no application tables.
     """
-    cursor = conn.execute(
-        "SELECT count(*) FROM sqlite_master "
-        "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    )
+    cursor = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
     return cursor.fetchone()[0] == 0
 
 
@@ -82,16 +79,14 @@ def _is_fresh_database(conn) -> bool:
 # Migrations MUST be idempotent where possible (use IF NOT EXISTS, etc.)
 # so that a retry after a partial failure doesn't break things.
 
+
 def _migrate_v1_to_v2(conn):
     """v1 → v2: Add description column to enrollment_tokens.
 
     Allows server operators to annotate what each token is for
     (e.g., "for Alpha team lead").
     """
-    conn.execute(
-        "ALTER TABLE enrollment_tokens "
-        "ADD COLUMN description TEXT NOT NULL DEFAULT ''"
-    )
+    conn.execute("ALTER TABLE enrollment_tokens ADD COLUMN description TEXT NOT NULL DEFAULT ''")
 
 
 # The current schema version. Increment this when adding new migrations.
@@ -101,13 +96,14 @@ CURRENT_VERSION = 2
 # Index 0 = migration from v0→v1 (initial schema, None = handled by
 #            initialize_tables), index 1 = v1→v2, etc.
 MIGRATIONS = [
-    None,               # v0 → v1: initial schema via initialize_tables
+    None,  # v0 → v1: initial schema via initialize_tables
     _migrate_v1_to_v2,  # v1 → v2: enrollment_tokens.description
 ]
 
 
 class MigrationError(Exception):
     """Raised when a migration fails."""
+
     pass
 
 
@@ -147,6 +143,7 @@ def run_migrations(conn) -> int:
     if is_fresh:
         # Brand new database — create the latest schema directly
         from talon.db.database import initialize_tables
+
         initialize_tables(conn)
         set_schema_version(conn, CURRENT_VERSION)
         conn.commit()
@@ -178,8 +175,6 @@ def run_migrations(conn) -> int:
             log.info("Migration v%d → v%d complete.", version - 1, version)
         except Exception as exc:
             conn.rollback()
-            raise MigrationError(
-                f"Migration v{version - 1} → v{version} failed: {exc}"
-            ) from exc
+            raise MigrationError(f"Migration v{version - 1} → v{version} failed: {exc}") from exc
 
     return applied

@@ -12,10 +12,9 @@
 # 4. The master key is NEVER written to disk. It only exists in memory
 #    while the app is running. When the app closes, the key is gone.
 
-from argon2 import PasswordHasher
-from argon2.low_level import hash_secret_raw, Type
 import os
 
+from argon2.low_level import Type, hash_secret_raw
 
 # Salt length in bytes — a random value mixed with the passphrase
 # to ensure two identical passphrases produce different keys.
@@ -27,9 +26,9 @@ KEY_LENGTH = 32
 # Argon2id parameters — these control how much CPU and memory are
 # used when deriving the key. Higher values = slower brute force attacks
 # but also slower login for the operator. These are tuned for a balance.
-ARGON2_TIME_COST = 3         # Number of iterations
-ARGON2_MEMORY_COST = 65536   # Memory usage in KB (64MB)
-ARGON2_PARALLELISM = 4       # Number of parallel threads
+ARGON2_TIME_COST = 3  # Number of iterations
+ARGON2_MEMORY_COST = 65536  # Memory usage in KB (64MB)
+ARGON2_PARALLELISM = 4  # Number of parallel threads
 
 
 def generate_salt() -> bytes:

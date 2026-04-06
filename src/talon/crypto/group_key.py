@@ -16,11 +16,11 @@
 # This does NOT apply to DMs — those use per-pair keys that the
 # server cannot read.
 
-import nacl.secret
-import nacl.utils
 import os
 import time
 
+import nacl.secret
+import nacl.utils
 
 # Group key is 32 bytes (256 bits)
 GROUP_KEY_LENGTH = 32

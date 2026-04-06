@@ -13,13 +13,14 @@
 
 import os
 import time
-from talon.crypto.lease import generate_lease_token, is_lease_valid, sign_lease
+
 from talon.crypto.group_key import rotate_group_key
+from talon.crypto.lease import generate_lease_token, is_lease_valid, sign_lease
 
 
-def enroll_client(enrollment_token: str, client_identity: str,
-                  callsign: str, valid_tokens: dict,
-                  server_secret: bytes) -> dict:
+def enroll_client(
+    enrollment_token: str, client_identity: str, callsign: str, valid_tokens: dict, server_secret: bytes
+) -> dict:
     """Process a client enrollment request.
 
     Args:
@@ -73,8 +74,7 @@ def generate_enrollment_token() -> str:
     return os.urandom(16).hex()
 
 
-def renew_lease(client_id: str, current_lease: dict,
-                server_secret: bytes) -> dict:
+def renew_lease(client_id: str, current_lease: dict, server_secret: bytes) -> dict:
     """Renew a client's lease token.
 
     Called when a client's lease is still valid and they request renewal.
@@ -88,8 +88,7 @@ def renew_lease(client_id: str, current_lease: dict,
         New lease dict with fresh expiry, or error dict.
     """
     if not is_lease_valid(current_lease):
-        return {"success": False, "error": "Current lease is expired — "
-                "server operator must approve re-authentication"}
+        return {"success": False, "error": "Current lease is expired — server operator must approve re-authentication"}
 
     new_lease = generate_lease_token()
     signature = sign_lease(new_lease["token"], server_secret)
@@ -125,8 +124,7 @@ def approve_reauth(client_id: str, server_secret: bytes) -> dict:
     }
 
 
-def revoke_client(client_id: str, reason: str,
-                  current_group_key: bytes) -> dict:
+def revoke_client(client_id: str, reason: str, current_group_key: bytes) -> dict:
     """Revoke a client — hard action.
 
     What happens on revocation:

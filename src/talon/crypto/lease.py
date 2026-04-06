@@ -20,11 +20,10 @@
 # This prevents a stolen device from being useful after 24 hours
 # even if the attacker knows the passphrase.
 
+import hashlib
+import hmac
 import os
 import time
-import hmac
-import hashlib
-
 
 # Lease token is 32 bytes of random data
 LEASE_TOKEN_LENGTH = 32
@@ -98,9 +97,7 @@ def sign_lease(lease_token: bytes, server_key: bytes) -> bytes:
     return hmac.new(server_key, lease_token, hashlib.sha256).digest()
 
 
-def verify_lease_signature(
-    lease_token: bytes, signature: bytes, server_key: bytes
-) -> bool:
+def verify_lease_signature(lease_token: bytes, signature: bytes, server_key: bytes) -> bool:
     """Verify that a lease token was signed by the server.
 
     Args:

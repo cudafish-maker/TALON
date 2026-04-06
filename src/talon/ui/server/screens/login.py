@@ -5,8 +5,8 @@
 # as the server ("the chair") so the operator knows which app they're
 # launching.
 
+from kivy.properties import BooleanProperty, StringProperty
 from kivymd.uix.screen import MDScreen
-from kivy.properties import StringProperty, BooleanProperty
 
 
 class ServerLoginScreen(MDScreen):
@@ -28,6 +28,7 @@ class ServerLoginScreen(MDScreen):
         self.is_loading = True
 
         from kivy.app import App
+
         App.get_running_app().do_login(passphrase)
 
     def on_passphrase_text(self, field, text):

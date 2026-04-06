@@ -13,12 +13,13 @@
 # Tile format: Standard Web Mercator (z/x/y) PNG files
 
 import os
+
 from talon.sync.tiles import (
-    tile_path,
-    is_tile_cached,
-    get_tiles_for_bounds,
-    estimate_tile_count,
     TILE_SOURCES,
+    estimate_tile_count,
+    get_tiles_for_bounds,
+    is_tile_cached,
+    tile_path,
 )
 
 
@@ -51,8 +52,7 @@ class TileServer:
         with open(path, "rb") as f:
             return f.read()
 
-    def get_tile_list(self, source: str, bounds: dict,
-                      min_zoom: int, max_zoom: int) -> list:
+    def get_tile_list(self, source: str, bounds: dict, min_zoom: int, max_zoom: int) -> list:
         """List all tiles needed for a given area and zoom range.
 
         Used when a client wants to know what tiles to request.
@@ -68,15 +68,11 @@ class TileServer:
         """
         all_tiles = []
         for z in range(min_zoom, max_zoom + 1):
-            tiles = get_tiles_for_bounds(
-                bounds["north"], bounds["south"],
-                bounds["east"], bounds["west"], z
-            )
+            tiles = get_tiles_for_bounds(bounds["north"], bounds["south"], bounds["east"], bounds["west"], z)
             all_tiles.extend(tiles)
         return all_tiles
 
-    def get_cached_tile_list(self, source: str, bounds: dict,
-                             min_zoom: int, max_zoom: int) -> list:
+    def get_cached_tile_list(self, source: str, bounds: dict, min_zoom: int, max_zoom: int) -> list:
         """List tiles that are already cached for a given area.
 
         Clients use this to figure out which tiles they still need.
@@ -97,9 +93,9 @@ class TileServer:
                 cached.append((z, x, y))
         return cached
 
-    def estimate_download_size(self, source: str, bounds: dict,
-                               min_zoom: int, max_zoom: int,
-                               avg_tile_kb: int = 15) -> dict:
+    def estimate_download_size(
+        self, source: str, bounds: dict, min_zoom: int, max_zoom: int, avg_tile_kb: int = 15
+    ) -> dict:
         """Estimate the download size for caching an area.
 
         Args:
@@ -114,10 +110,7 @@ class TileServer:
         """
         count = 0
         for z in range(min_zoom, max_zoom + 1):
-            count += estimate_tile_count(
-                bounds["north"], bounds["south"],
-                bounds["east"], bounds["west"], z
-            )
+            count += estimate_tile_count(bounds["north"], bounds["south"], bounds["east"], bounds["west"], z)
 
         estimated_mb = (count * avg_tile_kb) / 1024
 

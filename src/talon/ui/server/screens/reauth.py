@@ -22,12 +22,12 @@
 
 import time
 
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDFlatButton
-from kivymd.uix.scrollview import MDScrollView
-from kivymd.uix.dialog import MDDialog
 from kivy.clock import Clock
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.label import MDLabel
+from kivymd.uix.scrollview import MDScrollView
 
 
 class ReauthPanel(MDBoxLayout):
@@ -47,9 +47,7 @@ class ReauthPanel(MDBoxLayout):
         # Poll every 15 seconds — re-auth requests arrive asynchronously
         if self._refresh_event:
             self._refresh_event.cancel()
-        self._refresh_event = Clock.schedule_interval(
-            lambda dt: self.refresh(self._talon), 15
-        )
+        self._refresh_event = Clock.schedule_interval(lambda dt: self.refresh(self._talon), 15)
 
     def on_leave(self):
         if self._refresh_event:
@@ -65,13 +63,15 @@ class ReauthPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDLabel(
-            text="RE-AUTHENTICATION REQUESTS",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        header.add_widget(
+            MDLabel(
+                text="RE-AUTHENTICATION REQUESTS",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         self.add_widget(header)
         self.add_widget(MDDivider(color="#1e2d3d"))
 
@@ -89,16 +89,18 @@ class ReauthPanel(MDBoxLayout):
         content.bind(minimum_height=content.setter("height"))
 
         if not pending:
-            content.add_widget(MDLabel(
-                text="No pending re-authentication requests.",
-                halign="center",
-                font_style="Body1",
-                theme_text_color="Custom",
-                text_color="#3d4f63",
-                size_hint_y=None,
-                height="80dp",
-                padding=["16dp", "16dp"],
-            ))
+            content.add_widget(
+                MDLabel(
+                    text="No pending re-authentication requests.",
+                    halign="center",
+                    font_style="Body1",
+                    theme_text_color="Custom",
+                    text_color="#3d4f63",
+                    size_hint_y=None,
+                    height="80dp",
+                    padding=["16dp", "16dp"],
+                )
+            )
         else:
             for req in pending:
                 content.add_widget(self._request_card(req))
@@ -121,12 +123,14 @@ class ReauthPanel(MDBoxLayout):
         clients = server.client_registry.clients if server else {}
         for client_id, client in clients.items():
             if client.get("status") == "SOFT_LOCKED":
-                pending.append({
-                    "client_id":  client_id,
-                    "callsign":   client.get("callsign", "?"),
-                    "requested_at": client.get("locked_at"),
-                    "lease_expired_at": client.get("lease_expires_at"),
-                })
+                pending.append(
+                    {
+                        "client_id": client_id,
+                        "callsign": client.get("callsign", "?"),
+                        "requested_at": client.get("locked_at"),
+                        "lease_expired_at": client.get("lease_expires_at"),
+                    }
+                )
 
         return pending
 
@@ -134,10 +138,10 @@ class ReauthPanel(MDBoxLayout):
         """Widget for a single pending re-auth request."""
         from kivymd.uix.divider import MDDivider
 
-        callsign      = req.get("callsign", "?")
-        client_id     = req.get("client_id", "")
-        requested_at  = req.get("requested_at")
-        expired_at    = req.get("lease_expired_at")
+        callsign = req.get("callsign", "?")
+        client_id = req.get("client_id", "")
+        requested_at = req.get("requested_at")
+        expired_at = req.get("lease_expired_at")
 
         req_ts = time.strftime("%H:%M", time.localtime(requested_at)) if requested_at else "—"
         exp_ts = time.strftime("%H:%M %Y-%m-%d", time.localtime(expired_at)) if expired_at else "—"
@@ -168,31 +172,37 @@ class ReauthPanel(MDBoxLayout):
             height="28dp",
             spacing="8dp",
         )
-        top_row.add_widget(MDLabel(
-            text=f"[b]{callsign}[/b]",
-            markup=True,
-            font_style="Body1",
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
-        top_row.add_widget(MDLabel(
-            text=f"requested {req_ts}",
-            font_style="Caption",
-            halign="right",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-        ))
+        top_row.add_widget(
+            MDLabel(
+                text=f"[b]{callsign}[/b]",
+                markup=True,
+                font_style="Body1",
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
+        top_row.add_widget(
+            MDLabel(
+                text=f"requested {req_ts}",
+                font_style="Caption",
+                halign="right",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+            )
+        )
         card.add_widget(top_row)
 
         # Expiry info
-        card.add_widget(MDLabel(
-            text=f"Lease expired {ago_str}  ({exp_ts})",
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#f5a623",
-            size_hint_y=None,
-            height="20dp",
-        ))
+        card.add_widget(
+            MDLabel(
+                text=f"Lease expired {ago_str}  ({exp_ts})",
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#f5a623",
+                size_hint_y=None,
+                height="20dp",
+            )
+        )
 
         card.add_widget(MDDivider(color="#1e2d3d"))
 
@@ -203,22 +213,24 @@ class ReauthPanel(MDBoxLayout):
             spacing="8dp",
             padding=["0dp", "4dp"],
         )
-        btn_row.add_widget(MDRaisedButton(
-            text="APPROVE",
-            md_bg_color="#00e5a0",
-            theme_text_color="Custom",
-            text_color="#0a0e14",
-            on_release=lambda x, cid=client_id, cs=callsign:
-                self._approve_reauth(cid, cs),
-        ))
-        btn_row.add_widget(MDRaisedButton(
-            text="DENY",
-            md_bg_color="#ff3b3b",
-            theme_text_color="Custom",
-            text_color="#ffffff",
-            on_release=lambda x, cid=client_id, cs=callsign:
-                self._deny_reauth(cid, cs),
-        ))
+        btn_row.add_widget(
+            MDRaisedButton(
+                text="APPROVE",
+                md_bg_color="#00e5a0",
+                theme_text_color="Custom",
+                text_color="#0a0e14",
+                on_release=lambda x, cid=client_id, cs=callsign: self._approve_reauth(cid, cs),
+            )
+        )
+        btn_row.add_widget(
+            MDRaisedButton(
+                text="DENY",
+                md_bg_color="#ff3b3b",
+                theme_text_color="Custom",
+                text_color="#ffffff",
+                on_release=lambda x, cid=client_id, cs=callsign: self._deny_reauth(cid, cs),
+            )
+        )
         card.add_widget(btn_row)
 
         return card
@@ -254,14 +266,13 @@ class ReauthPanel(MDBoxLayout):
                     "reauth": True,
                 }
                 if self._talon.link_manager:
-                    self._talon.link_manager.send_to_client(
-                        client_id, lease_msg
-                    )
+                    self._talon.link_manager.send_to_client(client_id, lease_msg)
 
                 # Update client status back to ONLINE
                 self._talon.client_registry.update_heartbeat(client_id)
 
                 from talon.server.audit import log_event
+
                 log_event("REAUTH_APPROVED", "Server", target=callsign)
             else:
                 self._show_result(
@@ -284,10 +295,7 @@ class ReauthPanel(MDBoxLayout):
 
         self._dialog = MDDialog(
             title="Deny Re-Authentication",
-            text=(
-                f"Deny re-auth for [b]{callsign}[/b]?\n\n"
-                f"They will remain locked until approved or revoked."
-            ),
+            text=(f"Deny re-auth for [b]{callsign}[/b]?\n\nThey will remain locked until approved or revoked."),
             buttons=[
                 MDFlatButton(
                     text="CANCEL",
@@ -309,6 +317,7 @@ class ReauthPanel(MDBoxLayout):
     def _do_deny(self, client_id: str, callsign: str):
         self._dialog.dismiss()
         from talon.server.audit import log_event
+
         log_event("REAUTH_DENIED", "Server", target=callsign)
         # Update registry to keep SOFT_LOCKED but clear the pending request
         if self._talon:
@@ -319,6 +328,7 @@ class ReauthPanel(MDBoxLayout):
     def _show_result(self, message: str, color: str):
         """Briefly show a result message at the top of the panel."""
         from kivymd.uix.snackbar import MDSnackbar
+
         MDSnackbar(
             MDLabel(
                 text=message,

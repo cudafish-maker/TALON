@@ -26,6 +26,7 @@ from kivy.uix.widget import Widget
 
 try:
     from kivy_garden.mapview import MapMarker, MapView
+
     MAPVIEW_AVAILABLE = True
 except ImportError:
     # kivy_garden.mapview not installed — use a fallback placeholder
@@ -58,13 +59,13 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
         show_operators: Whether to render operator position markers.
     """
 
-    center_lat     = NumericProperty(DEFAULT_LAT)
-    center_lon     = NumericProperty(DEFAULT_LON)
-    zoom_level     = NumericProperty(DEFAULT_ZOOM)
-    tile_source    = StringProperty("osm")
-    show_assets    = BooleanProperty(True)
-    show_zones     = BooleanProperty(True)
-    show_routes    = BooleanProperty(True)
+    center_lat = NumericProperty(DEFAULT_LAT)
+    center_lon = NumericProperty(DEFAULT_LON)
+    zoom_level = NumericProperty(DEFAULT_ZOOM)
+    tile_source = StringProperty("osm")
+    show_assets = BooleanProperty(True)
+    show_zones = BooleanProperty(True)
+    show_routes = BooleanProperty(True)
     show_operators = BooleanProperty(True)
 
     def __init__(self, **kwargs):
@@ -74,10 +75,10 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
             kwargs.setdefault("zoom", DEFAULT_ZOOM)
         super().__init__(**kwargs)
 
-        self._asset_markers   = {}   # asset_id → MapMarker
+        self._asset_markers = {}  # asset_id → MapMarker
         self._operator_markers = {}  # callsign → MapMarker
-        self._zone_layer      = None
-        self._route_layer     = None
+        self._zone_layer = None
+        self._route_layer = None
 
         # Set the local tile cache as the tile source
         if MAPVIEW_AVAILABLE:
@@ -100,12 +101,13 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
         # kivy_garden.mapview accepts a URL template for tile sources.
         # We use a file:// URL pointing to our local cache.
         import os
+
         cache_base = os.path.abspath("data/tiles")
 
         source_dirs = {
-            "osm":       os.path.join(cache_base, "openstreetmap"),
+            "osm": os.path.join(cache_base, "openstreetmap"),
             "satellite": os.path.join(cache_base, "satellite"),
-            "topo":      os.path.join(cache_base, "topo"),
+            "topo": os.path.join(cache_base, "topo"),
         }
 
         source_dir = source_dirs.get(self.tile_source, source_dirs["osm"])
@@ -116,6 +118,7 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
 
         try:
             from kivy_garden.mapview.source import MapSource
+
             self.map_source = MapSource(
                 url=tile_url,
                 min_zoom=6,
@@ -139,8 +142,7 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
     # Marker management
     # ------------------------------------------------------------------
 
-    def update_asset_marker(self, asset_id: str, lat: float, lon: float,
-                            category: str, verification: str):
+    def update_asset_marker(self, asset_id: str, lat: float, lon: float, category: str, verification: str):
         """Add or move an asset marker on the map.
 
         Marker colour indicates verification status:
@@ -158,8 +160,8 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
             return
 
         color_map = {
-            "verified":    "#00e5a0",
-            "unverified":  "#f5a623",
+            "verified": "#00e5a0",
+            "unverified": "#f5a623",
             "compromised": "#ff3b3b",
         }
         marker_color = color_map.get(verification, "#8a9bb0")
@@ -183,8 +185,7 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
         if asset_id in self._asset_markers:
             self.remove_marker(self._asset_markers.pop(asset_id))
 
-    def update_operator_marker(self, callsign: str, lat: float, lon: float,
-                               status: str):
+    def update_operator_marker(self, callsign: str, lat: float, lon: float, status: str):
         """Add or move an operator position marker.
 
         Status colours:
@@ -201,8 +202,8 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
             return
 
         color_map = {
-            "ONLINE":  "#00e5a0",
-            "STALE":   "#f5a623",
+            "ONLINE": "#00e5a0",
+            "STALE": "#f5a623",
             "REVOKED": "#ff3b3b",
         }
         marker_color = color_map.get(status, "#8a9bb0")
@@ -251,10 +252,11 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
     def _draw_placeholder(self):
         """Draw a dark grid placeholder when MapView is unavailable."""
         from kivy.graphics import Rectangle
+
         with self.canvas:
-            Color(0.04, 0.055, 0.078, 1)    # BG_BASE
+            Color(0.04, 0.055, 0.078, 1)  # BG_BASE
             Rectangle(pos=self.pos, size=self.size)
-            Color(0.12, 0.18, 0.24, 1)      # Grid lines
+            Color(0.12, 0.18, 0.24, 1)  # Grid lines
             # Draw a simple grid
             for i in range(0, 2000, 40):
                 Line(points=[i, 0, i, 2000], width=0.5)
@@ -274,7 +276,7 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
     def _hex_to_kivy_color(hex_color: str):
         """Convert hex color string to Kivy [r, g, b, a] list."""
         h = hex_color.lstrip("#")
-        r, g, b = (int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+        r, g, b = (int(h[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
         return [r, g, b, 1.0]
 
 

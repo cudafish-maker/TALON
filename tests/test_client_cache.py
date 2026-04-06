@@ -5,27 +5,34 @@
 # delegates to stdlib sqlite3) so we can test actual SQL round-trips
 # without needing SQLCipher or a display server.
 
-import sys
-import os
 import json
+import os
 import sqlite3
+import sys
 import time
-from unittest.mock import MagicMock, patch
-from dataclasses import asdict
+from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from talon.client.cache import ClientCache, _dataclass_to_row, _row_to_dataclass
 from talon.db.models import (
-    Asset, Channel, Document, Message, Mission, MissionNote,
-    Objective, Operator, SITREP, SITREPEntry, new_id, now,
+    SITREP,
+    Asset,
+    Channel,
+    Document,
+    Message,
+    Mission,
+    MissionNote,
+    Objective,
+    Operator,
+    SITREPEntry,
+    new_id,
 )
-from talon.client.cache import ClientCache, _row_to_dataclass, _dataclass_to_row
-from talon.sync.outbox import Outbox
-
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _make_cache():
     """Create a ClientCache with a real in-memory SQLite DB."""
@@ -33,20 +40,18 @@ def _make_cache():
     cache.db = sqlite3.connect(":memory:")
     # Create the schema — import initialize_tables but use stdlib sqlite3
     from talon.db.database import initialize_tables
+
     initialize_tables(cache.db)
     return cache
 
 
 def _insert_operator(cache, callsign="WOLF-1", role="operator"):
     """Insert an operator directly into the DB."""
-    op = Operator(callsign=callsign, role=role,
-                  reticulum_identity=new_id())
+    op = Operator(callsign=callsign, role=role, reticulum_identity=new_id())
     columns, values = _dataclass_to_row(op)
     placeholders = ", ".join("?" for _ in values)
     col_names = ", ".join(columns)
-    cache.db.execute(
-        f"INSERT INTO operators ({col_names}) VALUES ({placeholders})", values
-    )
+    cache.db.execute(f"INSERT INTO operators ({col_names}) VALUES ({placeholders})", values)
     cache.db.commit()
     return op
 
@@ -55,10 +60,10 @@ def _insert_operator(cache, callsign="WOLF-1", role="operator"):
 # _row_to_dataclass / _dataclass_to_row helpers
 # ==================================================================
 
+
 class TestRowToDataclass:
     def test_basic_roundtrip(self):
-        sitrep = SITREP(id="s1", type="freeform", importance="FLASH",
-                        created_by="WOLF-1")
+        sitrep = SITREP(id="s1", type="freeform", importance="FLASH", created_by="WOLF-1")
         columns, values = _dataclass_to_row(sitrep)
         restored = _row_to_dataclass(SITREP, columns, values)
         assert restored.id == "s1"
@@ -101,6 +106,7 @@ class TestRowToDataclass:
 # get_all()
 # ==================================================================
 
+
 class TestGetAll:
     def test_empty_table(self):
         cache = _make_cache()
@@ -109,8 +115,7 @@ class TestGetAll:
 
     def test_returns_dataclass_instances(self):
         cache = _make_cache()
-        cache.save_sitrep(SITREP(id="s1", type="freeform",
-                                 importance="ROUTINE", created_by="WOLF-1"))
+        cache.save_sitrep(SITREP(id="s1", type="freeform", importance="ROUTINE", created_by="WOLF-1"))
         result = cache.get_all("sitreps")
         assert len(result) == 1
         assert isinstance(result[0], SITREP)
@@ -119,8 +124,7 @@ class TestGetAll:
     def test_multiple_records(self):
         cache = _make_cache()
         for i in range(5):
-            cache.save_asset(Asset(id=f"a{i}", name=f"Asset {i}",
-                                   created_by="WOLF-1"))
+            cache.save_asset(Asset(id=f"a{i}", name=f"Asset {i}", created_by="WOLF-1"))
         result = cache.get_all("assets")
         assert len(result) == 5
 
@@ -142,8 +146,7 @@ class TestGetAll:
 
     def test_missions_table(self):
         cache = _make_cache()
-        cache.save_mission(Mission(id="m1", name="Op Shadow",
-                                   created_by="WOLF-1"))
+        cache.save_mission(Mission(id="m1", name="Op Shadow", created_by="WOLF-1"))
         result = cache.get_all("missions")
         assert len(result) == 1
         assert result[0].name == "Op Shadow"
@@ -157,9 +160,9 @@ class TestGetAll:
 
     def test_documents_table(self):
         cache = _make_cache()
-        cache.save_document(Document(id="d1", title="Field Manual",
-                                     file_type="pdf", file_path="/docs/fm.pdf",
-                                     uploaded_by="WOLF-1"))
+        cache.save_document(
+            Document(id="d1", title="Field Manual", file_type="pdf", file_path="/docs/fm.pdf", uploaded_by="WOLF-1")
+        )
         result = cache.get_all("documents")
         assert len(result) == 1
         assert result[0].title == "Field Manual"
@@ -168,6 +171,7 @@ class TestGetAll:
 # ==================================================================
 # get_sitrep_entries()
 # ==================================================================
+
 
 class TestGetSitrepEntries:
     def test_empty(self):
@@ -178,12 +182,9 @@ class TestGetSitrepEntries:
         cache = _make_cache()
         cache.save_sitrep(SITREP(id="s1", type="freeform", created_by="W1"))
         cache.save_sitrep(SITREP(id="s2", type="freeform", created_by="W1"))
-        cache.save_sitrep_entry(SITREPEntry(id="e1", sitrep_id="s1",
-                                            author="W1", content="Entry 1"))
-        cache.save_sitrep_entry(SITREPEntry(id="e2", sitrep_id="s1",
-                                            author="W1", content="Entry 2"))
-        cache.save_sitrep_entry(SITREPEntry(id="e3", sitrep_id="s2",
-                                            author="W1", content="Other"))
+        cache.save_sitrep_entry(SITREPEntry(id="e1", sitrep_id="s1", author="W1", content="Entry 1"))
+        cache.save_sitrep_entry(SITREPEntry(id="e2", sitrep_id="s1", author="W1", content="Entry 2"))
+        cache.save_sitrep_entry(SITREPEntry(id="e3", sitrep_id="s2", author="W1", content="Other"))
 
         entries = cache.get_sitrep_entries("s1")
         assert len(entries) == 2
@@ -193,12 +194,8 @@ class TestGetSitrepEntries:
         cache = _make_cache()
         cache.save_sitrep(SITREP(id="s1", type="freeform", created_by="W1"))
         t = time.time()
-        cache.save_sitrep_entry(SITREPEntry(id="e1", sitrep_id="s1",
-                                            author="W1", content="First",
-                                            created_at=t))
-        cache.save_sitrep_entry(SITREPEntry(id="e2", sitrep_id="s1",
-                                            author="W1", content="Second",
-                                            created_at=t + 60))
+        cache.save_sitrep_entry(SITREPEntry(id="e1", sitrep_id="s1", author="W1", content="First", created_at=t))
+        cache.save_sitrep_entry(SITREPEntry(id="e2", sitrep_id="s1", author="W1", content="Second", created_at=t + 60))
         entries = cache.get_sitrep_entries("s1")
         assert entries[0].content == "First"
         assert entries[1].content == "Second"
@@ -212,6 +209,7 @@ class TestGetSitrepEntries:
 # get_objectives()
 # ==================================================================
 
+
 class TestGetObjectives:
     def test_empty(self):
         cache = _make_cache()
@@ -221,12 +219,9 @@ class TestGetObjectives:
         cache = _make_cache()
         cache.save_mission(Mission(id="m1", name="Op A", created_by="W1"))
         cache.save_mission(Mission(id="m2", name="Op B", created_by="W1"))
-        cache.save_objective(Objective(id="o1", mission_id="m1",
-                                       description="Take hill"))
-        cache.save_objective(Objective(id="o2", mission_id="m1",
-                                       description="Hold hill"))
-        cache.save_objective(Objective(id="o3", mission_id="m2",
-                                       description="Other"))
+        cache.save_objective(Objective(id="o1", mission_id="m1", description="Take hill"))
+        cache.save_objective(Objective(id="o2", mission_id="m1", description="Hold hill"))
+        cache.save_objective(Objective(id="o3", mission_id="m2", description="Other"))
 
         objs = cache.get_objectives("m1")
         assert len(objs) == 2
@@ -241,6 +236,7 @@ class TestGetObjectives:
 # get_mission_notes()
 # ==================================================================
 
+
 class TestGetMissionNotes:
     def test_empty(self):
         cache = _make_cache()
@@ -249,12 +245,8 @@ class TestGetMissionNotes:
     def test_filters_by_mission_id(self):
         cache = _make_cache()
         cache.save_mission(Mission(id="m1", name="Op A", created_by="W1"))
-        cache._save_record("mission_notes",
-                           MissionNote(id="n1", mission_id="m1",
-                                       author="W1", content="Note 1"))
-        cache._save_record("mission_notes",
-                           MissionNote(id="n2", mission_id="m1",
-                                       author="W1", content="Note 2"))
+        cache._save_record("mission_notes", MissionNote(id="n1", mission_id="m1", author="W1", content="Note 1"))
+        cache._save_record("mission_notes", MissionNote(id="n2", mission_id="m1", author="W1", content="Note 2"))
         notes = cache.get_mission_notes("m1")
         assert len(notes) == 2
 
@@ -262,12 +254,12 @@ class TestGetMissionNotes:
         cache = _make_cache()
         cache.save_mission(Mission(id="m1", name="Op A", created_by="W1"))
         t = time.time()
-        cache._save_record("mission_notes",
-                           MissionNote(id="n1", mission_id="m1", author="W1",
-                                       content="First", created_at=t))
-        cache._save_record("mission_notes",
-                           MissionNote(id="n2", mission_id="m1", author="W1",
-                                       content="Second", created_at=t + 60))
+        cache._save_record(
+            "mission_notes", MissionNote(id="n1", mission_id="m1", author="W1", content="First", created_at=t)
+        )
+        cache._save_record(
+            "mission_notes", MissionNote(id="n2", mission_id="m1", author="W1", content="Second", created_at=t + 60)
+        )
         notes = cache.get_mission_notes("m1")
         assert notes[0].content == "First"
         assert notes[1].content == "Second"
@@ -276,6 +268,7 @@ class TestGetMissionNotes:
 # ==================================================================
 # get_messages()
 # ==================================================================
+
 
 class TestGetMessages:
     def test_empty(self):
@@ -286,12 +279,9 @@ class TestGetMessages:
         cache = _make_cache()
         cache.save_channel(Channel(id="ch1", name="General", type="GENERAL"))
         cache.save_channel(Channel(id="ch2", name="Ops", type="MISSION"))
-        cache.save_message(Message(id="msg1", channel_id="ch1",
-                                    sender="W1", body="Hello"))
-        cache.save_message(Message(id="msg2", channel_id="ch1",
-                                    sender="W2", body="Hi"))
-        cache.save_message(Message(id="msg3", channel_id="ch2",
-                                    sender="W1", body="Other"))
+        cache.save_message(Message(id="msg1", channel_id="ch1", sender="W1", body="Hello"))
+        cache.save_message(Message(id="msg2", channel_id="ch1", sender="W2", body="Hi"))
+        cache.save_message(Message(id="msg3", channel_id="ch2", sender="W1", body="Other"))
 
         msgs = cache.get_messages("ch1")
         assert len(msgs) == 2
@@ -301,10 +291,8 @@ class TestGetMessages:
         cache = _make_cache()
         cache.save_channel(Channel(id="ch1", name="General", type="GENERAL"))
         t = time.time()
-        cache.save_message(Message(id="msg1", channel_id="ch1", sender="W1",
-                                    body="First", created_at=t))
-        cache.save_message(Message(id="msg2", channel_id="ch1", sender="W1",
-                                    body="Second", created_at=t + 60))
+        cache.save_message(Message(id="msg1", channel_id="ch1", sender="W1", body="First", created_at=t))
+        cache.save_message(Message(id="msg2", channel_id="ch1", sender="W1", body="Second", created_at=t + 60))
         msgs = cache.get_messages("ch1")
         assert msgs[0].body == "First"
         assert msgs[1].body == "Second"
@@ -317,6 +305,7 @@ class TestGetMessages:
 # ==================================================================
 # get_channel_members()
 # ==================================================================
+
 
 class TestGetChannelMembers:
     def test_empty(self):
@@ -351,6 +340,7 @@ class TestGetChannelMembers:
 # ==================================================================
 # get_my_callsign()
 # ==================================================================
+
 
 class TestGetMyCallsign:
     def test_no_db_returns_empty(self):
@@ -390,11 +380,11 @@ class TestGetMyCallsign:
 # save methods — write + read round-trips
 # ==================================================================
 
+
 class TestSaveSitrep:
     def test_save_and_retrieve(self):
         cache = _make_cache()
-        sitrep = SITREP(id="s1", type="freeform", importance="FLASH",
-                        created_by="WOLF-1")
+        sitrep = SITREP(id="s1", type="freeform", importance="FLASH", created_by="WOLF-1")
         cache.save_sitrep(sitrep)
         result = cache.get_all("sitreps")
         assert len(result) == 1
@@ -403,18 +393,15 @@ class TestSaveSitrep:
 
     def test_sets_sync_state_pending(self):
         cache = _make_cache()
-        sitrep = SITREP(id="s1", type="freeform", created_by="W1",
-                        sync_state="synced")
+        sitrep = SITREP(id="s1", type="freeform", created_by="W1", sync_state="synced")
         cache.save_sitrep(sitrep)
         result = cache.get_all("sitreps")
         assert result[0].sync_state == "pending"
 
     def test_update_existing(self):
         cache = _make_cache()
-        cache.save_sitrep(SITREP(id="s1", type="freeform",
-                                 importance="ROUTINE", created_by="W1"))
-        cache.save_sitrep(SITREP(id="s1", type="freeform",
-                                 importance="FLASH", created_by="W1"))
+        cache.save_sitrep(SITREP(id="s1", type="freeform", importance="ROUTINE", created_by="W1"))
+        cache.save_sitrep(SITREP(id="s1", type="freeform", importance="FLASH", created_by="W1"))
         result = cache.get_all("sitreps")
         assert len(result) == 1
         assert result[0].importance == "FLASH"
@@ -424,8 +411,7 @@ class TestSaveSitrepEntry:
     def test_save_and_retrieve(self):
         cache = _make_cache()
         cache.save_sitrep(SITREP(id="s1", type="freeform", created_by="W1"))
-        entry = SITREPEntry(id="e1", sitrep_id="s1", author="W1",
-                            content="Contact report")
+        entry = SITREPEntry(id="e1", sitrep_id="s1", author="W1", content="Contact report")
         cache.save_sitrep_entry(entry)
         entries = cache.get_sitrep_entries("s1")
         assert len(entries) == 1
@@ -435,8 +421,7 @@ class TestSaveSitrepEntry:
 class TestSaveAsset:
     def test_save_and_retrieve(self):
         cache = _make_cache()
-        asset = Asset(id="a1", name="Supply Cache Alpha",
-                      category="SUPPLY", created_by="WOLF-1")
+        asset = Asset(id="a1", name="Supply Cache Alpha", category="SUPPLY", created_by="WOLF-1")
         cache.save_asset(asset)
         result = cache.get_all("assets")
         assert len(result) == 1
@@ -445,8 +430,7 @@ class TestSaveAsset:
     def test_updates_timestamp(self):
         cache = _make_cache()
         old_time = time.time() - 3600
-        asset = Asset(id="a1", name="Cache", created_by="W1",
-                      updated_at=old_time)
+        asset = Asset(id="a1", name="Cache", created_by="W1", updated_at=old_time)
         cache.save_asset(asset)
         result = cache.get_all("assets")
         assert result[0].updated_at > old_time
@@ -455,8 +439,7 @@ class TestSaveAsset:
 class TestSaveMission:
     def test_save_and_retrieve(self):
         cache = _make_cache()
-        mission = Mission(id="m1", name="Op Nightfall", status="ACTIVE",
-                          created_by="WOLF-1")
+        mission = Mission(id="m1", name="Op Nightfall", status="ACTIVE", created_by="WOLF-1")
         cache.save_mission(mission)
         result = cache.get_all("missions")
         assert len(result) == 1
@@ -466,8 +449,7 @@ class TestSaveMission:
     def test_updates_timestamp(self):
         cache = _make_cache()
         old_time = time.time() - 3600
-        mission = Mission(id="m1", name="Op A", created_by="W1",
-                          updated_at=old_time)
+        mission = Mission(id="m1", name="Op A", created_by="W1", updated_at=old_time)
         cache.save_mission(mission)
         result = cache.get_all("missions")
         assert result[0].updated_at > old_time
@@ -477,8 +459,7 @@ class TestSaveObjective:
     def test_save_and_retrieve(self):
         cache = _make_cache()
         cache.save_mission(Mission(id="m1", name="Op A", created_by="W1"))
-        obj = Objective(id="o1", mission_id="m1", description="Secure bridge",
-                        status="IN_PROGRESS")
+        obj = Objective(id="o1", mission_id="m1", description="Secure bridge", status="IN_PROGRESS")
         cache.save_objective(obj)
         objs = cache.get_objectives("m1")
         assert len(objs) == 1
@@ -490,8 +471,7 @@ class TestSaveMessage:
     def test_save_and_retrieve(self):
         cache = _make_cache()
         cache.save_channel(Channel(id="ch1", name="General", type="GENERAL"))
-        msg = Message(id="msg1", channel_id="ch1", sender="WOLF-1",
-                      body="All stations, SITREP follows")
+        msg = Message(id="msg1", channel_id="ch1", sender="WOLF-1", body="All stations, SITREP follows")
         cache.save_message(msg)
         msgs = cache.get_messages("ch1")
         assert len(msgs) == 1
@@ -501,8 +481,7 @@ class TestSaveMessage:
 class TestSaveChannel:
     def test_save_and_retrieve(self):
         cache = _make_cache()
-        ch = Channel(id="ch1", name="Mission Ops", type="MISSION",
-                     mission_id="m1")
+        ch = Channel(id="ch1", name="Mission Ops", type="MISSION", mission_id="m1")
         cache.save_channel(ch)
         result = cache.get_all("channels")
         assert len(result) == 1
@@ -513,10 +492,15 @@ class TestSaveChannel:
 class TestSaveDocument:
     def test_save_and_retrieve(self):
         cache = _make_cache()
-        doc = Document(id="d1", title="Field Manual", file_type="pdf",
-                       file_path="/docs/fm.pdf", file_size=1024,
-                       tags=["reference", "tactics"],
-                       uploaded_by="WOLF-1")
+        doc = Document(
+            id="d1",
+            title="Field Manual",
+            file_type="pdf",
+            file_path="/docs/fm.pdf",
+            file_size=1024,
+            tags=["reference", "tactics"],
+            uploaded_by="WOLF-1",
+        )
         cache.save_document(doc)
         result = cache.get_all("documents")
         assert len(result) == 1
@@ -535,6 +519,7 @@ class TestSaveNoDb:
 # ==================================================================
 # queue_change() and outbox integration
 # ==================================================================
+
 
 class TestQueueChange:
     def test_queues_with_operation(self):
@@ -574,6 +559,4 @@ class TestSyncClientQueueChange:
         mock_cache = MagicMock()
         sync = SyncClient(cache=mock_cache)
         sync.queue_change("assets", "insert", {"id": "a1", "name": "Cache"})
-        mock_cache.queue_change.assert_called_once_with(
-            "assets", "insert", {"id": "a1", "name": "Cache"}
-        )
+        mock_cache.queue_change.assert_called_once_with("assets", "insert", {"id": "a1", "name": "Cache"})

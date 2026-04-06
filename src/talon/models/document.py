@@ -15,10 +15,15 @@
 from talon.db.models import Document
 
 
-def create_document(name: str, created_by: str, file_path: str,
-                    file_size: int = 0, mime_type: str = "",
-                    access: str = "ALL",
-                    tags: list = None) -> Document:
+def create_document(
+    name: str,
+    created_by: str,
+    file_path: str,
+    file_size: int = 0,
+    mime_type: str = "",
+    access: str = "ALL",
+    tags: list = None,
+) -> Document:
     """Create a new document record.
 
     Args:
@@ -63,9 +68,9 @@ def validate_document(doc: Document) -> list:
     return errors
 
 
-def can_view_document(doc: Document, operator_callsign: str,
-                      operator_role: str,
-                      operator_missions: list = None) -> bool:
+def can_view_document(
+    doc: Document, operator_callsign: str, operator_role: str, operator_missions: list = None
+) -> bool:
     """Check if an operator is allowed to view a document.
 
     Args:
@@ -89,8 +94,7 @@ def can_view_document(doc: Document, operator_callsign: str,
     return False
 
 
-def can_delete_document(operator_callsign: str, doc: Document,
-                        operator_role: str) -> bool:
+def can_delete_document(operator_callsign: str, doc: Document, operator_role: str) -> bool:
     """Check if an operator can delete a document.
 
     Allowed for the uploader or the server operator.

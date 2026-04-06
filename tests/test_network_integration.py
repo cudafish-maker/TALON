@@ -35,6 +35,7 @@ from talon.net.transport import TransportManager
 # Helpers
 # ================================================================
 
+
 def make_mock_identity(hexhash="abc123"):
     identity = MagicMock(spec=RNS.Identity)
     identity.hexhash = hexhash
@@ -134,16 +135,15 @@ def make_client_config():
 # 1. Reticulum config generation & validation
 # ================================================================
 
-class TestReticulumConfigValidation:
 
+class TestReticulumConfigValidation:
     def test_server_config_is_well_formed(self):
         """Generated server config should have all required sections."""
         from talon.net.reticulum import write_reticulum_config
+
         config = make_server_config()
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = write_reticulum_config(
-                config, is_server=True, config_dir=tmpdir
-            )
+            config_dir = write_reticulum_config(config, is_server=True, config_dir=tmpdir)
             with open(os.path.join(config_dir, "config")) as f:
                 content = f.read()
 
@@ -155,11 +155,10 @@ class TestReticulumConfigValidation:
     def test_client_config_is_well_formed(self):
         """Generated client config should have transport enabled."""
         from talon.net.reticulum import write_reticulum_config
+
         config = make_client_config()
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = write_reticulum_config(
-                config, is_server=False, config_dir=tmpdir
-            )
+            config_dir = write_reticulum_config(config, is_server=False, config_dir=tmpdir)
             with open(os.path.join(config_dir, "config")) as f:
                 content = f.read()
 
@@ -168,11 +167,10 @@ class TestReticulumConfigValidation:
     def test_server_config_has_yggdrasil_and_rnode(self):
         """Server config should include both configured interfaces."""
         from talon.net.reticulum import write_reticulum_config
+
         config = make_server_config()
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = write_reticulum_config(
-                config, is_server=True, config_dir=tmpdir
-            )
+            config_dir = write_reticulum_config(config, is_server=True, config_dir=tmpdir)
             with open(os.path.join(config_dir, "config")) as f:
                 content = f.read()
 
@@ -185,11 +183,10 @@ class TestReticulumConfigValidation:
     def test_client_config_has_yggdrasil_and_rnode(self):
         """Client config should have client-style interfaces."""
         from talon.net.reticulum import write_reticulum_config
+
         config = make_client_config()
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = write_reticulum_config(
-                config, is_server=False, config_dir=tmpdir
-            )
+            config_dir = write_reticulum_config(config, is_server=False, config_dir=tmpdir)
             with open(os.path.join(config_dir, "config")) as f:
                 content = f.read()
 
@@ -200,11 +197,10 @@ class TestReticulumConfigValidation:
     def test_disabled_interfaces_excluded(self):
         """Disabled TCP should not appear in generated config."""
         from talon.net.reticulum import write_reticulum_config
+
         config = make_server_config()
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = write_reticulum_config(
-                config, is_server=True, config_dir=tmpdir
-            )
+            config_dir = write_reticulum_config(config, is_server=True, config_dir=tmpdir)
             with open(os.path.join(config_dir, "config")) as f:
                 content = f.read()
 
@@ -213,6 +209,7 @@ class TestReticulumConfigValidation:
     def test_rnode_override_replaces_yaml(self):
         """RNode override from hardware detection should replace YAML config."""
         from talon.net.reticulum import write_reticulum_config
+
         config = make_server_config()
         override = {
             "type": "RNodeInterface",
@@ -226,7 +223,9 @@ class TestReticulumConfigValidation:
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = write_reticulum_config(
-                config, is_server=True, config_dir=tmpdir,
+                config,
+                is_server=True,
+                config_dir=tmpdir,
                 rnode_override=override,
             )
             with open(os.path.join(config_dir, "config")) as f:
@@ -240,6 +239,7 @@ class TestReticulumConfigValidation:
     def test_config_file_is_rewritable(self):
         """Regenerating config should overwrite the previous one."""
         from talon.net.reticulum import write_reticulum_config
+
         config = make_server_config()
         with tempfile.TemporaryDirectory() as tmpdir:
             write_reticulum_config(config, is_server=True, config_dir=tmpdir)
@@ -257,22 +257,18 @@ class TestReticulumConfigValidation:
     def test_config_with_all_interfaces(self):
         """Config with all four interfaces should generate all four sections."""
         from talon.net.reticulum import write_reticulum_config
+
         config = {
             "reticulum": {"transport_node": True},
             "interfaces": {
-                "yggdrasil": {"enabled": True, "listen_address": "200::1",
-                              "listen_port": 4243},
+                "yggdrasil": {"enabled": True, "listen_address": "200::1", "listen_port": 4243},
                 "i2p": {"enabled": True, "listen_port": 4244},
-                "tcp": {"enabled": True, "listen_port": 4242,
-                        "bind_address": "0.0.0.0"},
-                "rnode": {"enabled": True, "port": "/dev/ttyUSB0",
-                          "frequency": 915000000},
+                "tcp": {"enabled": True, "listen_port": 4242, "bind_address": "0.0.0.0"},
+                "rnode": {"enabled": True, "port": "/dev/ttyUSB0", "frequency": 915000000},
             },
         }
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = write_reticulum_config(
-                config, is_server=True, config_dir=tmpdir
-            )
+            config_dir = write_reticulum_config(config, is_server=True, config_dir=tmpdir)
             with open(os.path.join(config_dir, "config")) as f:
                 content = f.read()
 
@@ -286,8 +282,8 @@ class TestReticulumConfigValidation:
 # 2. Full startup sequence (config → RNode → Reticulum)
 # ================================================================
 
-class TestServerStartupSequence:
 
+class TestServerStartupSequence:
     def test_server_setup_rnode_detects_hardware(self):
         """setup_rnode should create RNodeManager and attempt detection."""
         from talon.server.app import TalonServer
@@ -296,10 +292,13 @@ class TestServerStartupSequence:
         server.config = make_server_config()
         server.rnode_manager = None
 
-        with patch("talon.platform.detect_rnode_ports", return_value=[]), \
-             patch("talon.platform.check_serial_port",
-                   return_value={"exists": False, "accessible": False,
-                                 "error": "not found"}):
+        with (
+            patch("talon.platform.detect_rnode_ports", return_value=[]),
+            patch(
+                "talon.platform.check_serial_port",
+                return_value={"exists": False, "accessible": False, "error": "not found"},
+            ),
+        ):
             server.setup_rnode()
 
         assert server.rnode_manager is not None
@@ -328,10 +327,11 @@ class TestServerStartupSequence:
         server.link_manager = None
         server.identity = None
 
-        with patch("talon.server.app.initialize_reticulum") as mock_init, \
-             patch("talon.server.app.create_identity",
-                   return_value=make_mock_identity("server-id")), \
-             patch("talon.server.app.ServerLinkManager") as mock_slm_cls:
+        with (
+            patch("talon.server.app.initialize_reticulum") as mock_init,
+            patch("talon.server.app.create_identity", return_value=make_mock_identity("server-id")),
+            patch("talon.server.app.ServerLinkManager") as mock_slm_cls,
+        ):
             mock_slm = MagicMock()
             mock_slm_cls.return_value = mock_slm
             mock_init.return_value = MagicMock()
@@ -360,10 +360,11 @@ class TestServerStartupSequence:
         mgr._port = "/dev/ttyACM0"
         server.rnode_manager = mgr
 
-        with patch("talon.server.app.initialize_reticulum") as mock_init, \
-             patch("talon.server.app.create_identity",
-                   return_value=make_mock_identity("server-id")), \
-             patch("talon.server.app.ServerLinkManager") as mock_slm_cls:
+        with (
+            patch("talon.server.app.initialize_reticulum") as mock_init,
+            patch("talon.server.app.create_identity", return_value=make_mock_identity("server-id")),
+            patch("talon.server.app.ServerLinkManager") as mock_slm_cls,
+        ):
             mock_slm = MagicMock()
             mock_slm_cls.return_value = mock_slm
             mock_init.return_value = MagicMock()
@@ -378,7 +379,6 @@ class TestServerStartupSequence:
 
 
 class TestClientStartupSequence:
-
     def test_client_setup_rnode_detects_hardware(self):
         """Client setup_rnode should create RNodeManager."""
         from talon.client.app import TalonClient
@@ -387,11 +387,14 @@ class TestClientStartupSequence:
         client.config = make_client_config()
         client.rnode_manager = None
 
-        with patch("talon.platform.IS_ANDROID", False), \
-             patch("talon.platform.detect_rnode_ports", return_value=[]), \
-             patch("talon.platform.check_serial_port",
-                   return_value={"exists": False, "accessible": False,
-                                 "error": "not found"}):
+        with (
+            patch("talon.platform.IS_ANDROID", False),
+            patch("talon.platform.detect_rnode_ports", return_value=[]),
+            patch(
+                "talon.platform.check_serial_port",
+                return_value={"exists": False, "accessible": False, "error": "not found"},
+            ),
+        ):
             client.setup_rnode()
 
         assert client.rnode_manager is not None
@@ -418,9 +421,10 @@ class TestClientStartupSequence:
         client.rnode_manager = None
         client.identity = None
 
-        with patch("talon.client.app.initialize_reticulum") as mock_init, \
-             patch("talon.client.app.create_identity",
-                   return_value=make_mock_identity("client-id")):
+        with (
+            patch("talon.client.app.initialize_reticulum") as mock_init,
+            patch("talon.client.app.create_identity", return_value=make_mock_identity("client-id")),
+        ):
             mock_init.return_value = MagicMock()
             client.setup_network()
 
@@ -433,8 +437,8 @@ class TestClientStartupSequence:
 # 3. Server-client link lifecycle over mock RNS
 # ================================================================
 
-class TestLinkLifecycle:
 
+class TestLinkLifecycle:
     def test_server_accept_client_and_exchange_sync(self):
         """Full round-trip: server accepts link, client sends sync, server responds."""
         identity = make_mock_identity("server-1")
@@ -442,6 +446,7 @@ class TestLinkLifecycle:
 
         # Wire up a simple sync handler
         sync_responses = []
+
         def on_sync(client_hash, message):
             sync_responses.append(client_hash)
             return {
@@ -449,10 +454,10 @@ class TestLinkLifecycle:
                 "updates": {"sitreps": [{"id": "s1", "title": "Test"}]},
                 "timestamp": time.time(),
             }
+
         slm.on_sync_message = on_sync
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         # Client connects
@@ -484,6 +489,7 @@ class TestLinkLifecycle:
         slm = ServerLinkManager(identity)
 
         enrollment_calls = []
+
         def on_enrollment(client_hash, message):
             enrollment_calls.append(client_hash)
             return {
@@ -491,10 +497,10 @@ class TestLinkLifecycle:
                 "success": True,
                 "lease": {"token": "abc", "expires_at": time.time() + 86400},
             }
+
         slm.on_enrollment = on_enrollment
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="new-client")
@@ -521,11 +527,9 @@ class TestLinkLifecycle:
         """Multiple clients should have independent links."""
         identity = make_mock_identity("server-1")
         slm = ServerLinkManager(identity)
-        slm.on_sync_message = lambda h, m: {"type": "sync_response",
-                                             "updates": {}}
+        slm.on_sync_message = lambda h, m: {"type": "sync_response", "updates": {}}
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link1 = make_mock_link(remote_hexhash="client-1")
@@ -549,8 +553,7 @@ class TestLinkLifecycle:
         identity = make_mock_identity("server-1")
         slm = ServerLinkManager(identity)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -559,10 +562,13 @@ class TestLinkLifecycle:
         with patch("talon.net.link_manager.RNS.Packet") as mock_pkt_cls:
             mock_pkt = MagicMock()
             mock_pkt_cls.return_value = mock_pkt
-            result = slm.send_to_client("client-1", {
-                "type": "data_changed",
-                "tables": ["sitreps"],
-            })
+            result = slm.send_to_client(
+                "client-1",
+                {
+                    "type": "data_changed",
+                    "tables": ["sitreps"],
+                },
+            )
 
         assert result is True
         mock_pkt.send.assert_called_once()
@@ -579,9 +585,7 @@ class TestLinkLifecycle:
         # Simulate server response in background
         def respond():
             time.sleep(0.05)
-            resp = {"type": "sync_response", "updates": {
-                "sitreps": [{"id": "s1"}]
-            }}
+            resp = {"type": "sync_response", "updates": {"sitreps": [{"id": "s1"}]}}
             clm._packet_received(json.dumps(resp).encode("utf-8"))
 
         t = threading.Thread(target=respond)
@@ -590,9 +594,7 @@ class TestLinkLifecycle:
         with patch("talon.net.link_manager.RNS.Packet") as mock_pkt_cls:
             mock_pkt = MagicMock()
             mock_pkt_cls.return_value = mock_pkt
-            result = clm.send_and_receive(
-                {"type": "sync_request", "versions": {}}, timeout=2
-            )
+            result = clm.send_and_receive({"type": "sync_request", "versions": {}}, timeout=2)
 
         t.join()
         assert result is not None
@@ -604,8 +606,8 @@ class TestLinkLifecycle:
 # 4. Transport fallback logic
 # ================================================================
 
-class TestTransportFallback:
 
+class TestTransportFallback:
     def test_fallback_yggdrasil_to_tcp(self):
         """When Yggdrasil drops, TCP should become active."""
         tm = TransportManager()
@@ -659,6 +661,7 @@ class TestTransportFallback:
     def test_connection_manager_detect_from_config(self):
         """ConnectionManager should detect transports from YAML config."""
         from talon.client.connection import ConnectionManager
+
         config = make_client_config()
         cm = ConnectionManager(config=config)
         cm.detect_transports()
@@ -671,6 +674,7 @@ class TestTransportFallback:
     def test_connection_manager_broadband_check(self):
         """is_broadband should reflect the current transport."""
         from talon.client.connection import ConnectionManager
+
         cm = ConnectionManager(config={})
         cm.is_connected = True
         cm.current_transport = TransportType.RNODE
@@ -686,16 +690,19 @@ class TestTransportFallback:
 # 5. Heartbeat over transport
 # ================================================================
 
-class TestHeartbeatIntegration:
 
+class TestHeartbeatIntegration:
     def test_heartbeat_monitor_detects_stale(self):
         """Monitor should detect clients that miss heartbeats."""
         monitor = HeartbeatMonitor(missed_threshold=2)
-        monitor.record_heartbeat("WOLF-1", {
-            "timestamp": time.time() - 500,
-            "position": None,
-            "transport": None,
-        })
+        monitor.record_heartbeat(
+            "WOLF-1",
+            {
+                "timestamp": time.time() - 500,
+                "position": None,
+                "transport": None,
+            },
+        )
         # Override last_heartbeat to simulate old heartbeat
         monitor._clients["WOLF-1"]["last_heartbeat"] = time.time() - 500
 
@@ -705,11 +712,14 @@ class TestHeartbeatIntegration:
     def test_heartbeat_monitor_fresh_client_not_stale(self):
         """Recently heard client should not be stale."""
         monitor = HeartbeatMonitor(missed_threshold=3)
-        monitor.record_heartbeat("WOLF-2", {
-            "timestamp": time.time(),
-            "position": (35.0, -80.0),
-            "transport": "yggdrasil",
-        })
+        monitor.record_heartbeat(
+            "WOLF-2",
+            {
+                "timestamp": time.time(),
+                "position": (35.0, -80.0),
+                "transport": "yggdrasil",
+            },
+        )
 
         stale = monitor.check_stale()
         assert "WOLF-2" not in stale
@@ -734,11 +744,13 @@ class TestHeartbeatIntegration:
         with patch("talon.net.link_manager.RNS.Packet") as mock_pkt_cls:
             mock_pkt = MagicMock()
             mock_pkt_cls.return_value = mock_pkt
-            clm.send_heartbeat({
-                "timestamp": time.time(),
-                "position": (35.0, -80.0),
-                "callsign": "WOLF-1",
-            })
+            clm.send_heartbeat(
+                {
+                    "timestamp": time.time(),
+                    "position": (35.0, -80.0),
+                    "callsign": "WOLF-1",
+                }
+            )
 
         sent_bytes = mock_pkt_cls.call_args[0][1]
         payload = json.loads(sent_bytes.decode("utf-8"))
@@ -751,8 +763,8 @@ class TestHeartbeatIntegration:
 # 6. Sync round-trip (mock send_fn)
 # ================================================================
 
-class TestSyncRoundTrip:
 
+class TestSyncRoundTrip:
     def test_full_sync_happy_path(self):
         """SyncClient.full_sync should complete a full sync cycle."""
         from talon.client.sync_client import SyncClient
@@ -763,10 +775,11 @@ class TestSyncRoundTrip:
         client = SyncClient(cache=mock_cache)
 
         # Mock the protocol functions
-        with patch("talon.client.sync_client.build_sync_request") as mock_req, \
-             patch("talon.client.sync_client.build_client_changes") as mock_changes, \
-             patch("talon.client.sync_client.apply_sync_response"):
-
+        with (
+            patch("talon.client.sync_client.build_sync_request") as mock_req,
+            patch("talon.client.sync_client.build_client_changes") as mock_changes,
+            patch("talon.client.sync_client.apply_sync_response"),
+        ):
             mock_req.return_value = {
                 "type": "sync_request",
                 "versions": {"sitreps": 0},
@@ -807,10 +820,11 @@ class TestSyncRoundTrip:
 
         client = SyncClient(cache=mock_cache)
 
-        with patch("talon.client.sync_client.build_sync_request") as mock_req, \
-             patch("talon.client.sync_client.build_client_changes") as mock_changes, \
-             patch("talon.client.sync_client.apply_sync_response"):
-
+        with (
+            patch("talon.client.sync_client.build_sync_request") as mock_req,
+            patch("talon.client.sync_client.build_client_changes") as mock_changes,
+            patch("talon.client.sync_client.apply_sync_response"),
+        ):
             mock_req.return_value = {
                 "type": "sync_request",
                 "versions": {},
@@ -824,6 +838,7 @@ class TestSyncRoundTrip:
             }
 
             calls = []
+
             def mock_send_fn(message):
                 calls.append(message["type"])
                 if message.get("type") == "sync_request":
@@ -861,8 +876,8 @@ class TestSyncRoundTrip:
 # 7. RNode manager integration with startup
 # ================================================================
 
-class TestRNodeStartupIntegration:
 
+class TestRNodeStartupIntegration:
     def test_rnode_detect_with_configured_port(self):
         """RNodeManager should check configured port first."""
         from talon.net.rnode import RNodeManager, RNodeStatus
@@ -870,10 +885,10 @@ class TestRNodeStartupIntegration:
         config = {"port": "/dev/ttyUSB0", "frequency": 915000000}
         mgr = RNodeManager(config)
 
-        with patch("talon.platform.check_serial_port",
-                   return_value={"exists": True, "accessible": True,
-                                 "error": None}), \
-             patch("talon.platform.detect_rnode_ports", return_value=[]):
+        with (
+            patch("talon.platform.check_serial_port", return_value={"exists": True, "accessible": True, "error": None}),
+            patch("talon.platform.detect_rnode_ports", return_value=[]),
+        ):
             found = mgr.detect()
 
         assert found is True
@@ -887,19 +902,25 @@ class TestRNodeStartupIntegration:
         config = {"port": "/dev/ttyNONE", "frequency": 915000000}
         mgr = RNodeManager(config)
 
-        auto_detected = [{
-            "port": "/dev/ttyACM0",
-            "description": "CP2102 USB to UART",
-            "hwid": "USB VID:PID=10C4:EA60",
-            "vid": 0x10C4, "pid": 0xEA60,
-            "serial_number": "", "manufacturer": "Silicon Labs",
-        }]
+        auto_detected = [
+            {
+                "port": "/dev/ttyACM0",
+                "description": "CP2102 USB to UART",
+                "hwid": "USB VID:PID=10C4:EA60",
+                "vid": 0x10C4,
+                "pid": 0xEA60,
+                "serial_number": "",
+                "manufacturer": "Silicon Labs",
+            }
+        ]
 
-        with patch("talon.platform.check_serial_port",
-                   return_value={"exists": False, "accessible": False,
-                                 "error": "not found"}), \
-             patch("talon.platform.detect_rnode_ports",
-                   return_value=auto_detected):
+        with (
+            patch(
+                "talon.platform.check_serial_port",
+                return_value={"exists": False, "accessible": False, "error": "not found"},
+            ),
+            patch("talon.platform.detect_rnode_ports", return_value=auto_detected),
+        ):
             found = mgr.detect()
 
         assert found is True
@@ -945,7 +966,9 @@ class TestRNodeStartupIntegration:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = write_reticulum_config(
-                config, is_server=True, config_dir=tmpdir,
+                config,
+                is_server=True,
+                config_dir=tmpdir,
                 rnode_override=rnode_override,
             )
             with open(os.path.join(config_dir, "config")) as f:
@@ -962,16 +985,15 @@ class TestRNodeStartupIntegration:
 # 8. Error conditions and edge cases
 # ================================================================
 
-class TestNetworkErrorConditions:
 
+class TestNetworkErrorConditions:
     def test_server_handles_malformed_packet(self):
         """Server should silently ignore malformed JSON packets."""
         identity = make_mock_identity("server-1")
         slm = ServerLinkManager(identity)
         slm.on_sync_message = MagicMock()
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -987,8 +1009,7 @@ class TestNetworkErrorConditions:
         slm = ServerLinkManager(identity)
         slm.on_sync_message = MagicMock()
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -1026,8 +1047,7 @@ class TestNetworkErrorConditions:
         identity = make_mock_identity("server-1")
         slm = ServerLinkManager(identity)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link = make_mock_link(remote_hexhash="client-1")
@@ -1042,8 +1062,7 @@ class TestNetworkErrorConditions:
         identity = make_mock_identity("server-1")
         slm = ServerLinkManager(identity)
 
-        with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()):
+        with patch("talon.net.link_manager.RNS.Destination", return_value=make_mock_destination()):
             slm.start()
 
         link1 = make_mock_link(remote_hexhash="client-1")

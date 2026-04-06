@@ -18,10 +18,7 @@ log = logging.getLogger(__name__)
 
 def is_android() -> bool:
     """Check if we're running on Android."""
-    return (
-        hasattr(sys, "getandroidapilevel")
-        or "ANDROID_ROOT" in os.environ
-    )
+    return hasattr(sys, "getandroidapilevel") or "ANDROID_ROOT" in os.environ
 
 
 def get_usb_manager():
@@ -35,6 +32,7 @@ def get_usb_manager():
 
     try:
         from jnius import autoclass  # type: ignore
+
         PythonActivity = autoclass("org.kivy.android.PythonActivity")
         Context = autoclass("android.content.Context")
         activity = PythonActivity.mActivity
@@ -63,12 +61,14 @@ def list_usb_devices() -> list:
         devices = []
         for name in device_list.keySet().toArray():
             device = device_list.get(name)
-            devices.append({
-                "device_name": device.getDeviceName(),
-                "vendor_id": device.getVendorId(),
-                "product_id": device.getProductId(),
-                "manufacturer": _safe_get_manufacturer(device),
-            })
+            devices.append(
+                {
+                    "device_name": device.getDeviceName(),
+                    "vendor_id": device.getVendorId(),
+                    "product_id": device.getProductId(),
+                    "manufacturer": _safe_get_manufacturer(device),
+                }
+            )
         return devices
     except Exception as exc:
         log.warning("Could not list USB devices: %s", exc)
@@ -142,6 +142,7 @@ def request_usb_permission(device_name: str = None, callback=None) -> bool:
 
     try:
         from jnius import autoclass  # type: ignore
+
         PythonActivity = autoclass("org.kivy.android.PythonActivity")
         Context = autoclass("android.content.Context")
         PendingIntent = autoclass("android.app.PendingIntent")
@@ -166,8 +167,7 @@ def request_usb_permission(device_name: str = None, callback=None) -> bool:
 
         # Already have permission
         if usb_manager.hasPermission(device):
-            log.info("USB permission already granted for %s",
-                     device.getDeviceName())
+            log.info("USB permission already granted for %s", device.getDeviceName())
             if callback:
                 callback(True)
             return True
@@ -175,9 +175,7 @@ def request_usb_permission(device_name: str = None, callback=None) -> bool:
         # Request permission — Android shows a system dialog
         ACTION_USB_PERMISSION = "org.talon.USB_PERMISSION"
         intent = Intent(ACTION_USB_PERMISSION)
-        pending = PendingIntent.getBroadcast(
-            activity, 0, intent, PendingIntent.FLAG_IMMUTABLE
-        )
+        pending = PendingIntent.getBroadcast(activity, 0, intent, PendingIntent.FLAG_IMMUTABLE)
         usb_manager.requestPermission(device, pending)
         log.info("USB permission requested for %s", device.getDeviceName())
         return True

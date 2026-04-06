@@ -5,18 +5,16 @@
 # Kivy is mocked via conftest.py. Tests exercise state management,
 # navigation logic, property defaults, and helper methods.
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from unittest.mock import MagicMock, patch, PropertyMock
-import time
-
+from unittest.mock import MagicMock, patch
 
 # ================================================================
 # Client App — TalonApp
 # ================================================================
-
 from talon.ui.app import TalonApp
 
 
@@ -30,15 +28,15 @@ class TestTalonAppHexToRgba:
     def test_tactical_green(self):
         r, g, b, a = TalonApp._hex_to_rgba("#00e5a0")
         assert r == 0.0
-        assert abs(g - 229/255) < 0.001
-        assert abs(b - 160/255) < 0.001
+        assert abs(g - 229 / 255) < 0.001
+        assert abs(b - 160 / 255) < 0.001
         assert a == 1.0
 
     def test_base_bg(self):
         r, g, b, a = TalonApp._hex_to_rgba("#0a0e14")
-        assert r == 10/255
-        assert abs(g - 14/255) < 0.001
-        assert abs(b - 20/255) < 0.001
+        assert r == 10 / 255
+        assert abs(g - 14 / 255) < 0.001
+        assert abs(b - 20 / 255) < 0.001
 
     def test_alpha_always_one(self):
         _, _, _, a = TalonApp._hex_to_rgba("#ff3b3b")
@@ -222,7 +220,7 @@ class TestLockScreenPolling:
 # MainScreen
 # ================================================================
 
-from talon.ui.screens.main import MainScreen, NAV_ITEMS
+from talon.ui.screens.main import NAV_ITEMS, MainScreen
 
 
 class TestMainScreenNavItems:
@@ -390,7 +388,7 @@ class TestSITREPPanel:
 # Assets panel — verification color map
 # ================================================================
 
-from talon.ui.screens.assets import AssetsPanel, VERIFY_COLORS
+from talon.ui.screens.assets import VERIFY_COLORS, AssetsPanel
 
 
 class TestVerifyColors:
@@ -426,7 +424,7 @@ class TestAssetsPanel:
 # Missions panel — status color maps
 # ================================================================
 
-from talon.ui.screens.missions import MissionsPanel, STATUS_COLORS, OBJ_STATUS_COLORS
+from talon.ui.screens.missions import OBJ_STATUS_COLORS, STATUS_COLORS, MissionsPanel
 
 
 class TestMissionStatusColors:
@@ -482,7 +480,7 @@ class TestChatPanel:
 # Documents panel — access color map
 # ================================================================
 
-from talon.ui.screens.documents import DocumentsPanel, ACCESS_COLORS
+from talon.ui.screens.documents import ACCESS_COLORS, DocumentsPanel
 
 
 class TestAccessColors:

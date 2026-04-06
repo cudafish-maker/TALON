@@ -1,22 +1,26 @@
 # tests/test_server.py
 # Tests for server-side logic (auth, audit, client registry, notifications).
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from talon.server.auth import generate_enrollment_token, enroll_client
 from talon.server.audit import (
-    log_event, format_audit_entry,
-    log_sitrep_created, log_client_enrolled,
+    format_audit_entry,
+    log_event,
+    log_sitrep_created,
 )
+from talon.server.auth import enroll_client, generate_enrollment_token
 from talon.server.client_registry import ClientRegistry
 from talon.server.notifications import (
-    build_notification, sitrep_notification, chat_notification,
+    build_notification,
+    chat_notification,
+    sitrep_notification,
 )
 
-
 # ---------- Auth / Enrollment ----------
+
 
 def test_enrollment_token_format():
     """Enrollment token should be a 32-character hex string."""
@@ -37,8 +41,7 @@ def test_enroll_valid_token():
     valid_tokens = {token: {"used": False}}
 
     server_secret = b"test-server-secret-key"
-    result = enroll_client(token, "identity-hash-123", "Alpha", valid_tokens,
-                           server_secret)
+    result = enroll_client(token, "identity-hash-123", "Alpha", valid_tokens, server_secret)
     assert result["success"] is True
     assert result["callsign"] == "Alpha"
 
@@ -47,8 +50,7 @@ def test_enroll_invalid_token():
     """Enrollment with an invalid token should fail."""
     valid_tokens = {}
     server_secret = b"test-server-secret-key"
-    result = enroll_client("bad-token", "identity-hash", "Alpha", valid_tokens,
-                           server_secret)
+    result = enroll_client("bad-token", "identity-hash", "Alpha", valid_tokens, server_secret)
     assert result["success"] is False
 
 
@@ -58,17 +60,16 @@ def test_enroll_used_token():
     valid_tokens = {token: {"used": True}}
 
     server_secret = b"test-server-secret-key"
-    result = enroll_client(token, "identity-hash", "Alpha", valid_tokens,
-                           server_secret)
+    result = enroll_client(token, "identity-hash", "Alpha", valid_tokens, server_secret)
     assert result["success"] is False
 
 
 # ---------- Audit ----------
 
+
 def test_log_event():
     """log_event should create an AuditEntry with correct fields."""
-    entry = log_event("TEST_EVENT", "Alpha", target="asset-1",
-                      details="Test detail")
+    entry = log_event("TEST_EVENT", "Alpha", target="asset-1", details="Test detail")
     assert entry.event_type == "TEST_EVENT"
     assert entry.client_callsign == "Alpha"
     assert "asset-1" in entry.details
@@ -84,6 +85,7 @@ def test_format_audit_entry():
 
 
 # ---------- Client Registry ----------
+
 
 def test_register_client():
     registry = ClientRegistry()
@@ -131,9 +133,9 @@ def test_get_online_clients():
 
 # ---------- Notifications ----------
 
+
 def test_build_notification():
-    notif = build_notification("TEST", "Alpha", importance="PRIORITY",
-                               title="Test", body="A test notification")
+    notif = build_notification("TEST", "Alpha", importance="PRIORITY", title="Test", body="A test notification")
     assert notif["type"] == "notification"
     assert notif["event"] == "TEST"
     assert notif["importance"] == "PRIORITY"

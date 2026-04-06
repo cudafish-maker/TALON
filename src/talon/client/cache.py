@@ -22,25 +22,32 @@ from talon.crypto.keys import derive_master_key, derive_subkey, generate_salt
 from talon.db.database import open_database
 from talon.db.migrations import run_migrations
 from talon.db.models import (
-    Asset, Channel, Document, Message, Mission, MissionNote,
-    Objective, Operator, SITREP, SITREPEntry,
+    SITREP,
+    Asset,
+    Channel,
+    Document,
+    Message,
+    Mission,
+    MissionNote,
+    Objective,
+    Operator,
+    SITREPEntry,
 )
 from talon.sync.outbox import Outbox
-
 
 # Maps table name → (dataclass, columns in DB order).
 # JSON-serialized fields (lists) need special handling on read/write.
 _TABLE_MAP = {
-    "operators":      Operator,
-    "assets":         Asset,
-    "sitreps":        SITREP,
+    "operators": Operator,
+    "assets": Asset,
+    "sitreps": SITREP,
     "sitrep_entries": SITREPEntry,
-    "missions":       Mission,
-    "objectives":     Objective,
-    "mission_notes":  MissionNote,
-    "channels":       Channel,
-    "messages":       Message,
-    "documents":      Document,
+    "missions": Mission,
+    "objectives": Objective,
+    "mission_notes": MissionNote,
+    "channels": Channel,
+    "messages": Message,
+    "documents": Document,
 }
 
 # Fields stored as JSON text in SQLite but expected as Python lists.
@@ -173,13 +180,11 @@ class ClientCache:
         if self.db is None:
             return []
         cursor = self.db.execute(
-            "SELECT * FROM sitrep_entries WHERE sitrep_id = ? "
-            "ORDER BY created_at ASC",
+            "SELECT * FROM sitrep_entries WHERE sitrep_id = ? ORDER BY created_at ASC",
             (sitrep_id,),
         )
         columns = [desc[0] for desc in cursor.description]
-        return [_row_to_dataclass(SITREPEntry, columns, row)
-                for row in cursor.fetchall()]
+        return [_row_to_dataclass(SITREPEntry, columns, row) for row in cursor.fetchall()]
 
     def get_objectives(self, mission_id: str) -> list:
         """Get all objectives for a mission.
@@ -190,13 +195,11 @@ class ClientCache:
         if self.db is None:
             return []
         cursor = self.db.execute(
-            "SELECT * FROM objectives WHERE mission_id = ? "
-            "ORDER BY rowid ASC",
+            "SELECT * FROM objectives WHERE mission_id = ? ORDER BY rowid ASC",
             (mission_id,),
         )
         columns = [desc[0] for desc in cursor.description]
-        return [_row_to_dataclass(Objective, columns, row)
-                for row in cursor.fetchall()]
+        return [_row_to_dataclass(Objective, columns, row) for row in cursor.fetchall()]
 
     def get_mission_notes(self, mission_id: str) -> list:
         """Get all notes for a mission, ordered by creation time.
@@ -207,13 +210,11 @@ class ClientCache:
         if self.db is None:
             return []
         cursor = self.db.execute(
-            "SELECT * FROM mission_notes WHERE mission_id = ? "
-            "ORDER BY created_at ASC",
+            "SELECT * FROM mission_notes WHERE mission_id = ? ORDER BY created_at ASC",
             (mission_id,),
         )
         columns = [desc[0] for desc in cursor.description]
-        return [_row_to_dataclass(MissionNote, columns, row)
-                for row in cursor.fetchall()]
+        return [_row_to_dataclass(MissionNote, columns, row) for row in cursor.fetchall()]
 
     def get_messages(self, channel_id: str) -> list:
         """Get all messages in a channel, ordered by creation time.
@@ -224,13 +225,11 @@ class ClientCache:
         if self.db is None:
             return []
         cursor = self.db.execute(
-            "SELECT * FROM messages WHERE channel_id = ? "
-            "ORDER BY created_at ASC",
+            "SELECT * FROM messages WHERE channel_id = ? ORDER BY created_at ASC",
             (channel_id,),
         )
         columns = [desc[0] for desc in cursor.description]
-        return [_row_to_dataclass(Message, columns, row)
-                for row in cursor.fetchall()]
+        return [_row_to_dataclass(Message, columns, row) for row in cursor.fetchall()]
 
     def get_channel_members(self, channel_id: str) -> list:
         """Get operator IDs for a channel.
@@ -262,9 +261,7 @@ class ClientCache:
         if self.db is None:
             return ""
 
-        cursor = self.db.execute(
-            "SELECT callsign FROM operators WHERE role = 'operator' LIMIT 1"
-        )
+        cursor = self.db.execute("SELECT callsign FROM operators WHERE role = 'operator' LIMIT 1")
         row = cursor.fetchone()
         if row:
             self._callsign = row[0]

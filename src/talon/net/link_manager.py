@@ -21,8 +21,9 @@
 # Over LoRa every byte matters.
 
 import json
-import time
 import threading
+import time
+
 import RNS
 
 from talon.net.reticulum import APP_NAME
@@ -66,9 +67,7 @@ class ServerLinkManager:
         Args:
             aspect: The destination aspect (default "sync").
         """
-        self.destination = RNS.Destination(
-            self.identity, RNS.Destination.IN, APP_NAME, aspect
-        )
+        self.destination = RNS.Destination(self.identity, RNS.Destination.IN, APP_NAME, aspect)
         self.destination.set_link_established_callback(self._link_established)
         self.destination.announce()
 
@@ -103,10 +102,7 @@ class ServerLinkManager:
 
     def get_connected_clients(self) -> list:
         """Get hashes of all clients with active links."""
-        return [
-            h for h, link in self._links.items()
-            if link.status == RNS.Link.ACTIVE
-        ]
+        return [h for h, link in self._links.items() if link.status == RNS.Link.ACTIVE]
 
     def stop(self):
         """Tear down all links and the destination."""
@@ -123,14 +119,8 @@ class ServerLinkManager:
         client_hash = link.get_remote_identity().hexhash
         self._links[client_hash] = link
 
-        link.set_packet_callback(
-            lambda raw, _link=link, _hash=client_hash: self._packet_received(
-                _hash, _link, raw
-            )
-        )
-        link.set_link_closed_callback(
-            lambda _link, _hash=client_hash: self._link_closed(_hash)
-        )
+        link.set_packet_callback(lambda raw, _link=link, _hash=client_hash: self._packet_received(_hash, _link, raw))
+        link.set_link_closed_callback(lambda _link, _hash=client_hash: self._link_closed(_hash))
 
         if self.on_client_connected:
             self.on_client_connected(client_hash, link)
@@ -230,9 +220,7 @@ class ClientLinkManager:
                 return False
 
         # Build the destination and request a link
-        server_dest = RNS.Destination(
-            server_identity, RNS.Destination.OUT, APP_NAME, "sync"
-        )
+        server_dest = RNS.Destination(server_identity, RNS.Destination.OUT, APP_NAME, "sync")
 
         self.link = RNS.Link(server_dest)
 
@@ -266,8 +254,7 @@ class ClientLinkManager:
         """Check if the link is currently active."""
         return self.link is not None and self.link.status == RNS.Link.ACTIVE
 
-    def send_and_receive(self, message: dict,
-                         timeout: float = RESPONSE_TIMEOUT) -> dict:
+    def send_and_receive(self, message: dict, timeout: float = RESPONSE_TIMEOUT) -> dict:
         """Send a message and wait for the server's response.
 
         This is the send_fn passed to SyncClient.full_sync(). It

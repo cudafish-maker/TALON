@@ -2,24 +2,22 @@
 # Tests for the end-to-end enrollment flow: server token generation,
 # link manager routing, client enrollment request, and lease saving.
 
-import sys
-import os
-import time
 import json
+import os
+import sys
 import tempfile
-import threading
-from unittest.mock import MagicMock, patch, PropertyMock
+import time
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from talon.server.auth import generate_enrollment_token, enroll_client
 from talon.client.auth import ClientAuth
-from talon.net.link_manager import ServerLinkManager, ClientLinkManager
-
+from talon.net.link_manager import ServerLinkManager
 
 # ======================================================================
 # Server: enrollment token DB methods on TalonServer
 # ======================================================================
+
 
 class TestTalonServerEnrollment:
     """Tests for TalonServer enrollment token management."""
@@ -27,11 +25,13 @@ class TestTalonServerEnrollment:
     def _make_server(self):
         """Create a minimal TalonServer with an in-memory DB."""
         from talon.server.app import TalonServer
+
         server = TalonServer()
         server.server_secret = b"test-secret-32-bytes-long-enough"
 
         # Use a real in-memory SQLite DB (not sqlcipher for tests)
         import sqlite3
+
         server.db = sqlite3.connect(":memory:")
         server.db.execute("""
             CREATE TABLE enrollment_tokens (
@@ -60,6 +60,7 @@ class TestTalonServerEnrollment:
         server.db.commit()
 
         from talon.server.client_registry import ClientRegistry
+
         server.client_registry = ClientRegistry()
 
         return server
@@ -204,6 +205,7 @@ class TestTalonServerEnrollment:
 # ServerLinkManager: enrollment_request routing
 # ======================================================================
 
+
 class TestLinkManagerEnrollmentRouting:
     """Tests for enrollment message routing in ServerLinkManager."""
 
@@ -237,11 +239,13 @@ class TestLinkManagerEnrollmentRouting:
 
         # Simulate receiving an enrollment request packet
         link = self._make_mock_link(identity)
-        raw = json.dumps({
-            "type": "enrollment_request",
-            "token": "a" * 32,
-            "callsign": "TEST",
-        }).encode("utf-8")
+        raw = json.dumps(
+            {
+                "type": "enrollment_request",
+                "token": "a" * 32,
+                "callsign": "TEST",
+            }
+        ).encode("utf-8")
 
         slm._packet_received("client-hash", link, raw)
 
@@ -290,6 +294,7 @@ class TestLinkManagerEnrollmentRouting:
 # ======================================================================
 # ClientAuth: enrollment request building and lease saving
 # ======================================================================
+
 
 class TestClientAuthEnrollment:
     """Tests for client-side enrollment in ClientAuth."""
@@ -352,12 +357,14 @@ class TestClientAuthEnrollment:
 # Integration: full enrollment round-trip (mocked RNS)
 # ======================================================================
 
+
 class TestEnrollmentRoundTrip:
     """Integration test: server generates token, client enrolls."""
 
     def test_full_enrollment_roundtrip(self):
         """Token generation -> enrollment request -> lease issued -> lease saved."""
         import sqlite3
+
         from talon.server.app import TalonServer
         from talon.server.client_registry import ClientRegistry
 
@@ -430,6 +437,7 @@ class TestEnrollmentRoundTrip:
     def test_enrollment_then_second_attempt_fails(self):
         """After successful enrollment, same token can't be reused."""
         import sqlite3
+
         from talon.server.app import TalonServer
         from talon.server.client_registry import ClientRegistry
 

@@ -18,9 +18,8 @@
 # Binary: two 4-byte fixed-point integers           = 8 bytes
 # Savings: 81% smaller
 
-import zlib
 import struct
-
+import zlib
 
 # Maximum packet size for LoRa transmission (bytes).
 # Larger messages are automatically split into multiple packets.

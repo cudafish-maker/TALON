@@ -14,17 +14,8 @@
 
 import os
 
+from kivy.properties import BooleanProperty, StringProperty
 from kivymd.uix.screen import MDScreen
-from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton
-from kivymd.uix.textfield import MDTextField
-from kivy.properties import StringProperty, BooleanProperty
-
-from talon.ui.theme import (
-    BG_BASE, BG_SURFACE, COLOR_PRIMARY, COLOR_RED,
-    TEXT_PRIMARY, TEXT_SECONDARY,
-    PADDING_MD, PADDING_LG,
-)
 
 
 class LoginScreen(MDScreen):
@@ -35,8 +26,8 @@ class LoginScreen(MDScreen):
         is_loading:     True while the backend is starting up.
     """
 
-    error_text  = StringProperty("")
-    is_loading  = BooleanProperty(False)
+    error_text = StringProperty("")
+    is_loading = BooleanProperty(False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -82,6 +73,7 @@ class LoginScreen(MDScreen):
 
         # Hand off to the app — it calls TalonClient.start()
         from kivy.app import App
+
         App.get_running_app().do_login(passphrase)
 
     def on_passphrase_text(self, field, text):

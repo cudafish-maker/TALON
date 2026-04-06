@@ -18,7 +18,6 @@
 
 from talon.constants import TransportType
 
-
 # Maps data types to their sync priority number.
 # Lower number = syncs first.
 SYNC_PRIORITY = {

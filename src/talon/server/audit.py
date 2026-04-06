@@ -10,11 +10,13 @@
 # Audit events are defined in talon.constants.AuditEvent.
 
 import time
+
 from talon.db.models import AuditEntry
 
 
-def log_event(event_type: str, client_callsign: str, target: str = "",
-              details: str = "", transport: str = "") -> AuditEntry:
+def log_event(
+    event_type: str, client_callsign: str, target: str = "", details: str = "", transport: str = ""
+) -> AuditEntry:
     """Create an audit log entry.
 
     Args:
@@ -50,8 +52,7 @@ def format_audit_entry(entry: AuditEntry) -> str:
         Formatted string like "[2024-01-15 14:30:00] SITREP_CREATED by Alpha → SR-123"
     """
     # Convert Unix timestamp to readable format
-    ts = time.strftime("%Y-%m-%d %H:%M:%S",
-                       time.localtime(entry.timestamp))
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(entry.timestamp))
 
     parts = [f"[{ts}]", entry.event_type]
 
@@ -67,17 +68,15 @@ def format_audit_entry(entry: AuditEntry) -> str:
 # These wrap log_event() for the most frequent actions so callers
 # don't have to remember the event type strings.
 
+
 def log_client_enrolled(callsign: str) -> AuditEntry:
     """Log a new client enrollment."""
-    return log_event("CLIENT_ENROLLED", callsign,
-                     details="New client enrolled")
+    return log_event("CLIENT_ENROLLED", callsign, details="New client enrolled")
 
 
-def log_client_revoked(server_callsign: str, revoked_callsign: str,
-                       reason: str) -> AuditEntry:
+def log_client_revoked(server_callsign: str, revoked_callsign: str, reason: str) -> AuditEntry:
     """Log a client revocation."""
-    return log_event("CLIENT_REVOKED", server_callsign,
-                     target=revoked_callsign, details=reason)
+    return log_event("CLIENT_REVOKED", server_callsign, target=revoked_callsign, details=reason)
 
 
 def log_lease_renewed(callsign: str) -> AuditEntry:
@@ -87,15 +86,12 @@ def log_lease_renewed(callsign: str) -> AuditEntry:
 
 def log_lease_expired(callsign: str) -> AuditEntry:
     """Log a lease expiration (soft-lock triggered)."""
-    return log_event("LEASE_EXPIRED", callsign,
-                     details="Client soft-locked")
+    return log_event("LEASE_EXPIRED", callsign, details="Client soft-locked")
 
 
-def log_sitrep_created(callsign: str, sitrep_id: str,
-                       importance: str) -> AuditEntry:
+def log_sitrep_created(callsign: str, sitrep_id: str, importance: str) -> AuditEntry:
     """Log a new SITREP creation."""
-    return log_event("SITREP_CREATED", callsign,
-                     target=sitrep_id, details=f"Importance: {importance}")
+    return log_event("SITREP_CREATED", callsign, target=sitrep_id, details=f"Importance: {importance}")
 
 
 def log_mission_created(callsign: str, mission_id: str) -> AuditEntry:
@@ -103,11 +99,9 @@ def log_mission_created(callsign: str, mission_id: str) -> AuditEntry:
     return log_event("MISSION_CREATED", callsign, target=mission_id)
 
 
-def log_asset_created(callsign: str, asset_id: str,
-                      category: str) -> AuditEntry:
+def log_asset_created(callsign: str, asset_id: str, category: str) -> AuditEntry:
     """Log a new asset creation."""
-    return log_event("ASSET_CREATED", callsign,
-                     target=asset_id, details=f"Category: {category}")
+    return log_event("ASSET_CREATED", callsign, target=asset_id, details=f"Category: {category}")
 
 
 def log_asset_verified(callsign: str, asset_id: str) -> AuditEntry:
@@ -117,5 +111,4 @@ def log_asset_verified(callsign: str, asset_id: str) -> AuditEntry:
 
 def log_group_key_rotated(reason: str) -> AuditEntry:
     """Log a group key rotation."""
-    return log_event("GROUP_KEY_ROTATED", "SYSTEM",
-                     details=reason)
+    return log_event("GROUP_KEY_ROTATED", "SYSTEM", details=reason)

@@ -15,13 +15,11 @@
 # - Missions auto-create a channel for assigned operators
 # - Operators can pin messages (useful for key info in the field)
 
-from talon.db.models import Channel, Message
 from talon.constants import ChannelType
+from talon.db.models import Channel, Message
 
 
-def create_channel(name: str, created_by: str,
-                   channel_type: str = "GROUP",
-                   description: str = "") -> Channel:
+def create_channel(name: str, created_by: str, channel_type: str = "GROUP", description: str = "") -> Channel:
     """Create a new chat channel.
 
     Args:
@@ -40,8 +38,7 @@ def create_channel(name: str, created_by: str,
     )
 
 
-def create_message(channel_id: str, author: str, content: str,
-                   message_type: str = "TEXT") -> Message:
+def create_message(channel_id: str, author: str, content: str, message_type: str = "TEXT") -> Message:
     """Create a new chat message.
 
     Args:

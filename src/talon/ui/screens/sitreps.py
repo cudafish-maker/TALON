@@ -47,7 +47,7 @@ class SITREPPanel(MDBoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation="vertical", **kwargs)
         self._talon = None
-        self._sitreps = []          # List of SITREP dataclass objects
+        self._sitreps = []  # List of SITREP dataclass objects
         self._active_sitrep = None  # Currently open SITREP
         self._compose_dialog = None
 
@@ -89,6 +89,7 @@ class SITREPPanel(MDBoxLayout):
 
         # Divider
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         # Scrollable list
@@ -227,6 +228,7 @@ class SITREPPanel(MDBoxLayout):
         self.add_widget(meta)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         # Entries (append-only log)

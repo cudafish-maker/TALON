@@ -8,23 +8,23 @@
 # - Schema version tracking works
 # - Pre-versioning databases (tables exist, version 0) are handled
 
-import sys
 import os
 import sqlite3
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from talon.db.migrations import (
-    get_schema_version,
-    set_schema_version,
-    run_migrations,
-    MigrationError,
     CURRENT_VERSION,
+    MigrationError,
     _is_fresh_database,
+    get_schema_version,
+    run_migrations,
+    set_schema_version,
 )
 
-
 # --- Helpers ----------------------------------------------------------------
+
 
 def _make_fresh_db():
     """Create an empty in-memory database (no tables, version 0)."""
@@ -117,6 +117,7 @@ def _column_exists(conn, table, column):
 
 # --- Schema version tests ---------------------------------------------------
 
+
 class TestSchemaVersion:
     def test_fresh_db_version_is_zero(self):
         conn = _make_fresh_db()
@@ -131,6 +132,7 @@ class TestSchemaVersion:
     def test_version_survives_reconnect(self):
         """PRAGMA user_version is stored in the DB header, not session state."""
         import tempfile
+
         path = os.path.join(tempfile.mkdtemp(), "test.db")
         conn = sqlite3.connect(path)
         set_schema_version(conn, 3)
@@ -144,6 +146,7 @@ class TestSchemaVersion:
 
 
 # --- Fresh database detection -----------------------------------------------
+
 
 class TestFreshDetection:
     def test_empty_db_is_fresh(self):
@@ -162,6 +165,7 @@ class TestFreshDetection:
 
 
 # --- Fresh database migration (stamp only) ----------------------------------
+
 
 class TestFreshDatabaseMigration:
     def test_fresh_db_gets_stamped_at_current_version(self):
@@ -182,10 +186,9 @@ class TestFreshDatabaseMigration:
         run_migrations(conn)
 
         import time
+
         conn.execute(
-            "INSERT INTO enrollment_tokens "
-            "(token, callsign, generated_at, description) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO enrollment_tokens (token, callsign, generated_at, description) VALUES (?, ?, ?, ?)",
             ("abc123", "WOLF-1", time.time(), "for team lead"),
         )
         conn.commit()
@@ -198,6 +201,7 @@ class TestFreshDatabaseMigration:
 
 
 # --- Existing v1 database migration -----------------------------------------
+
 
 class TestV1ToV2Migration:
     def test_v1_db_gets_upgraded_to_v2(self):
@@ -219,9 +223,9 @@ class TestV1ToV2Migration:
         """Existing rows keep their data after migration."""
         conn = _make_v1_db()
         import time
+
         conn.execute(
-            "INSERT INTO enrollment_tokens "
-            "(token, callsign, generated_at) VALUES (?, ?, ?)",
+            "INSERT INTO enrollment_tokens (token, callsign, generated_at) VALUES (?, ?, ?)",
             ("tok1", "ALPHA-1", time.time()),
         )
         conn.commit()
@@ -229,8 +233,7 @@ class TestV1ToV2Migration:
         run_migrations(conn)
 
         row = conn.execute(
-            "SELECT token, callsign, description "
-            "FROM enrollment_tokens WHERE token = ?",
+            "SELECT token, callsign, description FROM enrollment_tokens WHERE token = ?",
             ("tok1",),
         ).fetchone()
         assert row[0] == "tok1"
@@ -242,9 +245,9 @@ class TestV1ToV2Migration:
         run_migrations(conn)
 
         import time
+
         conn.execute(
-            "INSERT INTO enrollment_tokens "
-            "(token, callsign, generated_at) VALUES (?, ?, ?)",
+            "INSERT INTO enrollment_tokens (token, callsign, generated_at) VALUES (?, ?, ?)",
             ("tok2", "BRAVO-1", time.time()),
         )
         conn.commit()
@@ -256,6 +259,7 @@ class TestV1ToV2Migration:
 
 
 # --- Pre-versioning database ------------------------------------------------
+
 
 class TestPreVersioningDatabase:
     def test_pre_version_db_runs_all_migrations(self):
@@ -276,6 +280,7 @@ class TestPreVersioningDatabase:
 
 
 # --- Already up to date -----------------------------------------------------
+
 
 class TestAlreadyUpToDate:
     def test_current_version_is_noop(self):
@@ -298,6 +303,7 @@ class TestAlreadyUpToDate:
 
 # --- Migration failure and rollback -----------------------------------------
 
+
 class TestMigrationFailure:
     def test_failed_migration_rolls_back(self):
         """If a migration raises, the version should NOT advance."""
@@ -305,9 +311,12 @@ class TestMigrationFailure:
 
         # Monkey-patch a broken migration
         import talon.db.migrations as mig
+
         original = mig.MIGRATIONS[1]
+
         def _broken(c):
             raise RuntimeError("simulated migration failure")
+
         mig.MIGRATIONS[1] = _broken
 
         try:
@@ -327,15 +336,18 @@ class TestMigrationFailure:
         conn = _make_v1_db()
 
         import talon.db.migrations as mig
+
         original = mig.MIGRATIONS[1]
 
         # First attempt: fail
         call_count = [0]
+
         def _fail_once(c):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise RuntimeError("transient failure")
             original(c)
+
         mig.MIGRATIONS[1] = _fail_once
 
         try:
@@ -356,13 +368,12 @@ class TestMigrationFailure:
 
 # --- open_database key handling ---------------------------------------------
 
+
 class TestOpenDatabaseKey:
     def test_accepts_bytes_key(self):
         """open_database should accept bytes without crashing."""
         # We can't test SQLCipher without the library, but we can
         # verify the key normalization logic doesn't crash.
-        from talon.db.database import open_database
-        import tempfile
         # This will fail on PRAGMA key (no sqlcipher in tests),
         # but the key normalization should work fine.
         # Just test the function signature accepts both types.

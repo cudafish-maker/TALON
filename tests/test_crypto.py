@@ -1,23 +1,29 @@
 # tests/test_crypto.py
 # Tests for the cryptography layer (keys, field encryption, group keys, leases).
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from talon.crypto.keys import generate_salt, derive_master_key, derive_subkey
-from talon.crypto.field_encrypt import create_secret_box, encrypt_field, decrypt_field
+from talon.crypto.field_encrypt import create_secret_box, decrypt_field, encrypt_field
 from talon.crypto.group_key import (
-    generate_group_key, rotate_group_key,
-    encrypt_for_group, decrypt_from_group,
+    decrypt_from_group,
+    encrypt_for_group,
+    generate_group_key,
+    rotate_group_key,
 )
+from talon.crypto.keys import derive_master_key, derive_subkey, generate_salt
 from talon.crypto.lease import (
-    generate_lease_token, is_lease_valid, time_remaining,
-    sign_lease, verify_lease_signature,
+    generate_lease_token,
+    is_lease_valid,
+    sign_lease,
+    time_remaining,
+    verify_lease_signature,
 )
-
 
 # ---------- Key derivation ----------
+
 
 def test_salt_generation():
     """Salt should be 32 bytes and unique each time."""
@@ -56,6 +62,7 @@ def test_subkey_derivation():
 
 # ---------- Field encryption ----------
 
+
 def test_field_encrypt_decrypt():
     """Encrypting then decrypting should return the original text."""
     salt = generate_salt()
@@ -84,6 +91,7 @@ def test_field_encrypt_different_each_time():
 
 
 # ---------- Group key ----------
+
 
 def test_group_key_generation():
     """Group key should be 32 bytes."""
@@ -127,6 +135,7 @@ def test_rotated_key_cannot_decrypt_old():
 
 
 # ---------- Lease tokens ----------
+
 
 def test_lease_generation():
     """Lease should have a token and expires_at."""

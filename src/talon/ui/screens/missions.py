@@ -18,33 +18,32 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton
-from kivymd.uix.list import MDList, TwoLineIconListItem, IconLeftWidget
+from kivymd.uix.list import IconLeftWidget, MDList, TwoLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.dialog import MDDialog
 
 from talon.models.mission import (
-    create_mission, add_objective, append_note,
-    can_update_objective, can_abort_mission,
+    append_note,
+    can_update_objective,
+    create_mission,
 )
-from talon.db.models import Objective
-
 
 STATUS_COLORS = {
-    "PLANNING":   "#8a9bb0",
-    "ACTIVE":     "#00e5a0",
-    "COMPLETED":  "#4a9eff",
-    "ABORTED":    "#ff3b3b",
-    "PAUSED":     "#f5a623",
+    "PLANNING": "#8a9bb0",
+    "ACTIVE": "#00e5a0",
+    "COMPLETED": "#4a9eff",
+    "ABORTED": "#ff3b3b",
+    "PAUSED": "#f5a623",
 }
 
 OBJ_STATUS_COLORS = {
-    "PENDING":     "#8a9bb0",
+    "PENDING": "#8a9bb0",
     "IN_PROGRESS": "#f5a623",
-    "COMPLETE":    "#00e5a0",
-    "CANCELLED":   "#ff3b3b",
+    "COMPLETE": "#00e5a0",
+    "CANCELLED": "#ff3b3b",
 }
 
 
@@ -66,22 +65,27 @@ class MissionsPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDLabel(
-            text="MISSIONS",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
-        header.add_widget(MDIconButton(
-            icon="plus",
-            theme_icon_color="Custom",
-            icon_color="#00e5a0",
-            on_release=lambda x: self.open_create_dialog(),
-        ))
+        header.add_widget(
+            MDLabel(
+                text="MISSIONS",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
+        header.add_widget(
+            MDIconButton(
+                icon="plus",
+                theme_icon_color="Custom",
+                icon_color="#00e5a0",
+                on_release=lambda x: self.open_create_dialog(),
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         scroll = MDScrollView(size_hint_y=1)
@@ -103,8 +107,7 @@ class MissionsPanel(MDBoxLayout):
             return
 
         # Active first, then planning, then completed/aborted
-        priority = {"ACTIVE": 0, "PLANNING": 1, "PAUSED": 2,
-                    "COMPLETED": 3, "ABORTED": 4}
+        priority = {"ACTIVE": 0, "PLANNING": 1, "PAUSED": 2, "COMPLETED": 3, "ABORTED": 4}
         self._missions.sort(key=lambda m: priority.get(m.status, 9))
 
         for mission in self._missions:
@@ -141,23 +144,28 @@ class MissionsPanel(MDBoxLayout):
             padding=["8dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDIconButton(
-            icon="arrow-left",
-            theme_icon_color="Custom",
-            icon_color="#8a9bb0",
-            on_release=lambda x: self._back_to_list(),
-        ))
-        header.add_widget(MDLabel(
-            text=f"{mission.name}  [color={color}]{mission.status}[/color]",
-            markup=True,
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        header.add_widget(
+            MDIconButton(
+                icon="arrow-left",
+                theme_icon_color="Custom",
+                icon_color="#8a9bb0",
+                on_release=lambda x: self._back_to_list(),
+            )
+        )
+        header.add_widget(
+            MDLabel(
+                text=f"{mission.name}  [color={color}]{mission.status}[/color]",
+                markup=True,
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         scroll = MDScrollView(size_hint_y=1)
@@ -170,14 +178,16 @@ class MissionsPanel(MDBoxLayout):
         content.bind(minimum_height=content.setter("height"))
 
         # Objectives section
-        content.add_widget(MDLabel(
-            text="OBJECTIVES",
-            font_style="Overline",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-            size_hint_y=None,
-            height="20dp",
-        ))
+        content.add_widget(
+            MDLabel(
+                text="OBJECTIVES",
+                font_style="Overline",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+                size_hint_y=None,
+                height="20dp",
+            )
+        )
 
         objectives = []
         if self._talon and self._talon.cache:
@@ -198,23 +208,27 @@ class MissionsPanel(MDBoxLayout):
                 spacing="8dp",
                 md_bg_color="#151d2b",
             )
-            obj_row.add_widget(MDLabel(
-                text=f"[color={obj_color}]●[/color]  {obj.description}",
-                markup=True,
-                theme_text_color="Custom",
-                text_color="#e8edf4",
-                font_style="Body2",
-            ))
-            if obj.assigned_to:
-                obj_row.add_widget(MDLabel(
-                    text=obj.assigned_to,
-                    font_style="Caption",
+            obj_row.add_widget(
+                MDLabel(
+                    text=f"[color={obj_color}]●[/color]  {obj.description}",
+                    markup=True,
                     theme_text_color="Custom",
-                    text_color="#8a9bb0",
-                    size_hint_x=None,
-                    width="80dp",
-                    halign="right",
-                ))
+                    text_color="#e8edf4",
+                    font_style="Body2",
+                )
+            )
+            if obj.assigned_to:
+                obj_row.add_widget(
+                    MDLabel(
+                        text=obj.assigned_to,
+                        font_style="Caption",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                        size_hint_x=None,
+                        width="80dp",
+                        halign="right",
+                    )
+                )
 
             # Status toggle for assigned operator
             if can_update_objective(callsign, obj, "operator"):
@@ -224,36 +238,42 @@ class MissionsPanel(MDBoxLayout):
                     "COMPLETE": "PENDING",
                 }.get(obj.status, "IN_PROGRESS")
 
-                obj_row.add_widget(MDIconButton(
-                    icon="chevron-right",
-                    theme_icon_color="Custom",
-                    icon_color="#8a9bb0",
-                    size_hint_x=None,
-                    on_release=lambda x, o=obj, s=next_status: self._update_obj_status(o, s),
-                ))
+                obj_row.add_widget(
+                    MDIconButton(
+                        icon="chevron-right",
+                        theme_icon_color="Custom",
+                        icon_color="#8a9bb0",
+                        size_hint_x=None,
+                        on_release=lambda x, o=obj, s=next_status: self._update_obj_status(o, s),
+                    )
+                )
 
             content.add_widget(obj_row)
 
         if not objectives:
-            content.add_widget(MDLabel(
-                text="No objectives.",
-                theme_text_color="Custom",
-                text_color="#3d4f63",
-                size_hint_y=None,
-                height="28dp",
-            ))
+            content.add_widget(
+                MDLabel(
+                    text="No objectives.",
+                    theme_text_color="Custom",
+                    text_color="#3d4f63",
+                    size_hint_y=None,
+                    height="28dp",
+                )
+            )
 
         content.add_widget(MDDivider(color="#1e2d3d"))
 
         # Notes log
-        content.add_widget(MDLabel(
-            text="NOTES LOG",
-            font_style="Overline",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-            size_hint_y=None,
-            height="20dp",
-        ))
+        content.add_widget(
+            MDLabel(
+                text="NOTES LOG",
+                font_style="Overline",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+                size_hint_y=None,
+                height="20dp",
+            )
+        )
 
         notes = []
         if self._talon and self._talon.cache:
@@ -272,15 +292,17 @@ class MissionsPanel(MDBoxLayout):
                 md_bg_color="#151d2b",
             )
             note_box.bind(minimum_height=note_box.setter("height"))
-            note_box.add_widget(MDLabel(
-                text=f"[b]{note.author}[/b]  [color=#8a9bb0]{ts}[/color]",
-                markup=True,
-                theme_text_color="Custom",
-                text_color="#e8edf4",
-                font_style="Caption",
-                size_hint_y=None,
-                height="20dp",
-            ))
+            note_box.add_widget(
+                MDLabel(
+                    text=f"[b]{note.author}[/b]  [color=#8a9bb0]{ts}[/color]",
+                    markup=True,
+                    theme_text_color="Custom",
+                    text_color="#e8edf4",
+                    font_style="Caption",
+                    size_hint_y=None,
+                    height="20dp",
+                )
+            )
             note_label = MDLabel(
                 text=note.content,
                 theme_text_color="Custom",
@@ -313,12 +335,14 @@ class MissionsPanel(MDBoxLayout):
             line_color_focus="#00e5a0",
         )
         note_row.add_widget(note_field)
-        note_row.add_widget(MDIconButton(
-            icon="send",
-            theme_icon_color="Custom",
-            icon_color="#00e5a0",
-            on_release=lambda x: self._append_note(note_field, mission),
-        ))
+        note_row.add_widget(
+            MDIconButton(
+                icon="send",
+                theme_icon_color="Custom",
+                icon_color="#00e5a0",
+                on_release=lambda x: self._append_note(note_field, mission),
+            )
+        )
         self.add_widget(note_row)
 
     def _update_obj_status(self, obj, new_status):

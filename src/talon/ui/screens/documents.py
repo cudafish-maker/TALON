@@ -32,19 +32,19 @@ from talon.models.document import (
 )
 
 ACCESS_COLORS = {
-    "ALL":        "#00e5a0",
+    "ALL": "#00e5a0",
     "RESTRICTED": "#f5a623",
 }
 
 # Icon per file type
 FILE_ICONS = {
-    "pdf":      "file-pdf-box",
-    "image":    "file-image",
-    "png":      "file-image",
-    "jpg":      "file-image",
-    "jpeg":     "file-image",
-    "text":     "file-document",
-    "txt":      "file-document",
+    "pdf": "file-pdf-box",
+    "image": "file-image",
+    "png": "file-image",
+    "jpg": "file-image",
+    "jpeg": "file-image",
+    "text": "file-document",
+    "txt": "file-document",
 }
 
 
@@ -79,22 +79,27 @@ class DocumentsPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDLabel(
-            text="DOCUMENTS",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
-        header.add_widget(MDIconButton(
-            icon="upload",
-            theme_icon_color="Custom",
-            icon_color="#00e5a0",
-            on_release=lambda x: self.open_upload_dialog(),
-        ))
+        header.add_widget(
+            MDLabel(
+                text="DOCUMENTS",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
+        header.add_widget(
+            MDIconButton(
+                icon="upload",
+                theme_icon_color="Custom",
+                icon_color="#00e5a0",
+                on_release=lambda x: self.open_upload_dialog(),
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         scroll = MDScrollView(size_hint_y=1)
@@ -118,10 +123,7 @@ class DocumentsPanel(MDBoxLayout):
             return
 
         # Filter to docs this operator can see
-        self._documents = [
-            d for d in all_docs
-            if can_view_document(d, callsign, "operator")
-        ]
+        self._documents = [d for d in all_docs if can_view_document(d, callsign, "operator")]
         self._documents.sort(key=lambda d: d.uploaded_at, reverse=True)
 
         for doc in self._documents:
@@ -161,22 +163,27 @@ class DocumentsPanel(MDBoxLayout):
             padding=["8dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDIconButton(
-            icon="arrow-left",
-            theme_icon_color="Custom",
-            icon_color="#8a9bb0",
-            on_release=lambda x: self._back_to_list(),
-        ))
-        header.add_widget(MDLabel(
-            text=doc.title,
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        header.add_widget(
+            MDIconButton(
+                icon="arrow-left",
+                theme_icon_color="Custom",
+                icon_color="#8a9bb0",
+                on_release=lambda x: self._back_to_list(),
+            )
+        )
+        header.add_widget(
+            MDLabel(
+                text=doc.title,
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         details = MDBoxLayout(
@@ -193,25 +200,27 @@ class DocumentsPanel(MDBoxLayout):
                 size_hint_y=None,
                 height="24dp",
             )
-            r.add_widget(MDLabel(
-                text=label,
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color="#8a9bb0",
-                size_hint_x=0.4,
-            ))
-            r.add_widget(MDLabel(
-                text=value,
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color=color or "#e8edf4",
-                size_hint_x=0.6,
-            ))
+            r.add_widget(
+                MDLabel(
+                    text=label,
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color="#8a9bb0",
+                    size_hint_x=0.4,
+                )
+            )
+            r.add_widget(
+                MDLabel(
+                    text=value,
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color=color or "#e8edf4",
+                    size_hint_x=0.6,
+                )
+            )
             return r
 
-        ts = time.strftime(
-            "%Y-%m-%d %H:%M", time.localtime(doc.uploaded_at)
-        ) if doc.uploaded_at else "Unknown"
+        ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(doc.uploaded_at)) if doc.uploaded_at else "Unknown"
 
         details.add_widget(row("Type", doc.file_type or "Unknown"))
         details.add_widget(row("Size", _format_size(doc.file_size) if doc.file_size else "Unknown"))
@@ -240,6 +249,7 @@ class DocumentsPanel(MDBoxLayout):
     def _open_file(self, doc):
         """Open the document with the OS default viewer."""
         from talon.platform import open_file
+
         open_file(doc.file_path)
 
     def _back_to_list(self):
@@ -283,6 +293,7 @@ class DocumentsPanel(MDBoxLayout):
             return
 
         import os
+
         if not os.path.isfile(file_path):
             return
 
@@ -291,7 +302,9 @@ class DocumentsPanel(MDBoxLayout):
         callsign = self._get_my_callsign()
 
         doc = create_document(
-            title, callsign, file_path,
+            title,
+            callsign,
+            file_path,
             file_size=file_size,
             mime_type=file_type,
             access=access,
@@ -378,13 +391,15 @@ class _UploadContent(MDBoxLayout):
         )
         for level in self.ACCESS_LEVELS:
             color = ACCESS_COLORS.get(level, "#8a9bb0")
-            row.add_widget(MDRaisedButton(
-                text=level,
-                md_bg_color=color if level == self.selected_access else "#1c2637",
-                theme_text_color="Custom",
-                text_color="#0a0e14" if level == self.selected_access else "#8a9bb0",
-                on_release=lambda x, lv=level: self._select_access(lv),
-            ))
+            row.add_widget(
+                MDRaisedButton(
+                    text=level,
+                    md_bg_color=color if level == self.selected_access else "#1c2637",
+                    theme_text_color="Custom",
+                    text_color="#0a0e14" if level == self.selected_access else "#8a9bb0",
+                    on_release=lambda x, lv=level: self._select_access(lv),
+                )
+            )
         self.add_widget(row)
 
     def _select_access(self, level):

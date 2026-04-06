@@ -8,9 +8,7 @@ import argparse
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="T.A.L.O.N. Server — Tactical Awareness & Linked Operations Network"
-    )
+    parser = argparse.ArgumentParser(description="T.A.L.O.N. Server — Tactical Awareness & Linked Operations Network")
     parser.add_argument(
         "--config",
         metavar="DIR",
@@ -20,6 +18,7 @@ def main():
     args = parser.parse_args()
 
     from talon.ui.server.app import run_server
+
     run_server(config_path=args.config)
 
 

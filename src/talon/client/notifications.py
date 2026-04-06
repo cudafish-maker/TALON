@@ -15,8 +15,6 @@
 #   - Audio tone (ONLY if the operator has opted in)
 #   - Lock screen notification (ONLY if enabled in settings)
 
-import time
-
 
 class NotificationHandler:
     """Processes incoming notifications from the server.
@@ -51,8 +49,7 @@ class NotificationHandler:
         importance = notification.get("importance", "ROUTINE")
 
         # Always show visual notification if above threshold
-        if self._meets_threshold(importance,
-                                 self.settings.get("visual_threshold", "ROUTINE")):
+        if self._meets_threshold(importance, self.settings.get("visual_threshold", "ROUTINE")):
             if self.on_display:
                 self.on_display(notification)
 

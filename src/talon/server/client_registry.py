@@ -12,6 +12,7 @@
 # The heartbeat monitor (talon.net.heartbeat) updates statuses here.
 
 import time
+
 from talon.constants import ClientStatus
 
 
@@ -27,8 +28,7 @@ class ClientRegistry:
         self.clients = {}
         self.deny_list = set()
 
-    def register(self, client_id: str, callsign: str,
-                 transport_type: str = "") -> dict:
+    def register(self, client_id: str, callsign: str, transport_type: str = "") -> dict:
         """Register a newly enrolled client.
 
         Args:
@@ -102,8 +102,7 @@ class ClientRegistry:
 
     def get_online_clients(self) -> list:
         """Get all clients with ONLINE status."""
-        return [r for r in self.clients.values()
-                if r["status"] == ClientStatus.ONLINE.name]
+        return [r for r in self.clients.values() if r["status"] == ClientStatus.ONLINE.name]
 
     def get_all_clients(self) -> list:
         """Get all client records."""

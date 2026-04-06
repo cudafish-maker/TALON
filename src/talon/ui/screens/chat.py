@@ -25,15 +25,17 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton
-from kivymd.uix.list import MDList, OneLineIconListItem, IconLeftWidget
+from kivymd.uix.list import IconLeftWidget, MDList, OneLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.dialog import MDDialog
 
 from talon.models.chat import (
-    create_channel, create_message, can_send_message, create_direct_channel,
+    can_send_message,
+    create_channel,
+    create_message,
 )
 
 
@@ -56,22 +58,27 @@ class ChatPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDLabel(
-            text="CHAT",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
-        header.add_widget(MDIconButton(
-            icon="plus",
-            theme_icon_color="Custom",
-            icon_color="#00e5a0",
-            on_release=lambda x: self.open_new_channel_dialog(),
-        ))
+        header.add_widget(
+            MDLabel(
+                text="CHAT",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
+        header.add_widget(
+            MDIconButton(
+                icon="plus",
+                theme_icon_color="Custom",
+                icon_color="#00e5a0",
+                on_release=lambda x: self.open_new_channel_dialog(),
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         scroll = MDScrollView(size_hint_y=1)
@@ -105,11 +112,13 @@ class ChatPanel(MDBoxLayout):
             on_release=lambda x, ch=channel: self.open_channel(ch),
             md_bg_color="#151d2b",
         )
-        item.add_widget(IconLeftWidget(
-            icon=icon,
-            theme_icon_color="Custom",
-            icon_color="#8a9bb0",
-        ))
+        item.add_widget(
+            IconLeftWidget(
+                icon=icon,
+                theme_icon_color="Custom",
+                icon_color="#8a9bb0",
+            )
+        )
         self._list.add_widget(item)
 
     def open_channel(self, channel):
@@ -126,22 +135,27 @@ class ChatPanel(MDBoxLayout):
             padding=["8dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDIconButton(
-            icon="arrow-left",
-            theme_icon_color="Custom",
-            icon_color="#8a9bb0",
-            on_release=lambda x: self._back_to_channels(),
-        ))
-        header.add_widget(MDLabel(
-            text=channel.name,
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        header.add_widget(
+            MDIconButton(
+                icon="arrow-left",
+                theme_icon_color="Custom",
+                icon_color="#8a9bb0",
+                on_release=lambda x: self._back_to_channels(),
+            )
+        )
+        header.add_widget(
+            MDLabel(
+                text=channel.name,
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         # Messages scroll area
@@ -152,9 +166,7 @@ class ChatPanel(MDBoxLayout):
             padding=["12dp", "8dp"],
             spacing="8dp",
         )
-        self._msg_container.bind(
-            minimum_height=self._msg_container.setter("height")
-        )
+        self._msg_container.bind(minimum_height=self._msg_container.setter("height"))
 
         self._load_messages(channel)
 
@@ -182,16 +194,19 @@ class ChatPanel(MDBoxLayout):
             on_text_validate=lambda x: self._send_message(),
         )
         input_row.add_widget(self._msg_field)
-        input_row.add_widget(MDIconButton(
-            icon="send",
-            theme_icon_color="Custom",
-            icon_color="#00e5a0",
-            on_release=lambda x: self._send_message(),
-        ))
+        input_row.add_widget(
+            MDIconButton(
+                icon="send",
+                theme_icon_color="Custom",
+                icon_color="#00e5a0",
+                on_release=lambda x: self._send_message(),
+            )
+        )
         self.add_widget(input_row)
 
         # Scroll to bottom after layout
         from kivy.clock import Clock
+
         Clock.schedule_once(lambda dt: setattr(scroll, "scroll_y", 0), 0.2)
 
     def _load_messages(self, channel):
@@ -205,20 +220,22 @@ class ChatPanel(MDBoxLayout):
                 pass
 
         if not messages:
-            self._msg_container.add_widget(MDLabel(
-                text="No messages yet.",
-                theme_text_color="Custom",
-                text_color="#3d4f63",
-                size_hint_y=None,
-                height="32dp",
-                halign="center",
-            ))
+            self._msg_container.add_widget(
+                MDLabel(
+                    text="No messages yet.",
+                    theme_text_color="Custom",
+                    text_color="#3d4f63",
+                    size_hint_y=None,
+                    height="32dp",
+                    halign="center",
+                )
+            )
             return
 
         prev_sender = None
         for msg in messages:
             ts = time.strftime("%H:%M", time.localtime(msg.created_at))
-            show_header = (msg.sender != prev_sender)
+            show_header = msg.sender != prev_sender
             prev_sender = msg.sender
 
             msg_box = MDBoxLayout(
@@ -230,15 +247,17 @@ class ChatPanel(MDBoxLayout):
             msg_box.bind(minimum_height=msg_box.setter("height"))
 
             if show_header:
-                msg_box.add_widget(MDLabel(
-                    text=f"[b]{msg.sender}[/b]  [color=#3d4f63]{ts}[/color]",
-                    markup=True,
-                    font_style="Caption",
-                    theme_text_color="Custom",
-                    text_color="#8a9bb0",
-                    size_hint_y=None,
-                    height="18dp",
-                ))
+                msg_box.add_widget(
+                    MDLabel(
+                        text=f"[b]{msg.sender}[/b]  [color=#3d4f63]{ts}[/color]",
+                        markup=True,
+                        font_style="Caption",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                        size_hint_y=None,
+                        height="18dp",
+                    )
+                )
 
             body_label = MDLabel(
                 text=msg.body,
@@ -246,9 +265,7 @@ class ChatPanel(MDBoxLayout):
                 text_color="#e8edf4",
                 size_hint_y=None,
             )
-            body_label.bind(
-                texture_size=lambda inst, val: setattr(inst, "height", val[1])
-            )
+            body_label.bind(texture_size=lambda inst, val: setattr(inst, "height", val[1]))
             msg_box.add_widget(body_label)
             self._msg_container.add_widget(msg_box)
 
@@ -261,9 +278,7 @@ class ChatPanel(MDBoxLayout):
         members = []
         if self._talon and self._talon.cache:
             try:
-                members = self._talon.cache.get_channel_members(
-                    self._active_channel.id
-                ) or []
+                members = self._talon.cache.get_channel_members(self._active_channel.id) or []
             except Exception:
                 pass
 
@@ -285,10 +300,9 @@ class ChatPanel(MDBoxLayout):
         self._load_messages(self._active_channel)
 
         from kivy.clock import Clock
+
         if hasattr(self, "_scroll_view"):
-            Clock.schedule_once(
-                lambda dt: setattr(self._scroll_view, "scroll_y", 0), 0.1
-            )
+            Clock.schedule_once(lambda dt: setattr(self._scroll_view, "scroll_y", 0), 0.1)
 
     def _back_to_channels(self):
         self._active_channel = None

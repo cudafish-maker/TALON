@@ -26,23 +26,16 @@
 #
 # The map is ALWAYS visible. It never collapses.
 
+from kivy.properties import BooleanProperty, StringProperty
 from kivymd.uix.screen import MDScreen
-from kivymd.uix.navigationrail import MDNavigationRail, MDNavigationRailItem
-from kivymd.uix.bottomnavigation import MDBottomNavigation, MDBottomNavigationItem
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivy.properties import StringProperty, BooleanProperty, ObjectProperty
-from kivy.metrics import dp
-
-from talon.ui.theme import COLOR_PRIMARY, COLOR_AMBER, COLOR_RED, TEXT_SECONDARY
-
 
 # Navigation items — (icon, label, screen_name)
 NAV_ITEMS = [
-    ("file-alert-outline",    "SITREPs",    "sitreps"),
-    ("flag-outline",          "Missions",   "missions"),
-    ("package-variant",       "Assets",     "assets"),
-    ("forum-outline",         "Chat",       "chat"),
-    ("file-document-outline", "Documents",  "documents"),
+    ("file-alert-outline", "SITREPs", "sitreps"),
+    ("flag-outline", "Missions", "missions"),
+    ("package-variant", "Assets", "assets"),
+    ("forum-outline", "Chat", "chat"),
+    ("file-document-outline", "Documents", "documents"),
 ]
 
 
@@ -57,16 +50,16 @@ class MainScreen(MDScreen):
         flash_text:       If non-empty, shows the FLASH alert banner.
     """
 
-    active_section    = StringProperty("sitreps")
-    is_online         = BooleanProperty(False)
-    transport_name    = StringProperty("offline")
+    active_section = StringProperty("sitreps")
+    is_online = BooleanProperty(False)
+    transport_name = StringProperty("offline")
     operator_callsign = StringProperty("")
-    flash_text        = StringProperty("")
+    flash_text = StringProperty("")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._talon = None          # TalonClient reference, set after login
-        self._is_mobile = False     # Current layout mode
+        self._talon = None  # TalonClient reference, set after login
+        self._is_mobile = False  # Current layout mode
 
     # ------------------------------------------------------------------
     # Called by TalonApp after login succeeds
@@ -85,7 +78,7 @@ class MainScreen(MDScreen):
         self.operator_callsign = self._get_callsign()
 
         # Wire up connection status callback
-        talon_client.connection.on_connected    = self._on_connected
+        talon_client.connection.on_connected = self._on_connected
         talon_client.connection.on_disconnected = self._on_disconnected
 
         # Wire notification handler to show FLASH banners
@@ -142,18 +135,23 @@ class MainScreen(MDScreen):
         try:
             if section == "sitreps":
                 from talon.ui.screens.sitreps import SITREPPanel
+
                 return SITREPPanel()
             elif section == "missions":
                 from talon.ui.screens.missions import MissionsPanel
+
                 return MissionsPanel()
             elif section == "assets":
                 from talon.ui.screens.assets import AssetsPanel
+
                 return AssetsPanel()
             elif section == "chat":
                 from talon.ui.screens.chat import ChatPanel
+
                 return ChatPanel()
             elif section == "documents":
                 from talon.ui.screens.documents import DocumentsPanel
+
                 return DocumentsPanel()
         except ImportError:
             return None
@@ -190,6 +188,7 @@ class MainScreen(MDScreen):
         self._flash_sitrep_id = sitrep_id
 
         from kivy.clock import Clock
+
         Clock.schedule_once(self._dismiss_flash, 10)
 
     def on_flash_tapped(self):

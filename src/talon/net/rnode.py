@@ -29,11 +29,12 @@ RNODE_PROBE_TIMEOUT = 2.0  # seconds
 
 class RNodeStatus:
     """Current state of RNode hardware."""
+
     DISCONNECTED = "disconnected"  # No RNode detected
-    DETECTED = "detected"          # USB device found, not yet validated
-    READY = "ready"                # Validated and ready for Reticulum
-    ERROR = "error"                # Detected but not accessible
-    IN_USE = "in_use"              # Reticulum has claimed the port
+    DETECTED = "detected"  # USB device found, not yet validated
+    READY = "ready"  # Validated and ready for Reticulum
+    ERROR = "error"  # Detected but not accessible
+    IN_USE = "in_use"  # Reticulum has claimed the port
 
 
 class RNodeManager:
@@ -81,7 +82,7 @@ class RNodeManager:
         Returns:
             True if an RNode candidate was found.
         """
-        from talon.platform import detect_rnode_ports, check_serial_port
+        from talon.platform import check_serial_port, detect_rnode_ports
 
         # If a specific port is configured, check it first
         configured_port = self._config.get("port", "")
@@ -89,9 +90,7 @@ class RNodeManager:
             check = check_serial_port(configured_port)
             if check["exists"]:
                 self._port = configured_port
-                self._port_info = {"port": configured_port,
-                                   "description": "configured",
-                                   "hwid": ""}
+                self._port_info = {"port": configured_port, "description": "configured", "hwid": ""}
                 self._status = RNodeStatus.DETECTED
                 log.info("RNode: using configured port %s", configured_port)
                 return True
@@ -103,8 +102,7 @@ class RNodeManager:
             self._port = best["port"]
             self._port_info = best
             self._status = RNodeStatus.DETECTED
-            log.info("RNode: auto-detected %s (%s)",
-                     best["port"], best.get("description", ""))
+            log.info("RNode: auto-detected %s (%s)", best["port"], best.get("description", ""))
             return True
 
         self._status = RNodeStatus.DISCONNECTED
@@ -128,13 +126,13 @@ class RNodeManager:
             return False
 
         from talon.platform import check_serial_port
+
         check = check_serial_port(self._port)
 
         if not check["accessible"]:
             self._error = check["error"]
             self._status = RNodeStatus.ERROR
-            log.warning("RNode: port %s not accessible: %s",
-                        self._port, self._error)
+            log.warning("RNode: port %s not accessible: %s", self._port, self._error)
             return False
 
         # Port is accessible — try a firmware probe
@@ -150,8 +148,7 @@ class RNodeManager:
         # the actual RNode protocol handshake.
         self._status = RNodeStatus.READY
         self._error = None
-        log.info("RNode: %s accessible (firmware probe inconclusive)",
-                 self._port)
+        log.info("RNode: %s accessible (firmware probe inconclusive)", self._port)
         return True
 
     def _probe_firmware(self) -> bool:
@@ -162,10 +159,8 @@ class RNodeManager:
         """
         try:
             import serial
-            ser = serial.Serial(
-                self._port, baudrate=115200,
-                timeout=RNODE_PROBE_TIMEOUT
-            )
+
+            ser = serial.Serial(self._port, baudrate=115200, timeout=RNODE_PROBE_TIMEOUT)
             # Flush any stale data
             ser.reset_input_buffer()
             # Send KISS frame boundary — RNode firmware echoes or
@@ -177,8 +172,7 @@ class RNodeManager:
 
             # Any response suggests active firmware
             if response and len(response) > 0:
-                log.debug("RNode probe got %d bytes from %s",
-                          len(response), self._port)
+                log.debug("RNode probe got %d bytes from %s", len(response), self._port)
                 return True
             return False
         except Exception as exc:
@@ -226,12 +220,9 @@ class RNodeManager:
             summary["device"] = self._port_info.get("description", "")
             summary["manufacturer"] = self._port_info.get("manufacturer", "")
         if self._status in (RNodeStatus.READY, RNodeStatus.IN_USE):
-            summary["frequency_mhz"] = self._config.get(
-                "frequency", 915000000) / 1_000_000
-            summary["bandwidth_khz"] = self._config.get(
-                "bandwidth", 125000) / 1_000
-            summary["spreading_factor"] = self._config.get(
-                "spreading_factor", 10)
+            summary["frequency_mhz"] = self._config.get("frequency", 915000000) / 1_000_000
+            summary["bandwidth_khz"] = self._config.get("bandwidth", 125000) / 1_000
+            summary["spreading_factor"] = self._config.get("spreading_factor", 10)
             summary["tx_power_dbm"] = self._config.get("tx_power", 17)
         return summary
 

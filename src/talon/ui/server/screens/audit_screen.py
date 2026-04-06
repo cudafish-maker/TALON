@@ -21,37 +21,35 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDFlatButton
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDFlatButton
 from kivymd.uix.scrollview import MDScrollView
-from kivymd.uix.textfield import MDTextField
-
 
 # Map filter names to SQL LIKE patterns
 FILTER_PATTERNS = {
-    "ALL":     "%",
-    "AUTH":    "%ENROLL%|%REVOKE%|%REAUTH%|%LOGIN%",
-    "SITREP":  "SITREP%",
-    "ASSET":   "ASSET%",
+    "ALL": "%",
+    "AUTH": "%ENROLL%|%REVOKE%|%REAUTH%|%LOGIN%",
+    "SITREP": "SITREP%",
+    "ASSET": "ASSET%",
     "MISSION": "MISSION%|OBJECTIVE%",
-    "CHAT":    "MESSAGE%|CHANNEL%",
-    "SYSTEM":  "SERVER%|CLIENT_STALE%|CLIENT_ENROLLED%",
+    "CHAT": "MESSAGE%|CHANNEL%",
+    "SYSTEM": "SERVER%|CLIENT_STALE%|CLIENT_ENROLLED%",
 }
 
 # Color per event category
 EVENT_COLORS = {
-    "SITREP_CREATED":    "#4a9eff",
-    "SITREP_DELETED":    "#ff3b3b",
-    "ASSET_CREATED":     "#00e5a0",
-    "ASSET_UPDATED":     "#00e5a0",
-    "ASSET_VERIFIED":    "#00e5a0",
-    "CLIENT_ENROLLED":   "#00e5a0",
-    "CLIENT_REVOKED":    "#ff3b3b",
-    "CLIENT_STALE":      "#f5a623",
-    "REAUTH_APPROVED":   "#00e5a0",
-    "REAUTH_DENIED":     "#ff3b3b",
-    "SERVER_STARTED":    "#4a9eff",
-    "SERVER_STOPPED":    "#f5a623",
+    "SITREP_CREATED": "#4a9eff",
+    "SITREP_DELETED": "#ff3b3b",
+    "ASSET_CREATED": "#00e5a0",
+    "ASSET_UPDATED": "#00e5a0",
+    "ASSET_VERIFIED": "#00e5a0",
+    "CLIENT_ENROLLED": "#00e5a0",
+    "CLIENT_REVOKED": "#ff3b3b",
+    "CLIENT_STALE": "#f5a623",
+    "REAUTH_APPROVED": "#00e5a0",
+    "REAUTH_DENIED": "#ff3b3b",
+    "SERVER_STARTED": "#4a9eff",
+    "SERVER_STOPPED": "#f5a623",
 }
 
 FILTER_OPTIONS = ["ALL", "AUTH", "SITREP", "ASSET", "MISSION", "CHAT", "SYSTEM"]
@@ -87,13 +85,15 @@ class AuditPanel(MDBoxLayout):
             height="44dp",
             padding=["16dp", "8dp"],
         )
-        title_row.add_widget(MDLabel(
-            text="AUDIT LOG",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        title_row.add_widget(
+            MDLabel(
+                text="AUDIT LOG",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         header.add_widget(title_row)
 
         # Filter buttons row
@@ -104,7 +104,7 @@ class AuditPanel(MDBoxLayout):
             spacing="4dp",
         )
         for f in FILTER_OPTIONS:
-            is_active = (f == self._active_filter)
+            is_active = f == self._active_filter
             btn = MDFlatButton(
                 text=f,
                 theme_text_color="Custom",
@@ -115,6 +115,7 @@ class AuditPanel(MDBoxLayout):
             )
             if is_active:
                 from kivy.graphics import Color, Rectangle
+
                 with btn.canvas.before:
                     Color(0.11, 0.18, 0.23, 1)
                     Rectangle(pos=btn.pos, size=btn.size)
@@ -131,28 +132,34 @@ class AuditPanel(MDBoxLayout):
             spacing="8dp",
             md_bg_color="#0a0e14",
         )
-        col_hdr.add_widget(MDLabel(
-            text="TIME",
-            font_style="Overline",
-            theme_text_color="Custom",
-            text_color="#3d4f63",
-            size_hint_x=None,
-            width="44dp",
-        ))
-        col_hdr.add_widget(MDLabel(
-            text="CLIENT",
-            font_style="Overline",
-            theme_text_color="Custom",
-            text_color="#3d4f63",
-            size_hint_x=None,
-            width="80dp",
-        ))
-        col_hdr.add_widget(MDLabel(
-            text="EVENT",
-            font_style="Overline",
-            theme_text_color="Custom",
-            text_color="#3d4f63",
-        ))
+        col_hdr.add_widget(
+            MDLabel(
+                text="TIME",
+                font_style="Overline",
+                theme_text_color="Custom",
+                text_color="#3d4f63",
+                size_hint_x=None,
+                width="44dp",
+            )
+        )
+        col_hdr.add_widget(
+            MDLabel(
+                text="CLIENT",
+                font_style="Overline",
+                theme_text_color="Custom",
+                text_color="#3d4f63",
+                size_hint_x=None,
+                width="80dp",
+            )
+        )
+        col_hdr.add_widget(
+            MDLabel(
+                text="EVENT",
+                font_style="Overline",
+                theme_text_color="Custom",
+                text_color="#3d4f63",
+            )
+        )
         self.add_widget(col_hdr)
         self.add_widget(MDDivider(color="#1e2d3d"))
 
@@ -168,16 +175,18 @@ class AuditPanel(MDBoxLayout):
         events = self._load_events(server)
 
         if not events:
-            rows.add_widget(MDLabel(
-                text="No audit events recorded yet.",
-                halign="center",
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color="#3d4f63",
-                size_hint_y=None,
-                height="48dp",
-                padding=["16dp", "8dp"],
-            ))
+            rows.add_widget(
+                MDLabel(
+                    text="No audit events recorded yet.",
+                    halign="center",
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color="#3d4f63",
+                    size_hint_y=None,
+                    height="48dp",
+                    padding=["16dp", "8dp"],
+                )
+            )
         else:
             for event in events:
                 rows.add_widget(self._event_row(event))
@@ -201,18 +210,16 @@ class AuditPanel(MDBoxLayout):
             else:
                 # Map filter to event type prefix
                 prefix_map = {
-                    "AUTH":    ("ENROLL", "REVOKE", "REAUTH", "LOGIN"),
-                    "SITREP":  ("SITREP",),
-                    "ASSET":   ("ASSET",),
+                    "AUTH": ("ENROLL", "REVOKE", "REAUTH", "LOGIN"),
+                    "SITREP": ("SITREP",),
+                    "ASSET": ("ASSET",),
                     "MISSION": ("MISSION", "OBJECTIVE"),
-                    "CHAT":    ("MESSAGE", "CHANNEL"),
-                    "SYSTEM":  ("SERVER", "CLIENT"),
+                    "CHAT": ("MESSAGE", "CHANNEL"),
+                    "SYSTEM": ("SERVER", "CLIENT"),
                 }
                 prefixes = prefix_map.get(self._active_filter, ())
                 if prefixes:
-                    placeholders = " OR ".join(
-                        "event_type LIKE ?" for _ in prefixes
-                    )
+                    placeholders = " OR ".join("event_type LIKE ?" for _ in prefixes)
                     condition = f"({placeholders})"
                     params = [f"{p}%" for p in prefixes]
                 else:
@@ -232,8 +239,8 @@ class AuditPanel(MDBoxLayout):
     def _event_row(self, event: tuple) -> MDBoxLayout:
         ts, callsign, event_type, details = event
 
-        ts_str   = time.strftime("%H:%M", time.localtime(ts)) if ts else "--:--"
-        color    = EVENT_COLORS.get(event_type, "#8a9bb0")
+        ts_str = time.strftime("%H:%M", time.localtime(ts)) if ts else "--:--"
+        color = EVENT_COLORS.get(event_type, "#8a9bb0")
         callsign = callsign or "SYSTEM"
 
         row = MDBoxLayout(
@@ -243,29 +250,35 @@ class AuditPanel(MDBoxLayout):
             spacing="8dp",
             md_bg_color="#0f1520",
         )
-        row.add_widget(MDLabel(
-            text=ts_str,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#3d4f63",
-            size_hint_x=None,
-            width="44dp",
-        ))
-        row.add_widget(MDLabel(
-            text=callsign,
-            font_style="Caption",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-            size_hint_x=None,
-            width="80dp",
-        ))
-        row.add_widget(MDLabel(
-            text=event_type,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color=color,
-        ))
+        row.add_widget(
+            MDLabel(
+                text=ts_str,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#3d4f63",
+                size_hint_x=None,
+                width="44dp",
+            )
+        )
+        row.add_widget(
+            MDLabel(
+                text=callsign,
+                font_style="Caption",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+                size_hint_x=None,
+                width="80dp",
+            )
+        )
+        row.add_widget(
+            MDLabel(
+                text=event_type,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color=color,
+            )
+        )
         return row
 
     def _set_filter(self, filter_name: str):

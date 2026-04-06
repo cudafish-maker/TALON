@@ -4,19 +4,17 @@
 # Kivy is mocked via conftest.py. We test the state management,
 # property defaults, and utility methods without rendering.
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from unittest.mock import MagicMock, patch
 
-from talon.ui.theme import TRANSPORT_COLORS, COLOR_PRIMARY, COLOR_AMBER, COLOR_RED
-
+from talon.ui.theme import COLOR_AMBER, COLOR_PRIMARY, COLOR_RED
 
 # ================================================================
 # StatusBar tests
 # ================================================================
-
 from talon.ui.widgets.status_bar import StatusBar
 
 
@@ -125,8 +123,12 @@ class TestStatusBarSyncColor:
 # ================================================================
 
 from talon.ui.widgets.map_widget import (
-    TalonMapWidget, MapWidget, MAPVIEW_AVAILABLE,
-    DEFAULT_LAT, DEFAULT_LON, DEFAULT_ZOOM,
+    DEFAULT_LAT,
+    DEFAULT_LON,
+    DEFAULT_ZOOM,
+    MAPVIEW_AVAILABLE,
+    MapWidget,
+    TalonMapWidget,
 )
 
 
@@ -152,10 +154,10 @@ class TestMapWidgetHexColor:
     def test_hex_to_kivy_green(self):
         result = TalonMapWidget._hex_to_kivy_color("#00e5a0")
         assert len(result) == 4
-        assert result[0] == 0.0            # R
+        assert result[0] == 0.0  # R
         assert abs(result[1] - 0.898) < 0.01  # G ≈ 229/255
         assert abs(result[2] - 0.627) < 0.01  # B ≈ 160/255
-        assert result[3] == 1.0            # A
+        assert result[3] == 1.0  # A
 
     def test_hex_to_kivy_black(self):
         result = TalonMapWidget._hex_to_kivy_color("#000000")
@@ -226,7 +228,7 @@ class TestMapWidgetMarkers:
 # Documents helper tests (pure functions, no Kivy dependency)
 # ================================================================
 
-from talon.ui.screens.documents import _format_size, _file_icon
+from talon.ui.screens.documents import _file_icon, _format_size
 
 
 class TestFormatSize:

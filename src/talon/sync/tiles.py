@@ -18,16 +18,15 @@
 # At zoom level 10, the whole world is ~1 million tiles.
 # A typical AO at zoom 10-17 might be 5,000-50,000 tiles.
 
-import os
 import math
-
+import os
 
 # Tile sources — URLs that serve map tile images.
 # {z} = zoom level, {x} = column, {y} = row
 TILE_SOURCES = {
     "openstreetmap": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    "satellite": "",       # To be configured (e.g., ESRI, Mapbox)
-    "topography": "",      # To be configured (e.g., OpenTopoMap)
+    "satellite": "",  # To be configured (e.g., ESRI, Mapbox)
+    "topography": "",  # To be configured (e.g., OpenTopoMap)
 }
 
 
@@ -45,7 +44,7 @@ def lat_lon_to_tile(lat: float, lon: float, zoom: int) -> tuple:
     Returns:
         Tuple of (x, y) tile coordinates.
     """
-    n = 2 ** zoom
+    n = 2**zoom
     x = int((lon + 180.0) / 360.0 * n)
     lat_rad = math.radians(lat)
     y = int((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n)
@@ -89,8 +88,12 @@ def get_tiles_for_bounds(
 
 
 def estimate_tile_count(
-    north: float, south: float, east: float, west: float,
-    zoom_min: int, zoom_max: int,
+    north: float,
+    south: float,
+    east: float,
+    west: float,
+    zoom_min: int,
+    zoom_max: int,
 ) -> int:
     """Estimate how many tiles will need to be downloaded.
 

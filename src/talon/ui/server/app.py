@@ -21,16 +21,14 @@
 
 import os
 
-from kivy.lang import Builder
-from kivy.core.window import Window
 from kivy.clock import Clock
-
+from kivy.core.window import Window
+from kivy.lang import Builder
 from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
 
 from talon.server.app import TalonServer
-from talon.ui.theme import KIVYMD_THEME, BG_BASE
-
+from talon.ui.theme import BG_BASE, KIVYMD_THEME
 
 KV_DIR = os.path.join(os.path.dirname(__file__), "kv")
 
@@ -54,11 +52,11 @@ class TalonServerApp(MDApp):
 
     def build(self):
         """Set up theme, load KV files, create screen manager."""
-        self.theme_cls.theme_style     = KIVYMD_THEME["theme_style"]
+        self.theme_cls.theme_style = KIVYMD_THEME["theme_style"]
         self.theme_cls.primary_palette = KIVYMD_THEME["primary_palette"]
-        self.theme_cls.accent_palette  = KIVYMD_THEME["accent_palette"]
-        self.theme_cls.primary_hue     = KIVYMD_THEME["primary_hue"]
-        self.theme_cls.accent_hue      = KIVYMD_THEME["accent_hue"]
+        self.theme_cls.accent_palette = KIVYMD_THEME["accent_palette"]
+        self.theme_cls.primary_hue = KIVYMD_THEME["primary_hue"]
+        self.theme_cls.accent_hue = KIVYMD_THEME["accent_hue"]
 
         Window.clearcolor = self._hex_to_rgba(BG_BASE)
 
@@ -92,9 +90,7 @@ class TalonServerApp(MDApp):
 
     def do_login(self, passphrase: str):
         """Start TalonServer with the given passphrase."""
-        Clock.schedule_once(
-            lambda dt: self._start_server(passphrase), 0.1
-        )
+        Clock.schedule_once(lambda dt: self._start_server(passphrase), 0.1)
 
     def _start_server(self, passphrase: str):
         try:
@@ -115,7 +111,7 @@ class TalonServerApp(MDApp):
     @staticmethod
     def _hex_to_rgba(hex_color: str) -> tuple:
         h = hex_color.lstrip("#")
-        r, g, b = (int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+        r, g, b = (int(h[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
         return (r, g, b, 1.0)
 
     def _load_kv_files(self):

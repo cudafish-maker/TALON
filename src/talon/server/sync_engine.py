@@ -13,13 +13,11 @@
 # Over LoRa (RNode), sync is filtered to only essential tables and
 # data is compressed. See talon.sync.priority and talon.sync.compression.
 
+from talon.sync.priority import filter_for_transport, sort_by_priority
 from talon.sync.protocol import (
-    build_sync_response,
     apply_sync_response,
-    ConflictError,
+    build_sync_response,
 )
-from talon.sync.priority import sort_by_priority, filter_for_transport
-from talon.sync.compression import compress, decompress
 
 
 class SyncEngine:
@@ -38,8 +36,7 @@ class SyncEngine:
         self.on_conflict = on_conflict
         self.on_data_changed = on_data_changed
 
-    def handle_sync_request(self, client_id: str, client_versions: dict,
-                            is_broadband: bool = True) -> dict:
+    def handle_sync_request(self, client_id: str, client_versions: dict, is_broadband: bool = True) -> dict:
         """Process an incoming sync request from a client.
 
         Args:
@@ -58,9 +55,8 @@ class SyncEngine:
         # Filter out broadband-only tables if on LoRa
         if not is_broadband:
             from talon.constants import TransportType
-            allowed = filter_for_transport(
-                list(updates.keys()), TransportType.RNODE
-            )
+
+            allowed = filter_for_transport(list(updates.keys()), TransportType.RNODE)
             updates = {k: v for k, v in updates.items() if k in allowed}
 
         # Sort by sync priority (system records first, map tiles last)
@@ -73,8 +69,7 @@ class SyncEngine:
             "timestamp": full_response.get("timestamp"),
         }
 
-    def handle_client_changes(self, client_id: str,
-                              changes: dict) -> dict:
+    def handle_client_changes(self, client_id: str, changes: dict) -> dict:
         """Apply changes received from a client.
 
         Args:
@@ -94,22 +89,25 @@ class SyncEngine:
                     conflict_list = apply_sync_response(self.db, response)
                     if conflict_list:
                         for c in conflict_list:
-                            conflicts.append({
-                                "table": table_name,
-                                "record_id": record.get("id"),
-                                "error": c,
-                            })
+                            conflicts.append(
+                                {
+                                    "table": table_name,
+                                    "record_id": record.get("id"),
+                                    "error": c,
+                                }
+                            )
                             if self.on_conflict:
-                                self.on_conflict(client_id, table_name,
-                                                 record, c)
+                                self.on_conflict(client_id, table_name, record, c)
                     else:
                         applied += 1
                 except Exception as e:
-                    conflicts.append({
-                        "table": table_name,
-                        "record_id": record.get("id"),
-                        "error": str(e),
-                    })
+                    conflicts.append(
+                        {
+                            "table": table_name,
+                            "record_id": record.get("id"),
+                            "error": str(e),
+                        }
+                    )
                     if self.on_conflict:
                         self.on_conflict(client_id, table_name, record, e)
 
@@ -119,8 +117,7 @@ class SyncEngine:
 
         return {"applied": applied, "conflicts": conflicts}
 
-    def handle_message(self, client_id: str, message: dict,
-                       is_broadband: bool = True) -> dict:
+    def handle_message(self, client_id: str, message: dict, is_broadband: bool = True) -> dict:
         """Route an incoming sync message from a client.
 
         This is the single entry point for the transport layer.
@@ -139,9 +136,7 @@ class SyncEngine:
 
         if msg_type == "sync_request":
             client_versions = message.get("versions", {})
-            return self.handle_sync_request(
-                client_id, client_versions, is_broadband
-            )
+            return self.handle_sync_request(client_id, client_versions, is_broadband)
 
         if msg_type == "client_changes":
             changes = message.get("changes", {})
@@ -149,8 +144,7 @@ class SyncEngine:
 
         return {"error": f"Unknown message type: {msg_type}"}
 
-    def register_client(self, client_id: str, callsign: str,
-                        transport_type: str):
+    def register_client(self, client_id: str, callsign: str, transport_type: str):
         """Track a client that has connected.
 
         Args:

@@ -1,25 +1,41 @@
 # tests/test_ui_theme.py
 # Tests for talon/ui/theme.py — color palette, constants, color maps.
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from talon.ui.theme import (
-    BG_BASE, BG_DARK, BG_SURFACE, BG_ELEVATED,
-    COLOR_PRIMARY, COLOR_AMBER, COLOR_RED, COLOR_BLUE,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DISABLED,
-    BORDER_SUBTLE, BORDER_ACTIVE,
-    IMPORTANCE_COLORS, TRANSPORT_COLORS,
-    KIVYMD_THEME, DESKTOP_MIN_WIDTH,
-    FONT_MONO, FONT_SANS,
-    PADDING_SM, PADDING_MD, PADDING_LG,
-    RADIUS_SM, RADIUS_MD,
+    BG_BASE,
+    BG_DARK,
+    BG_ELEVATED,
+    BG_SURFACE,
+    BORDER_ACTIVE,
+    BORDER_SUBTLE,
+    COLOR_AMBER,
+    COLOR_BLUE,
+    COLOR_PRIMARY,
+    COLOR_RED,
+    DESKTOP_MIN_WIDTH,
+    FONT_MONO,
+    FONT_SANS,
+    IMPORTANCE_COLORS,
+    KIVYMD_THEME,
+    PADDING_LG,
+    PADDING_MD,
+    PADDING_SM,
+    RADIUS_MD,
+    RADIUS_SM,
+    TEXT_DISABLED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
     TOUCH_TARGET,
+    TRANSPORT_COLORS,
 )
 
-
 # ---------- Color format validation ----------
+
 
 def _is_valid_hex(color: str) -> bool:
     """Check that a color string is #RRGGBB format."""
@@ -54,10 +70,11 @@ def test_border_colors_are_valid_hex():
 
 # ---------- Background ordering ----------
 
+
 def _hex_brightness(color: str) -> int:
     """Return perceived brightness of a hex color (0-255)."""
     h = color.lstrip("#")
-    r, g, b = (int(h[i:i+2], 16) for i in (0, 2, 4))
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
     return (r * 299 + g * 587 + b * 114) // 1000
 
 
@@ -74,6 +91,7 @@ def test_text_primary_is_brighter_than_secondary():
 
 
 # ---------- IMPORTANCE_COLORS ----------
+
 
 def test_importance_colors_has_all_levels():
     expected = {"ROUTINE", "PRIORITY", "FLASH"}
@@ -92,6 +110,7 @@ def test_importance_colors_are_valid_hex():
 
 
 # ---------- TRANSPORT_COLORS ----------
+
 
 def test_transport_colors_has_expected_keys():
     expected = {"yggdrasil", "i2p", "tcp", "rnode", "offline"}
@@ -118,17 +137,18 @@ def test_transport_colors_are_valid_hex():
 
 # ---------- KIVYMD_THEME ----------
 
+
 def test_kivymd_theme_is_dark():
     assert KIVYMD_THEME["theme_style"] == "Dark"
 
 
 def test_kivymd_theme_has_required_keys():
-    required = {"theme_style", "primary_palette", "accent_palette",
-                "primary_hue", "accent_hue"}
+    required = {"theme_style", "primary_palette", "accent_palette", "primary_hue", "accent_hue"}
     assert required.issubset(set(KIVYMD_THEME.keys()))
 
 
 # ---------- Layout constants ----------
+
 
 def test_desktop_min_width_is_reasonable():
     assert 600 <= DESKTOP_MIN_WIDTH <= 1200

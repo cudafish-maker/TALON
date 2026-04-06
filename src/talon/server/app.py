@@ -15,21 +15,21 @@
 #   7. Launch the server UI (Kivy)
 
 import os
+
 import yaml
 
 from talon.crypto.keys import derive_master_key, derive_subkey, generate_salt
 from talon.db.database import open_database
 from talon.db.migrations import run_migrations
-from talon.net.reticulum import initialize_reticulum, create_identity
-from talon.net.rnode import RNodeManager
 from talon.net.heartbeat import HeartbeatMonitor
 from talon.net.link_manager import ServerLinkManager
-from talon.server.sync_engine import SyncEngine
-from talon.server.tile_server import TileServer
-from talon.server.client_registry import ClientRegistry
+from talon.net.reticulum import create_identity, initialize_reticulum
+from talon.net.rnode import RNodeManager
 from talon.server.audit import log_event
 from talon.server.auth import enroll_client, generate_enrollment_token
-from talon.crypto.keys import derive_subkey
+from talon.server.client_registry import ClientRegistry
+from talon.server.sync_engine import SyncEngine
+from talon.server.tile_server import TileServer
 
 
 class TalonServer:
@@ -60,9 +60,7 @@ class TalonServer:
         Loads default.yaml first, then overlays server.yaml on top.
         This means server.yaml only needs to contain overrides.
         """
-        config_dir = self.config_path or os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "config"
-        )
+        config_dir = self.config_path or os.path.join(os.path.dirname(__file__), "..", "..", "..", "config")
 
         # Load defaults
         default_path = os.path.join(config_dir, "default.yaml")
@@ -148,9 +146,7 @@ class TalonServer:
         if self.rnode_manager and self.rnode_manager.status == "ready":
             self.rnode_manager.mark_in_use()
 
-        self.identity = create_identity(
-            identity_path=net_config.get("identity_path")
-        )
+        self.identity = create_identity(identity_path=net_config.get("identity_path"))
 
         # Start the link manager — accepts incoming client connections
         self.link_manager = ServerLinkManager(self.identity)
@@ -194,16 +190,14 @@ class TalonServer:
         self.setup_services()
         self.running = True
 
-        log_event("SERVER_STARTED", "SYSTEM",
-                  details="T.A.L.O.N. server started")
+        log_event("SERVER_STARTED", "SYSTEM", details="T.A.L.O.N. server started")
 
     def shutdown(self):
         """Clean shutdown of all services."""
         self.running = False
         if self.link_manager:
             self.link_manager.stop()
-        log_event("SERVER_STOPPED", "SYSTEM",
-                  details="T.A.L.O.N. server stopped")
+        log_event("SERVER_STOPPED", "SYSTEM", details="T.A.L.O.N. server stopped")
 
     # ---------- Enrollment token management ----------
 
@@ -218,16 +212,14 @@ class TalonServer:
             The 32-character hex token string.
         """
         import time
+
         token = generate_enrollment_token()
         self.db.execute(
-            "INSERT INTO enrollment_tokens "
-            "(token, callsign, generated_at, description) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO enrollment_tokens (token, callsign, generated_at, description) VALUES (?, ?, ?, ?)",
             (token, callsign, time.time(), description),
         )
         self.db.commit()
-        log_event("ENROLLMENT_TOKEN_GENERATED", "Server",
-                  details=f"Token generated for {callsign}")
+        log_event("ENROLLMENT_TOKEN_GENERATED", "Server", details=f"Token generated for {callsign}")
         return token
 
     def get_pending_tokens(self) -> list:
@@ -237,13 +229,9 @@ class TalonServer:
             List of dicts with token, callsign, generated_at.
         """
         cursor = self.db.execute(
-            "SELECT token, callsign, generated_at FROM enrollment_tokens "
-            "WHERE used = 0 ORDER BY generated_at DESC"
+            "SELECT token, callsign, generated_at FROM enrollment_tokens WHERE used = 0 ORDER BY generated_at DESC"
         )
-        return [
-            {"token": row[0], "callsign": row[1], "generated_at": row[2]}
-            for row in cursor.fetchall()
-        ]
+        return [{"token": row[0], "callsign": row[1], "generated_at": row[2]} for row in cursor.fetchall()]
 
     def _get_valid_tokens_dict(self) -> dict:
         """Build a valid_tokens dict from DB for enroll_client().
@@ -251,20 +239,15 @@ class TalonServer:
         Returns:
             Dict of {token: {"used": bool, "callsign": str}}.
         """
-        cursor = self.db.execute(
-            "SELECT token, callsign, used FROM enrollment_tokens"
-        )
-        return {
-            row[0]: {"used": bool(row[2]), "callsign": row[1]}
-            for row in cursor.fetchall()
-        }
+        cursor = self.db.execute("SELECT token, callsign, used FROM enrollment_tokens")
+        return {row[0]: {"used": bool(row[2]), "callsign": row[1]} for row in cursor.fetchall()}
 
     def _mark_token_used(self, token: str, client_identity: str):
         """Mark an enrollment token as used in the DB."""
         import time
+
         self.db.execute(
-            "UPDATE enrollment_tokens SET used = 1, used_by = ?, used_at = ? "
-            "WHERE token = ?",
+            "UPDATE enrollment_tokens SET used = 1, used_by = ?, used_at = ? WHERE token = ?",
             (client_identity, time.time(), token),
         )
         self.db.commit()
@@ -283,33 +266,27 @@ class TalonServer:
         callsign = message.get("callsign", "")
 
         if not token or not callsign:
-            return {"type": "enrollment_response", "success": False,
-                    "error": "Missing token or callsign"}
+            return {"type": "enrollment_response", "success": False, "error": "Missing token or callsign"}
 
         valid_tokens = self._get_valid_tokens_dict()
-        result = enroll_client(token, client_hash, callsign,
-                               valid_tokens, self.server_secret)
+        result = enroll_client(token, client_hash, callsign, valid_tokens, self.server_secret)
 
         if result["success"]:
             self._mark_token_used(token, client_hash)
 
             # Register the client
             import time
+
             self.db.execute(
                 "INSERT OR REPLACE INTO client_registry "
                 "(id, callsign, reticulum_identity, status, enrolled_at, "
                 "lease_expires_at) VALUES (?, ?, ?, 'active', ?, ?)",
-                (client_hash, callsign, client_hash, time.time(),
-                 result["lease"]["expires_at"]),
+                (client_hash, callsign, client_hash, time.time(), result["lease"]["expires_at"]),
             )
             self.db.commit()
-            self.client_registry.register(
-                client_hash, callsign, "reticulum"
-            )
+            self.client_registry.register(client_hash, callsign, "reticulum")
 
-            log_event("CLIENT_ENROLLED", "Server",
-                      target=client_hash,
-                      details=f"Enrolled as {callsign}")
+            log_event("CLIENT_ENROLLED", "Server", target=client_hash, details=f"Enrolled as {callsign}")
 
             # Hex-encode bytes for JSON transport
             lease = result["lease"]
@@ -327,9 +304,7 @@ class TalonServer:
                 "callsign": callsign,
             }
         else:
-            log_event("ENROLLMENT_FAILED", "Server",
-                      target=client_hash,
-                      details=result.get("error", "Unknown error"))
+            log_event("ENROLLMENT_FAILED", "Server", target=client_hash, details=result.get("error", "Unknown error"))
             return {
                 "type": "enrollment_response",
                 "success": False,
@@ -349,9 +324,7 @@ class TalonServer:
             Response dict to send back to the client.
         """
         is_broadband = self._client_is_broadband(client_hash)
-        return self.sync_engine.handle_message(
-            client_hash, message, is_broadband
-        )
+        return self.sync_engine.handle_message(client_hash, message, is_broadband)
 
     def _on_heartbeat(self, client_hash: str, payload: dict):
         """Process a heartbeat from a client.
@@ -367,14 +340,12 @@ class TalonServer:
         record = self.client_registry.get_client(client_hash)
         callsign = record["callsign"] if record else client_hash
         self.sync_engine.register_client(client_hash, callsign, "reticulum")
-        log_event("CLIENT_CONNECTED", "SYSTEM",
-                  target=client_hash, details=f"Link established")
+        log_event("CLIENT_CONNECTED", "SYSTEM", target=client_hash, details="Link established")
 
     def _on_client_unlink(self, client_hash: str):
         """Called when a client's RNS link is torn down."""
         self.sync_engine.unregister_client(client_hash)
-        log_event("CLIENT_DISCONNECTED", "SYSTEM",
-                  target=client_hash, details="Link closed")
+        log_event("CLIENT_DISCONNECTED", "SYSTEM", target=client_hash, details="Link closed")
 
     def _on_data_changed(self, source_client: str, changes: dict):
         """Called when a client pushes new data.
@@ -389,15 +360,12 @@ class TalonServer:
         if self.link_manager:
             for client_hash in self.link_manager.get_connected_clients():
                 if client_hash != source_client:
-                    self.link_manager.send_to_client(
-                        client_hash, notification
-                    )
+                    self.link_manager.send_to_client(client_hash, notification)
 
     def _on_client_stale(self, callsign: str, status: str):
         """Called when a client's heartbeat status changes."""
         self.client_registry.mark_stale(callsign)
-        log_event("CLIENT_STALE", "SYSTEM",
-                  target=callsign, details="Missed heartbeat threshold")
+        log_event("CLIENT_STALE", "SYSTEM", target=callsign, details="Missed heartbeat threshold")
 
     def _client_is_broadband(self, client_hash: str) -> bool:
         """Check if a client is on a broadband transport.

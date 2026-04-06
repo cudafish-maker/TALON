@@ -17,8 +17,8 @@
 # If the server misses 3 consecutive heartbeats from a client,
 # that client is marked as STALE.
 
-import time
 import threading
+import time
 
 
 class HeartbeatSender:

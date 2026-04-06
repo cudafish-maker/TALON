@@ -11,8 +11,8 @@
 # - Only the creating operator or server can delete a route
 
 import math
-from talon.db.models import Waypoint, Route
 
+from talon.db.models import Route, Waypoint
 
 # ---------- Haversine distance ----------
 
@@ -40,8 +40,7 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlon = math.radians(lon2 - lon1)
 
     # Haversine formula
-    a = (math.sin(dlat / 2) ** 2
-         + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlon / 2) ** 2)
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return EARTH_RADIUS_M * c
@@ -49,9 +48,10 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 # ---------- Factory helpers ----------
 
-def create_waypoint(name: str, lat: float, lon: float,
-                    created_by: str, waypoint_type: str = "CHECKPOINT",
-                    description: str = "") -> Waypoint:
+
+def create_waypoint(
+    name: str, lat: float, lon: float, created_by: str, waypoint_type: str = "CHECKPOINT", description: str = ""
+) -> Waypoint:
     """Create a new waypoint.
 
     Args:
@@ -75,8 +75,7 @@ def create_waypoint(name: str, lat: float, lon: float,
     )
 
 
-def create_route(name: str, created_by: str,
-                 description: str = "") -> Route:
+def create_route(name: str, created_by: str, description: str = "") -> Route:
     """Create a new route (initially empty — add waypoints separately).
 
     Args:
@@ -95,6 +94,7 @@ def create_route(name: str, created_by: str,
 
 
 # ---------- Distance helpers ----------
+
 
 def calculate_leg_distance(wp_a: Waypoint, wp_b: Waypoint) -> float:
     """Distance in metres between two consecutive waypoints."""
@@ -121,8 +121,8 @@ def calculate_route_distance(waypoints: list) -> float:
 
 # ---------- Permission helpers ----------
 
-def can_delete_route(operator_callsign: str, route: Route,
-                     operator_role: str) -> bool:
+
+def can_delete_route(operator_callsign: str, route: Route, operator_role: str) -> bool:
     """Check if an operator can delete a route.
 
     Allowed for the route creator or the server operator.

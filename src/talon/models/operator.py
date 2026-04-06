@@ -10,8 +10,8 @@
 # - Skills come from a predefined list + custom skills
 # - Custom skills created by one operator are synced and available to all
 
-from talon.db.models import Operator
 from talon.constants import DEFAULT_SKILLS
+from talon.db.models import Operator
 
 
 def validate_profile(operator: Operator) -> list:

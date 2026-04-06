@@ -1,37 +1,46 @@
 # tests/test_models.py
 # Tests for the business logic in talon/models/.
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from talon.models.operator import validate_profile, can_edit_profile, get_available_skills
-from talon.models.asset import can_verify, verify_asset, validate_asset
-from talon.models.sitrep import (
-    create_sitrep, append_entry, can_delete_sitrep,
-    get_template, get_available_templates,
-)
-from talon.models.mission import (
-    create_mission, add_objective, append_note,
-    can_update_objective, can_abort_mission,
-)
-from talon.models.route import (
-    create_waypoint, create_route, calculate_route_distance,
-    can_delete_route, _haversine,
-)
-from talon.models.zone import create_zone, validate_zone, can_delete_zone
+from talon.db.models import Asset, Document, Objective, Zone
+from talon.models.asset import can_verify, validate_asset
 from talon.models.chat import (
-    create_channel, create_message, can_send_message,
-    can_delete_message, create_direct_channel,
+    can_delete_message,
+    can_send_message,
+    create_channel,
+    create_direct_channel,
 )
 from talon.models.document import (
-    create_document, validate_document, can_view_document,
-    can_delete_document,
+    can_view_document,
+    create_document,
+    validate_document,
 )
-from talon.db.models import Operator, Asset, Objective, Route, Zone, Document
-
+from talon.models.mission import (
+    can_abort_mission,
+    can_update_objective,
+    create_mission,
+)
+from talon.models.operator import can_edit_profile, get_available_skills
+from talon.models.route import (
+    _haversine,
+    calculate_route_distance,
+    create_route,
+    create_waypoint,
+)
+from talon.models.sitrep import (
+    can_delete_sitrep,
+    create_sitrep,
+    get_available_templates,
+    get_template,
+)
+from talon.models.zone import can_delete_zone, create_zone, validate_zone
 
 # ---------- Operator ----------
+
 
 def test_operator_can_edit_own_profile():
     assert can_edit_profile("Alpha", "Alpha", "operator") is True
@@ -58,27 +67,24 @@ def test_get_skills_with_custom():
 
 # ---------- Asset ----------
 
+
 def test_cannot_verify_own_asset():
-    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE",
-                  created_by="Alpha", verification="unverified")
+    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE", created_by="Alpha", verification="unverified")
     assert can_verify(asset, "Alpha", "operator") is False
 
 
 def test_other_operator_can_verify():
-    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE",
-                  created_by="Alpha", verification="unverified")
+    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE", created_by="Alpha", verification="unverified")
     assert can_verify(asset, "Bravo", "operator") is True
 
 
 def test_server_can_verify():
-    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE",
-                  created_by="Alpha", verification="unverified")
+    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE", created_by="Alpha", verification="unverified")
     assert can_verify(asset, "Server", "server") is True
 
 
 def test_cannot_verify_already_verified():
-    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE",
-                  created_by="Alpha", verification="verified")
+    asset = Asset(name="Cache Alpha", category="SUPPLY_CACHE", created_by="Alpha", verification="verified")
     assert can_verify(asset, "Bravo", "operator") is False
 
 
@@ -89,6 +95,7 @@ def test_validate_asset_missing_name():
 
 
 # ---------- SITREP ----------
+
 
 def test_create_sitrep():
     sitrep = create_sitrep("Alpha", importance="PRIORITY")
@@ -117,6 +124,7 @@ def test_only_server_can_delete_sitrep():
 
 # ---------- Mission ----------
 
+
 def test_create_mission():
     mission = create_mission("Operation Eagle", "Alpha")
     assert mission.name == "Operation Eagle"
@@ -124,20 +132,17 @@ def test_create_mission():
 
 
 def test_assigned_operator_can_update_objective():
-    obj = Objective(mission_id="m1", description="Secure LZ",
-                    assigned_to="Bravo")
+    obj = Objective(mission_id="m1", description="Secure LZ", assigned_to="Bravo")
     assert can_update_objective("Bravo", obj, "operator") is True
 
 
 def test_unassigned_operator_cannot_update_objective():
-    obj = Objective(mission_id="m1", description="Secure LZ",
-                    assigned_to="Bravo")
+    obj = Objective(mission_id="m1", description="Secure LZ", assigned_to="Bravo")
     assert can_update_objective("Charlie", obj, "operator") is False
 
 
 def test_server_can_update_any_objective():
-    obj = Objective(mission_id="m1", description="Secure LZ",
-                    assigned_to="Bravo")
+    obj = Objective(mission_id="m1", description="Secure LZ", assigned_to="Bravo")
     assert can_update_objective("Server", obj, "server") is True
 
 
@@ -147,6 +152,7 @@ def test_only_server_can_abort():
 
 
 # ---------- Route ----------
+
 
 def test_haversine_same_point():
     """Distance from a point to itself should be 0."""
@@ -175,9 +181,9 @@ def test_route_distance_single_point():
 
 # ---------- Zone ----------
 
+
 def test_create_zone():
-    zone = create_zone("AO Eagle", "Alpha", zone_type="AO",
-                       boundary='[{"lat": 34.0, "lon": -118.0}]')
+    zone = create_zone("AO Eagle", "Alpha", zone_type="AO", boundary='[{"lat": 34.0, "lon": -118.0}]')
     assert zone.name == "AO Eagle"
 
 
@@ -195,6 +201,7 @@ def test_zone_delete_permissions():
 
 
 # ---------- Chat ----------
+
 
 def test_create_channel():
     channel = create_channel("General", "Alpha", channel_type="GROUP")
@@ -223,35 +230,31 @@ def test_only_server_can_delete_messages():
 
 # ---------- Document ----------
 
+
 def test_create_document():
-    doc = create_document("Map Overlay", "Alpha", "overlays/ao.png",
-                          file_size=50000, mime_type="image/png")
+    doc = create_document("Map Overlay", "Alpha", "overlays/ao.png", file_size=50000, mime_type="image/png")
     assert doc.title == "Map Overlay"
     assert doc.access_level == "ALL"
 
 
 def test_validate_document_missing_name():
-    doc = Document(title="", uploaded_by="Alpha",
-                   file_path="intel/report.pdf")
+    doc = Document(title="", uploaded_by="Alpha", file_path="intel/report.pdf")
     errors = validate_document(doc)
     assert "Document name is required" in errors
 
 
 def test_document_access_all():
-    doc = Document(title="Map", uploaded_by="Alpha", file_path="map.png",
-                   access_level="ALL")
+    doc = Document(title="Map", uploaded_by="Alpha", file_path="map.png", access_level="ALL")
     assert can_view_document(doc, "Bravo", "operator") is True
 
 
 def test_document_access_restricted():
-    doc = Document(title="Notes", uploaded_by="Alpha", file_path="notes.txt",
-                   access_level="RESTRICTED")
+    doc = Document(title="Notes", uploaded_by="Alpha", file_path="notes.txt", access_level="RESTRICTED")
     assert can_view_document(doc, "Alpha", "operator") is True
     assert can_view_document(doc, "Bravo", "operator") is False
 
 
 def test_document_access_server_sees_all():
-    doc = Document(title="Intel", uploaded_by="Alpha", file_path="intel.pdf",
-                   access_level="RESTRICTED")
+    doc = Document(title="Intel", uploaded_by="Alpha", file_path="intel.pdf", access_level="RESTRICTED")
     # Server can always view
     assert can_view_document(doc, "Server", "server") is True

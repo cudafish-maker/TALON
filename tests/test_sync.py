@@ -1,22 +1,26 @@
 # tests/test_sync.py
 # Tests for the sync layer (protocol, priority, compression, outbox, tiles).
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from talon.sync.priority import sort_by_priority, filter_for_transport, BROADBAND_ONLY
 from talon.constants import TransportType
 from talon.sync.compression import (
-    compress, decompress,
-    pack_position, unpack_position,
-    split_packets, reassemble_packets,
+    compress,
+    decompress,
+    pack_position,
+    reassemble_packets,
+    split_packets,
+    unpack_position,
 )
 from talon.sync.outbox import Outbox
-from talon.sync.tiles import lat_lon_to_tile, estimate_tile_count, is_tile_cached
-
+from talon.sync.priority import filter_for_transport, sort_by_priority
+from talon.sync.tiles import estimate_tile_count, is_tile_cached, lat_lon_to_tile
 
 # ---------- Priority ----------
+
 
 def test_sort_by_priority():
     """Higher priority tables should come first."""
@@ -46,6 +50,7 @@ def test_filter_for_broadband_keeps_all():
 
 
 # ---------- Compression ----------
+
 
 def test_compress_decompress():
     """Compress → decompress should return original data."""
@@ -89,6 +94,7 @@ def test_single_packet_no_split():
 
 
 # ---------- Outbox ----------
+
 
 def test_outbox_add_and_get():
     outbox = Outbox()
@@ -134,6 +140,7 @@ def test_outbox_json_roundtrip():
 
 
 # ---------- Tiles ----------
+
 
 def test_lat_lon_to_tile():
     """Known coordinate should produce a valid tile."""

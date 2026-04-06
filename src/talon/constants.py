@@ -10,113 +10,113 @@ from enum import Enum, auto
 # Controls how urgently notifications are displayed.
 # Listed from least urgent to most urgent.
 class SITREPImportance(Enum):
-    ROUTINE = auto()         # Subtle badge on SITREP tab
-    PRIORITY = auto()        # Visible banner, subtle visual pulse
-    IMMEDIATE = auto()       # Persistent banner, persistent pulse
-    FLASH = auto()           # Overlay popup, screen flash, audio IF enabled
+    ROUTINE = auto()  # Subtle badge on SITREP tab
+    PRIORITY = auto()  # Visible banner, subtle visual pulse
+    IMMEDIATE = auto()  # Persistent banner, persistent pulse
+    FLASH = auto()  # Overlay popup, screen flash, audio IF enabled
     FLASH_OVERRIDE = auto()  # Full screen takeover, audio IF enabled
 
 
 # --- Asset Categories ---
 # Built-in asset types. Operators can also create custom categories.
 class AssetCategory(Enum):
-    OPERATOR = auto()       # A person on the team
-    SAFE_HOUSE = auto()     # Secure location
-    CACHE_FOOD = auto()     # Food supply cache
-    CACHE_AMMO = auto()     # Ammunition cache
-    RALLY_POINT = auto()    # Pre-arranged meeting location
-    VEHICLE = auto()        # Car, truck, boat, etc.
-    CUSTOM = auto()         # Operator-defined category
+    OPERATOR = auto()  # A person on the team
+    SAFE_HOUSE = auto()  # Secure location
+    CACHE_FOOD = auto()  # Food supply cache
+    CACHE_AMMO = auto()  # Ammunition cache
+    RALLY_POINT = auto()  # Pre-arranged meeting location
+    VEHICLE = auto()  # Car, truck, boat, etc.
+    CUSTOM = auto()  # Operator-defined category
 
 
 # --- Asset Verification Status ---
 # An asset starts as UNVERIFIED when created by a single operator.
 # It becomes VERIFIED when a second operator or the server confirms it.
 class VerificationStatus(Enum):
-    UNVERIFIED = auto()     # Only one operator has reported this asset
-    VERIFIED = auto()       # A second operator or server has confirmed
+    UNVERIFIED = auto()  # Only one operator has reported this asset
+    VERIFIED = auto()  # A second operator or server has confirmed
 
 
 # --- Client Connection Status ---
 # How the server sees each connected client.
 class ClientStatus(Enum):
-    ONLINE = auto()         # Connected and responding to heartbeats
-    STALE = auto()          # Missed heartbeats, may have lost connection
-    SOFT_LOCKED = auto()    # Lease expired (>24hrs without sync)
-    REVOKED = auto()        # Compromised or lost — identity burned
+    ONLINE = auto()  # Connected and responding to heartbeats
+    STALE = auto()  # Missed heartbeats, may have lost connection
+    SOFT_LOCKED = auto()  # Lease expired (>24hrs without sync)
+    REVOKED = auto()  # Compromised or lost — identity burned
 
 
 # --- Mission Status ---
 class MissionStatus(Enum):
-    PLANNING = auto()       # Being set up, not yet active
-    ACTIVE = auto()         # Currently in progress
-    COMPLETE = auto()       # Successfully finished
-    ABORTED = auto()        # Cancelled (server operator only)
+    PLANNING = auto()  # Being set up, not yet active
+    ACTIVE = auto()  # Currently in progress
+    COMPLETE = auto()  # Successfully finished
+    ABORTED = auto()  # Cancelled (server operator only)
 
 
 # --- Objective Status ---
 class ObjectiveStatus(Enum):
-    PENDING = auto()        # Not yet started
-    IN_PROGRESS = auto()    # Currently being worked
-    COMPLETE = auto()       # Done
-    FAILED = auto()         # Could not be completed
+    PENDING = auto()  # Not yet started
+    IN_PROGRESS = auto()  # Currently being worked
+    COMPLETE = auto()  # Done
+    FAILED = auto()  # Could not be completed
 
 
 # --- Route Status ---
 class RouteStatus(Enum):
-    PLANNED = auto()        # Route is planned but not yet in use
-    ACTIVE = auto()         # Currently being traveled
-    COMPLETED = auto()      # Route has been completed
+    PLANNED = auto()  # Route is planned but not yet in use
+    ACTIVE = auto()  # Currently being traveled
+    COMPLETED = auto()  # Route has been completed
 
 
 # --- Zone Types ---
 # What a marked area on the map represents.
 class ZoneType(Enum):
-    AO = auto()             # Area of Operations — the overall working area
-    DANGER = auto()         # Dangerous area, avoid or use caution
-    RESTRICTED = auto()     # Do not enter without authorization
-    FRIENDLY = auto()       # Friendly/safe territory
-    OBJECTIVE = auto()      # Target area for a mission
-    CUSTOM = auto()         # Operator-defined zone type
+    AO = auto()  # Area of Operations — the overall working area
+    DANGER = auto()  # Dangerous area, avoid or use caution
+    RESTRICTED = auto()  # Do not enter without authorization
+    FRIENDLY = auto()  # Friendly/safe territory
+    OBJECTIVE = auto()  # Target area for a mission
+    CUSTOM = auto()  # Operator-defined zone type
 
 
 # --- Chat Channel Types ---
 class ChannelType(Enum):
-    GENERAL = auto()        # Default channel, all operators auto-joined
-    MISSION = auto()        # Auto-created per mission, assigned operators only
-    CUSTOM = auto()         # Operator-created channel
-    DIRECT = auto()         # 1-to-1 private message
+    GENERAL = auto()  # Default channel, all operators auto-joined
+    MISSION = auto()  # Auto-created per mission, assigned operators only
+    CUSTOM = auto()  # Operator-created channel
+    DIRECT = auto()  # 1-to-1 private message
 
 
 # --- Chat Message Types ---
 class MessageType(Enum):
-    TEXT = auto()            # Normal text message
-    LOCATION = auto()       # Shares sender's current GPS position
-    ALERT = auto()          # System-generated (lease expiry, revocation, etc.)
-    FILE = auto()            # Reference to an attached document
+    TEXT = auto()  # Normal text message
+    LOCATION = auto()  # Shares sender's current GPS position
+    ALERT = auto()  # System-generated (lease expiry, revocation, etc.)
+    FILE = auto()  # Reference to an attached document
 
 
 # --- Document Access Levels ---
 class DocumentAccess(Enum):
-    ALL = auto()             # Every operator can download
-    RESTRICTED = auto()      # Server operator defines who can access
+    ALL = auto()  # Every operator can download
+    RESTRICTED = auto()  # Server operator defines who can access
 
 
 # --- Transport Types ---
 # Which network interface is being used for communication.
 class TransportType(Enum):
-    YGGDRASIL = auto()      # High bandwidth, encrypted mesh
-    I2P = auto()            # Anonymous overlay network
-    TCP = auto()            # Direct internet (WARNING: exposes IP)
-    RNODE = auto()           # LoRa radio (low bandwidth, no internet)
+    YGGDRASIL = auto()  # High bandwidth, encrypted mesh
+    I2P = auto()  # Anonymous overlay network
+    TCP = auto()  # Direct internet (WARNING: exposes IP)
+    RNODE = auto()  # LoRa radio (low bandwidth, no internet)
 
 
 # --- Sync States ---
 # Tracks whether a record has been synced with the server.
 class SyncState(Enum):
-    PENDING = auto()        # Created/modified locally, not yet synced
-    SYNCED = auto()         # Successfully synced with server
-    CONFLICT = auto()       # Server has a different version
+    PENDING = auto()  # Created/modified locally, not yet synced
+    SYNCED = auto()  # Successfully synced with server
+    CONFLICT = auto()  # Server has a different version
 
 
 # --- Audit Event Types ---
@@ -152,12 +152,12 @@ class AuditEvent(Enum):
 
 # --- Waypoint Types ---
 class WaypointType(Enum):
-    CHECKPOINT = auto()     # Intermediate point along a route
-    RALLY = auto()          # Pre-arranged meeting point
-    EXTRACT = auto()        # Extraction/pickup point
-    INSERT = auto()         # Insertion/drop-off point
-    RESUPPLY = auto()       # Resupply point
-    CUSTOM = auto()         # Operator-defined type
+    CHECKPOINT = auto()  # Intermediate point along a route
+    RALLY = auto()  # Pre-arranged meeting point
+    EXTRACT = auto()  # Extraction/pickup point
+    INSERT = auto()  # Insertion/drop-off point
+    RESUPPLY = auto()  # Resupply point
+    CUSTOM = auto()  # Operator-defined type
 
 
 # --- Default Channels ---

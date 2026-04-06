@@ -16,9 +16,10 @@
 # interval so the server knows we're alive.
 
 import time
-from talon.net.transport import TransportManager
+
 from talon.net.heartbeat import HeartbeatSender
 from talon.net.link_manager import ClientLinkManager
+from talon.net.transport import TransportManager
 
 
 class ConnectionManager:
@@ -34,8 +35,7 @@ class ConnectionManager:
         on_disconnected: Callback when connection is lost.
     """
 
-    def __init__(self, config: dict, identity=None,
-                 on_connected=None, on_disconnected=None):
+    def __init__(self, config: dict, identity=None, on_connected=None, on_disconnected=None):
         self.config = config
         self.identity = identity
         self.transport = TransportManager()
@@ -57,6 +57,7 @@ class ConnectionManager:
         the results.
         """
         from talon.constants import TransportType
+
         interfaces = self.config.get("interfaces", {})
 
         # Map config names to TransportType enum values

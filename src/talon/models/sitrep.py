@@ -12,8 +12,6 @@
 # - Creating or appending triggers notifications to all other clients
 
 from talon.db.models import SITREP, SITREPEntry
-from talon.constants import SITREPImportance
-
 
 # Predefined SITREP templates.
 # Each template defines the sections an operator fills out.

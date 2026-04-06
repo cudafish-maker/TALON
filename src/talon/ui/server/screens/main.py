@@ -24,18 +24,17 @@
 #   - Generate enrollment tokens
 #   - View full audit log with filters
 
-from kivymd.uix.screen import MDScreen
-from kivy.properties import StringProperty, NumericProperty, BooleanProperty
 from kivy.clock import Clock
-
+from kivy.properties import NumericProperty, StringProperty
+from kivymd.uix.screen import MDScreen
 
 # Nav items for the server rail
 SERVER_NAV = [
-    ("view-dashboard-outline", "DASH",    "dashboard"),
-    ("account-group-outline",  "CLIENTS", "registry"),
-    ("shield-account-outline", "REAUTH",  "reauth"),
-    ("text-box-outline",       "AUDIT",   "audit"),
-    ("account-plus-outline",   "ENROLL",  "enrollment"),
+    ("view-dashboard-outline", "DASH", "dashboard"),
+    ("account-group-outline", "CLIENTS", "registry"),
+    ("shield-account-outline", "REAUTH", "reauth"),
+    ("text-box-outline", "AUDIT", "audit"),
+    ("account-plus-outline", "ENROLL", "enrollment"),
 ]
 
 
@@ -50,11 +49,11 @@ class ServerMainScreen(MDScreen):
         uptime_text:        Server uptime string (updated every minute).
     """
 
-    active_section  = StringProperty("dashboard")
-    online_count    = NumericProperty(0)
-    pending_reauth  = NumericProperty(0)
-    transport_name  = StringProperty("offline")
-    uptime_text     = StringProperty("--:--")
+    active_section = StringProperty("dashboard")
+    online_count = NumericProperty(0)
+    pending_reauth = NumericProperty(0)
+    transport_name = StringProperty("offline")
+    uptime_text = StringProperty("--:--")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -73,19 +72,16 @@ class ServerMainScreen(MDScreen):
             talon_server: The started TalonServer instance.
         """
         import time
+
         self._talon = talon_server
         self._start_time = time.time()
 
         # Start uptime counter
-        self._uptime_event = Clock.schedule_interval(
-            self._update_uptime, 60
-        )
+        self._uptime_event = Clock.schedule_interval(self._update_uptime, 60)
         self._update_uptime(0)
 
         # Wire heartbeat monitor status changes to update online count
-        talon_server.heartbeat_monitor.status_change_callback = (
-            self._on_client_status_change
-        )
+        talon_server.heartbeat_monitor.status_change_callback = self._on_client_status_change
 
         # Start on dashboard
         self.navigate_to("dashboard")
@@ -121,18 +117,23 @@ class ServerMainScreen(MDScreen):
         try:
             if section == "dashboard":
                 from talon.ui.server.screens.dashboard import DashboardPanel
+
                 return DashboardPanel()
             elif section == "registry":
                 from talon.ui.server.screens.registry import RegistryPanel
+
                 return RegistryPanel()
             elif section == "reauth":
                 from talon.ui.server.screens.reauth import ReauthPanel
+
                 return ReauthPanel()
             elif section == "audit":
                 from talon.ui.server.screens.audit_screen import AuditPanel
+
                 return AuditPanel()
             elif section == "enrollment":
                 from talon.ui.server.screens.enrollment import EnrollmentPanel
+
                 return EnrollmentPanel()
         except ImportError:
             return None
@@ -154,8 +155,7 @@ class ServerMainScreen(MDScreen):
 
         # Count pending re-auths from soft-locked clients
         self.pending_reauth = sum(
-            1 for c in self._talon.client_registry.clients.values()
-            if c.get("status") == "SOFT_LOCKED"
+            1 for c in self._talon.client_registry.clients.values() if c.get("status") == "SOFT_LOCKED"
         )
 
     def _on_client_status_change(self, callsign: str, status: str):
@@ -168,6 +168,7 @@ class ServerMainScreen(MDScreen):
     def _update_uptime(self, dt):
         """Update the uptime display."""
         import time
+
         if not self._start_time:
             return
         elapsed = int(time.time() - self._start_time)

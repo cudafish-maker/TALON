@@ -16,6 +16,7 @@ from talon.net.transport import TransportManager
 
 # ---------- Transport ----------
 
+
 def test_transport_priority_order():
     """Transports should be sorted by priority (lower number = higher priority)."""
     tm = TransportManager()
@@ -42,6 +43,7 @@ def test_broadband_check():
 
 
 # ---------- Heartbeat monitor ----------
+
 
 def test_heartbeat_monitor_creation():
     """HeartbeatMonitor should initialize with the given threshold."""

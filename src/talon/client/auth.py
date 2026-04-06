@@ -12,9 +12,9 @@
 # the UI is locked but data is preserved. The server operator can
 # approve re-authentication to unlock the client.
 
+import json
 import os
 import time
-import json
 
 from talon.crypto.lease import is_lease_valid, time_remaining
 
@@ -94,8 +94,7 @@ class ClientAuth:
             "locked": self.is_locked,
         }
 
-    def request_enrollment(self, enrollment_token: str,
-                           callsign: str) -> dict:
+    def request_enrollment(self, enrollment_token: str, callsign: str) -> dict:
         """Build an enrollment request to send to the server.
 
         Args:

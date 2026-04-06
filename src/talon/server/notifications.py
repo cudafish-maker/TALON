@@ -19,10 +19,14 @@
 import time
 
 
-def build_notification(event_type: str, source_callsign: str,
-                       importance: str = "ROUTINE",
-                       title: str = "", body: str = "",
-                       target_id: str = "") -> dict:
+def build_notification(
+    event_type: str,
+    source_callsign: str,
+    importance: str = "ROUTINE",
+    title: str = "",
+    body: str = "",
+    target_id: str = "",
+) -> dict:
     """Build a notification payload.
 
     Args:
@@ -48,8 +52,7 @@ def build_notification(event_type: str, source_callsign: str,
     }
 
 
-def sitrep_notification(callsign: str, sitrep_id: str,
-                        importance: str, is_append: bool = False) -> dict:
+def sitrep_notification(callsign: str, sitrep_id: str, importance: str, is_append: bool = False) -> dict:
     """Build a notification for SITREP creation or append.
 
     Args:
@@ -69,8 +72,7 @@ def sitrep_notification(callsign: str, sitrep_id: str,
     )
 
 
-def mission_notification(callsign: str, mission_id: str,
-                         event: str) -> dict:
+def mission_notification(callsign: str, mission_id: str, event: str) -> dict:
     """Build a notification for mission events.
 
     Args:
@@ -88,8 +90,7 @@ def mission_notification(callsign: str, mission_id: str,
     )
 
 
-def chat_notification(callsign: str, channel_id: str,
-                      channel_name: str) -> dict:
+def chat_notification(callsign: str, channel_id: str, channel_name: str) -> dict:
     """Build a notification for a new chat message."""
     return build_notification(
         event_type="MESSAGE_NEW",
@@ -101,8 +102,7 @@ def chat_notification(callsign: str, channel_id: str,
     )
 
 
-def asset_notification(callsign: str, asset_id: str,
-                       event: str) -> dict:
+def asset_notification(callsign: str, asset_id: str, event: str) -> dict:
     """Build a notification for asset events (created, verified)."""
     return build_notification(
         event_type=f"ASSET_{event.upper()}",

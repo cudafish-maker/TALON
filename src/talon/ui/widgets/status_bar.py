@@ -17,9 +17,9 @@
 # This widget is embedded in the main.kv layout at the bottom of
 # the nav rail on desktop, and at the bottom of the screen on mobile.
 
+from kivy.properties import BooleanProperty, NumericProperty, StringProperty
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
-from kivy.properties import StringProperty, BooleanProperty, NumericProperty
 
 from talon.ui.theme import TRANSPORT_COLORS
 
@@ -34,9 +34,9 @@ class StatusBar(MDBoxLayout):
         pending_count:   Number of outbox items waiting to sync.
     """
 
-    transport     = StringProperty("offline")
-    callsign      = StringProperty("")
-    is_online     = BooleanProperty(False)
+    transport = StringProperty("offline")
+    callsign = StringProperty("")
+    is_online = BooleanProperty(False)
     pending_count = NumericProperty(0)
 
     def __init__(self, **kwargs):
@@ -49,10 +49,10 @@ class StatusBar(MDBoxLayout):
             md_bg_color="#0f1520",
             **kwargs,
         )
-        self._dot    = None
+        self._dot = None
         self._transport_label = None
-        self._callsign_label  = None
-        self._sync_label      = None
+        self._callsign_label = None
+        self._sync_label = None
         self._build()
         self.bind(
             transport=self._update,
@@ -87,6 +87,7 @@ class StatusBar(MDBoxLayout):
 
         # Spacer
         from kivy.uix.widget import Widget
+
         self.add_widget(Widget())
 
         # Callsign
@@ -135,7 +136,7 @@ class StatusBar(MDBoxLayout):
         """Return the indicator colour for the current transport."""
         return TRANSPORT_COLORS.get(
             self.transport.lower(),
-            "#ff3b3b",   # Default to red (offline)
+            "#ff3b3b",  # Default to red (offline)
         )
 
     def _sync_text(self) -> str:

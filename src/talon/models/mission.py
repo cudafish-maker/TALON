@@ -11,12 +11,10 @@
 # - Only server operator can delete or abort a mission
 # - A mission auto-creates a chat channel for assigned operators
 
-from talon.db.models import Mission, Objective, MissionNote
-from talon.constants import MissionStatus, ObjectiveStatus
+from talon.db.models import Mission, MissionNote, Objective
 
 
-def create_mission(name: str, created_by: str, description: str = "",
-                   priority: str = "ROUTINE") -> Mission:
+def create_mission(name: str, created_by: str, description: str = "", priority: str = "ROUTINE") -> Mission:
     """Create a new mission."""
     return Mission(
         name=name,
@@ -26,8 +24,7 @@ def create_mission(name: str, created_by: str, description: str = "",
     )
 
 
-def add_objective(mission_id: str, description: str,
-                  assigned_to: str = None) -> Objective:
+def add_objective(mission_id: str, description: str, assigned_to: str = None) -> Objective:
     """Add an objective to a mission."""
     return Objective(
         mission_id=mission_id,
@@ -45,8 +42,7 @@ def append_note(mission_id: str, author: str, content: str) -> MissionNote:
     )
 
 
-def can_update_objective(operator_callsign: str, objective: Objective,
-                         operator_role: str) -> bool:
+def can_update_objective(operator_callsign: str, objective: Objective, operator_role: str) -> bool:
     """Check if an operator can update an objective's status.
 
     Allowed if the operator is assigned to the objective or is the server.

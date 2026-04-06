@@ -17,11 +17,10 @@ if hasattr(sys, "getandroidapilevel") or "ANDROID_ROOT" in os.environ:
     # Use Android internal storage for all data
     try:
         from android.storage import app_storage_path  # type: ignore
+
         data_dir = app_storage_path()
     except ImportError:
-        data_dir = os.environ.get(
-            "ANDROID_PRIVATE", "/data/data/org.talon.talon/files"
-        )
+        data_dir = os.environ.get("ANDROID_PRIVATE", "/data/data/org.talon.talon/files")
     os.makedirs(os.path.join(data_dir, "talon"), exist_ok=True)
     os.environ.setdefault("TALON_DATA_DIR", os.path.join(data_dir, "talon"))
 

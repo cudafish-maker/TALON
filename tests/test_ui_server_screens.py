@@ -5,18 +5,17 @@
 # Kivy is mocked via conftest.py. Tests exercise state management,
 # navigation logic, property defaults, color maps, and helper methods.
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import time
 from unittest.mock import MagicMock, patch
 
-
 # ================================================================
 # Server App — TalonServerApp
 # ================================================================
-
 from talon.ui.server.app import TalonServerApp
 
 
@@ -29,9 +28,9 @@ class TestServerAppHexToRgba:
 
     def test_amber(self):
         r, g, b, a = TalonServerApp._hex_to_rgba("#f5a623")
-        assert abs(r - 245/255) < 0.001
-        assert abs(g - 166/255) < 0.001
-        assert abs(b - 35/255) < 0.001
+        assert abs(r - 245 / 255) < 0.001
+        assert abs(g - 166 / 255) < 0.001
+        assert abs(b - 35 / 255) < 0.001
 
 
 # ================================================================
@@ -96,7 +95,7 @@ class TestServerLoginSubmit:
 # Server MainScreen
 # ================================================================
 
-from talon.ui.server.screens.main import ServerMainScreen, SERVER_NAV
+from talon.ui.server.screens.main import SERVER_NAV, ServerMainScreen
 
 
 class TestServerNavItems:
@@ -199,7 +198,9 @@ class TestServerMainRefreshCounts:
         screen = ServerMainScreen(name="server_main")
         mock_server = MagicMock()
         mock_server.client_registry.get_online_clients.return_value = [
-            {"callsign": "W1"}, {"callsign": "W2"}, {"callsign": "W3"},
+            {"callsign": "W1"},
+            {"callsign": "W2"},
+            {"callsign": "W3"},
         ]
         mock_server.client_registry.clients = {
             "c1": {"status": "ONLINE"},
@@ -231,7 +232,9 @@ class TestServerMainRefreshCounts:
 # ================================================================
 
 from talon.ui.server.screens.audit_screen import (
-    EVENT_COLORS, FILTER_OPTIONS, AuditPanel,
+    EVENT_COLORS,
+    FILTER_OPTIONS,
+    AuditPanel,
 )
 
 
@@ -379,7 +382,8 @@ class TestEnrollmentPanel:
 # Registry panel — status colors
 # ================================================================
 
-from talon.ui.server.screens.registry import RegistryPanel, STATUS_COLORS as REG_STATUS_COLORS
+from talon.ui.server.screens.registry import STATUS_COLORS as REG_STATUS_COLORS
+from talon.ui.server.screens.registry import RegistryPanel
 
 
 class TestRegistryStatusColors:
@@ -424,7 +428,12 @@ class TestReauthPanel:
         server = MagicMock()
         server.client_registry.clients = {
             "c1": {"status": "ONLINE", "callsign": "W1"},
-            "c2": {"status": "SOFT_LOCKED", "callsign": "W2", "locked_at": time.time(), "lease_expires_at": time.time() - 3600},
+            "c2": {
+                "status": "SOFT_LOCKED",
+                "callsign": "W2",
+                "locked_at": time.time(),
+                "lease_expires_at": time.time() - 3600,
+            },
             "c3": {"status": "REVOKED", "callsign": "W3"},
         }
         panel = ReauthPanel()
@@ -447,8 +456,10 @@ class TestReauthPanel:
 # ================================================================
 
 from talon.ui.server.screens.dashboard import (
-    DashboardPanel,
     STATUS_COLORS as DASH_STATUS_COLORS,
+)
+from talon.ui.server.screens.dashboard import (
+    DashboardPanel,
 )
 
 

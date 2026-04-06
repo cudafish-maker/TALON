@@ -14,8 +14,7 @@
 from talon.db.models import Zone
 
 
-def create_zone(name: str, created_by: str, zone_type: str = "AO",
-                boundary: str = "", description: str = "") -> Zone:
+def create_zone(name: str, created_by: str, zone_type: str = "AO", boundary: str = "", description: str = "") -> Zone:
     """Create a new zone.
 
     Args:
@@ -58,8 +57,7 @@ def validate_zone(zone: Zone) -> list:
     return errors
 
 
-def can_delete_zone(operator_callsign: str, zone: Zone,
-                    operator_role: str) -> bool:
+def can_delete_zone(operator_callsign: str, zone: Zone, operator_role: str) -> bool:
     """Check if an operator can delete a zone.
 
     Allowed for the zone creator or the server operator.

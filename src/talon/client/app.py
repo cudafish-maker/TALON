@@ -17,14 +17,15 @@
 #   9. Launch the operator UI (Kivy)
 
 import os
+
 import yaml
 
 from talon.client.auth import ClientAuth
 from talon.client.cache import ClientCache
-from talon.client.sync_client import SyncClient
 from talon.client.connection import ConnectionManager
 from talon.client.notifications import NotificationHandler
-from talon.net.reticulum import initialize_reticulum, create_identity
+from talon.client.sync_client import SyncClient
+from talon.net.reticulum import create_identity, initialize_reticulum
 from talon.net.rnode import RNodeManager
 
 
@@ -55,9 +56,7 @@ class TalonClient:
 
         Loads default.yaml first, then overlays client.yaml on top.
         """
-        config_dir = self.config_path or os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "config"
-        )
+        config_dir = self.config_path or os.path.join(os.path.dirname(__file__), "..", "..", "..", "config")
 
         # Load defaults
         default_path = os.path.join(config_dir, "default.yaml")
@@ -103,11 +102,14 @@ class TalonClient:
 
         # On Android, check USB permission first
         from talon.platform import IS_ANDROID
+
         if IS_ANDROID:
             from talon.net.android_usb import (
-                find_usb_serial_device, has_usb_permission,
+                find_usb_serial_device,
+                has_usb_permission,
                 request_usb_permission,
             )
+
             usb_dev = find_usb_serial_device()
             if usb_dev and not has_usb_permission(usb_dev["device_name"]):
                 request_usb_permission(usb_dev["device_name"])
@@ -143,9 +145,7 @@ class TalonClient:
         if self.rnode_manager and self.rnode_manager.status == "ready":
             self.rnode_manager.mark_in_use()
 
-        self.identity = create_identity(
-            identity_path=net_config.get("identity_path")
-        )
+        self.identity = create_identity(identity_path=net_config.get("identity_path"))
 
     def setup_services(self):
         """Start sync, connection manager, and notification handler."""
@@ -187,9 +187,7 @@ class TalonClient:
         self.load_config()
 
         if not data_dir:
-            data_dir = self.config.get("database", {}).get(
-                "path", "data/client"
-            )
+            data_dir = self.config.get("database", {}).get("path", "data/client")
             # Use the directory containing the database file
             data_dir = os.path.dirname(data_dir) or "data"
 

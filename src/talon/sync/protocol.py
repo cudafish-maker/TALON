@@ -19,9 +19,7 @@
 # - Exception: append-only data (SITREPs, chat) cannot conflict
 # - Exception: position updates — most recent timestamp wins
 
-import json
 import time
-
 
 # All the data tables that participate in sync.
 # Listed in sync priority order (most critical first).
@@ -59,9 +57,7 @@ def build_sync_request(conn) -> dict:
     cursor = conn.cursor()
     for table in SYNC_TABLES:
         try:
-            result = cursor.execute(
-                f"SELECT MAX(version) FROM {table}"
-            ).fetchone()
+            result = cursor.execute(f"SELECT MAX(version) FROM {table}").fetchone()
             versions[table] = result[0] if result[0] is not None else 0
         except Exception:
             versions[table] = 0
@@ -141,9 +137,7 @@ def build_client_changes(conn) -> dict:
     cursor = conn.cursor()
     for table in SYNC_TABLES:
         try:
-            rows = cursor.execute(
-                f"SELECT * FROM {table} WHERE sync_state = 'pending'"
-            ).fetchall()
+            rows = cursor.execute(f"SELECT * FROM {table} WHERE sync_state = 'pending'").fetchall()
             if rows:
                 columns = [desc[0] for desc in cursor.description]
                 changes[table] = [dict(zip(columns, row)) for row in rows]
@@ -171,9 +165,7 @@ def _upsert_record(conn, table: str, record: dict) -> None:
     record_id = record.get("id")
 
     # Check if record exists locally
-    existing = cursor.execute(
-        f"SELECT version FROM {table} WHERE id = ?", (record_id,)
-    ).fetchone()
+    existing = cursor.execute(f"SELECT version FROM {table} WHERE id = ?", (record_id,)).fetchone()
 
     if existing is None:
         # New record — insert it
@@ -195,12 +187,11 @@ def _upsert_record(conn, table: str, record: dict) -> None:
     else:
         # Conflict — our version is same or newer
         raise ConflictError(
-            f"Conflict on {table}/{record_id}: "
-            f"local version {existing[0]}, "
-            f"incoming version {record.get('version', 0)}"
+            f"Conflict on {table}/{record_id}: local version {existing[0]}, incoming version {record.get('version', 0)}"
         )
 
 
 class ConflictError(Exception):
     """Raised when a sync conflict is detected."""
+
     pass

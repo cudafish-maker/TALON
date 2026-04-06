@@ -9,8 +9,8 @@
 # The operator can see how many pending changes are queued:
 # "3 pending changes waiting for uplink"
 
-import time
 import json
+import time
 
 
 class Outbox:
@@ -36,13 +36,15 @@ class Outbox:
             operation: What happened — "insert", "update", or "delete".
             record: The full record data as a dictionary.
         """
-        self._queue.append({
-            "table": table,
-            "operation": operation,
-            "record": record,
-            "timestamp": time.time(),
-            "sequence": len(self._queue),
-        })
+        self._queue.append(
+            {
+                "table": table,
+                "operation": operation,
+                "record": record,
+                "timestamp": time.time(),
+                "sequence": len(self._queue),
+            }
+        )
 
     def get_pending(self) -> list:
         """Get all pending operations in order.

@@ -18,8 +18,8 @@
 # - Announce: A broadcast that tells the network "I exist at this
 #   identity." Other nodes can then establish links to you.
 
-import os
 import logging
+import os
 
 import RNS
 
@@ -60,6 +60,7 @@ def write_reticulum_config(
     """
     if config_dir is None:
         from talon.platform import get_data_dir
+
         config_dir = os.path.join(get_data_dir(), "reticulum")
 
     os.makedirs(config_dir, exist_ok=True)
@@ -79,9 +80,9 @@ def write_reticulum_config(
     # Write Reticulum config file format
     lines = ["[reticulum]\n"]
     lines.append(f"  enable_transport = {'Yes' if enable_transport else 'No'}\n")
-    lines.append(f"  share_instance = Yes\n")
-    lines.append(f"  shared_instance_port = 37428\n")
-    lines.append(f"  instance_control_port = 37429\n")
+    lines.append("  share_instance = Yes\n")
+    lines.append("  shared_instance_port = 37428\n")
+    lines.append("  instance_control_port = 37429\n")
     lines.append("\n")
     lines.append("[interfaces]\n")
 
@@ -105,8 +106,12 @@ def write_reticulum_config(
     with open(config_path, "w") as f:
         f.writelines(lines)
 
-    log.info("Wrote Reticulum config to %s with %d interface(s): %s",
-             config_path, len(interfaces), ", ".join(interfaces.keys()))
+    log.info(
+        "Wrote Reticulum config to %s with %d interface(s): %s",
+        config_path,
+        len(interfaces),
+        ", ".join(interfaces.keys()),
+    )
     return config_dir
 
 
@@ -136,14 +141,14 @@ def initialize_reticulum(
     """
     if talon_config is not None:
         config_path = write_reticulum_config(
-            talon_config, is_server,
+            talon_config,
+            is_server,
             config_dir=config_path,
             rnode_override=rnode_override,
         )
         log.info("Starting Reticulum with generated config at %s", config_path)
     else:
-        log.info("Starting Reticulum with config at %s",
-                 config_path or "~/.reticulum/")
+        log.info("Starting Reticulum with config at %s", config_path or "~/.reticulum/")
 
     return RNS.Reticulum(config_path)
 
@@ -197,13 +202,9 @@ def create_destination(
         An RNS.Destination object.
     """
     if direction == "in":
-        return RNS.Destination(
-            identity, RNS.Destination.IN, app_name, aspect
-        )
+        return RNS.Destination(identity, RNS.Destination.IN, app_name, aspect)
     else:
-        return RNS.Destination(
-            identity, RNS.Destination.OUT, app_name, aspect
-        )
+        return RNS.Destination(identity, RNS.Destination.OUT, app_name, aspect)
 
 
 def announce_destination(destination: RNS.Destination) -> None:

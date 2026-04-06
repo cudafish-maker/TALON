@@ -16,26 +16,22 @@
 # The [+ NEW] button opens the add-asset dialog.
 # Operators can verify assets (not their own) from the detail pane.
 
-import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton
-from kivymd.uix.list import MDList, TwoLineIconListItem, IconLeftWidget
+from kivymd.uix.list import IconLeftWidget, MDList, TwoLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.dialog import MDDialog
-from kivymd.uix.selectioncontrol import MDCheckbox
 
-from talon.models.asset import can_verify, verify_asset, validate_asset
 from talon.db.models import Asset
-from talon.ui.theme import BG_SURFACE, TEXT_SECONDARY
-
+from talon.models.asset import can_verify, validate_asset, verify_asset
 
 # Colour per verification status
 VERIFY_COLORS = {
-    "verified":    "#00e5a0",
-    "unverified":  "#f5a623",
+    "verified": "#00e5a0",
+    "unverified": "#f5a623",
     "compromised": "#ff3b3b",
 }
 
@@ -59,22 +55,27 @@ class AssetsPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDLabel(
-            text="ASSETS",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
-        header.add_widget(MDIconButton(
-            icon="plus",
-            theme_icon_color="Custom",
-            icon_color="#00e5a0",
-            on_release=lambda x: self.open_add_dialog(),
-        ))
+        header.add_widget(
+            MDLabel(
+                text="ASSETS",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
+        header.add_widget(
+            MDIconButton(
+                icon="plus",
+                theme_icon_color="Custom",
+                icon_color="#00e5a0",
+                on_release=lambda x: self.open_add_dialog(),
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         scroll = MDScrollView(size_hint_y=1)
@@ -125,6 +126,7 @@ class AssetsPanel(MDBoxLayout):
         """Show detail pane and centre map on the asset."""
         # Centre the map
         from kivy.app import App
+
         app = App.get_running_app()
         main = app.screen_manager.get_screen("main")
         map_widget = main.ids.get("map_widget_desktop") or main.ids.get("map_widget_mobile")
@@ -144,22 +146,27 @@ class AssetsPanel(MDBoxLayout):
             padding=["8dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDIconButton(
-            icon="arrow-left",
-            theme_icon_color="Custom",
-            icon_color="#8a9bb0",
-            on_release=lambda x: self._back_to_list(),
-        ))
-        header.add_widget(MDLabel(
-            text=asset.name,
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        header.add_widget(
+            MDIconButton(
+                icon="arrow-left",
+                theme_icon_color="Custom",
+                icon_color="#8a9bb0",
+                on_release=lambda x: self._back_to_list(),
+            )
+        )
+        header.add_widget(
+            MDLabel(
+                text=asset.name,
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         self.add_widget(header)
 
         from kivymd.uix.divider import MDDivider
+
         self.add_widget(MDDivider(color="#1e2d3d"))
 
         details = MDBoxLayout(
@@ -172,29 +179,35 @@ class AssetsPanel(MDBoxLayout):
 
         def detail_row(label, value, value_color=None):
             row = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="24dp")
-            row.add_widget(MDLabel(
-                text=label,
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color="#8a9bb0",
-                size_hint_x=0.4,
-            ))
-            row.add_widget(MDLabel(
-                text=value,
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color=value_color or "#e8edf4",
-                size_hint_x=0.6,
-            ))
+            row.add_widget(
+                MDLabel(
+                    text=label,
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color="#8a9bb0",
+                    size_hint_x=0.4,
+                )
+            )
+            row.add_widget(
+                MDLabel(
+                    text=value,
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color=value_color or "#e8edf4",
+                    size_hint_x=0.6,
+                )
+            )
             return row
 
         details.add_widget(detail_row("Category", asset.category))
         details.add_widget(detail_row("Status", asset.status))
-        details.add_widget(detail_row(
-            "Verification",
-            asset.verification.upper(),
-            color,
-        ))
+        details.add_widget(
+            detail_row(
+                "Verification",
+                asset.verification.upper(),
+                color,
+            )
+        )
         details.add_widget(detail_row("Created by", asset.created_by))
         if asset.verified_by:
             details.add_widget(detail_row("Verified by", asset.verified_by))

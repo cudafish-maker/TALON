@@ -11,8 +11,8 @@
 # - Verified assets show as solid icons on the map
 # - Unverified assets show as dashed/transparent icons
 
-from talon.db.models import Asset
 from talon.constants import VerificationStatus
+from talon.db.models import Asset
 
 
 def can_verify(asset: Asset, verifier_callsign: str, verifier_role: str) -> bool:

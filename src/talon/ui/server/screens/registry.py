@@ -20,18 +20,15 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton, MDFlatButton
-from kivymd.uix.scrollview import MDScrollView
+from kivymd.uix.button import MDFlatButton, MDRaisedButton
 from kivymd.uix.dialog import MDDialog
-
-from talon.server.auth import revoke_client as server_revoke_client
-
+from kivymd.uix.label import MDLabel
+from kivymd.uix.scrollview import MDScrollView
 
 STATUS_COLORS = {
-    "ONLINE":      "#00e5a0",
-    "STALE":       "#f5a623",
-    "REVOKED":     "#ff3b3b",
+    "ONLINE": "#00e5a0",
+    "STALE": "#f5a623",
+    "REVOKED": "#ff3b3b",
     "SOFT_LOCKED": "#f5a623",
 }
 
@@ -60,22 +57,26 @@ class RegistryPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDLabel(
-            text="CLIENT REGISTRY",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        header.add_widget(
+            MDLabel(
+                text="CLIENT REGISTRY",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         # Total count
         total = len(server.client_registry.clients) if server else 0
-        header.add_widget(MDLabel(
-            text=f"{total} enrolled",
-            font_style="Caption",
-            halign="right",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-        ))
+        header.add_widget(
+            MDLabel(
+                text=f"{total} enrolled",
+                font_style="Caption",
+                halign="right",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+            )
+        )
         self.add_widget(header)
         self.add_widget(MDDivider(color="#1e2d3d"))
 
@@ -89,10 +90,10 @@ class RegistryPanel(MDBoxLayout):
         )
         for text, hint_x in [
             ("CALLSIGN", 1),
-            ("STATUS",   None),
+            ("STATUS", None),
             ("TRANSPORT", None),
             ("LAST SYNC", None),
-            ("",          None),  # Actions
+            ("", None),  # Actions
         ]:
             lbl = MDLabel(
                 text=text,
@@ -118,22 +119,21 @@ class RegistryPanel(MDBoxLayout):
 
         clients = server.client_registry.clients if server else {}
         if not clients:
-            rows.add_widget(MDLabel(
-                text="No clients enrolled.",
-                halign="center",
-                theme_text_color="Custom",
-                text_color="#3d4f63",
-                size_hint_y=None,
-                height="48dp",
-                padding=["16dp", "8dp"],
-            ))
+            rows.add_widget(
+                MDLabel(
+                    text="No clients enrolled.",
+                    halign="center",
+                    theme_text_color="Custom",
+                    text_color="#3d4f63",
+                    size_hint_y=None,
+                    height="48dp",
+                    padding=["16dp", "8dp"],
+                )
+            )
         else:
             # Sort: online first, then stale, then revoked
             priority = {"ONLINE": 0, "SOFT_LOCKED": 1, "STALE": 2, "REVOKED": 3}
-            sorted_clients = sorted(
-                clients.values(),
-                key=lambda c: priority.get(c.get("status", ""), 9)
-            )
+            sorted_clients = sorted(clients.values(), key=lambda c: priority.get(c.get("status", ""), 9))
             for client in sorted_clients:
                 rows.add_widget(self._client_row(client))
 
@@ -142,14 +142,14 @@ class RegistryPanel(MDBoxLayout):
 
     def _client_row(self, client: dict) -> MDBoxLayout:
         """One row per enrolled client."""
-        status    = client.get("status", "OFFLINE")
-        color     = STATUS_COLORS.get(status, "#3d4f63")
-        callsign  = client.get("callsign", "?")
+        status = client.get("status", "OFFLINE")
+        color = STATUS_COLORS.get(status, "#3d4f63")
+        callsign = client.get("callsign", "?")
         client_id = client.get("client_id", "")
         transport = client.get("transport", "—").upper()
         last_sync = client.get("last_sync")
-        ts_str    = time.strftime("%H:%M", time.localtime(last_sync)) if last_sync else "—"
-        is_revoked = (status == "REVOKED")
+        ts_str = time.strftime("%H:%M", time.localtime(last_sync)) if last_sync else "—"
+        is_revoked = status == "REVOKED"
 
         row = MDBoxLayout(
             size_hint_y=None,
@@ -160,43 +160,51 @@ class RegistryPanel(MDBoxLayout):
         )
 
         # Status dot + callsign
-        row.add_widget(MDLabel(
-            text=f"[color={color}]●[/color]  [b]{callsign}[/b]",
-            markup=True,
-            font_style="Body2",
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        row.add_widget(
+            MDLabel(
+                text=f"[color={color}]●[/color]  [b]{callsign}[/b]",
+                markup=True,
+                font_style="Body2",
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
 
         # Status label
-        row.add_widget(MDLabel(
-            text=status,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color=color,
-            size_hint_x=None,
-            width="80dp",
-        ))
+        row.add_widget(
+            MDLabel(
+                text=status,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color=color,
+                size_hint_x=None,
+                width="80dp",
+            )
+        )
 
         # Transport
-        row.add_widget(MDLabel(
-            text=transport,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-            size_hint_x=None,
-            width="80dp",
-        ))
+        row.add_widget(
+            MDLabel(
+                text=transport,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+                size_hint_x=None,
+                width="80dp",
+            )
+        )
 
         # Last sync
-        row.add_widget(MDLabel(
-            text=ts_str,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#3d4f63",
-            size_hint_x=None,
-            width="48dp",
-        ))
+        row.add_widget(
+            MDLabel(
+                text=ts_str,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#3d4f63",
+                size_hint_x=None,
+                width="48dp",
+            )
+        )
 
         # Action buttons (hidden if already revoked)
         if not is_revoked:
@@ -213,8 +221,7 @@ class RegistryPanel(MDBoxLayout):
                 font_size="10sp",
                 size_hint_x=None,
                 width="44dp",
-                on_release=lambda x, cid=client_id, cs=callsign:
-                    self._confirm_mark_stale(cid, cs),
+                on_release=lambda x, cid=client_id, cs=callsign: self._confirm_mark_stale(cid, cs),
             )
             # Revoke button
             revoke_btn = MDFlatButton(
@@ -224,22 +231,23 @@ class RegistryPanel(MDBoxLayout):
                 font_size="10sp",
                 size_hint_x=None,
                 width="52dp",
-                on_release=lambda x, cid=client_id, cs=callsign:
-                    self._confirm_revoke(cid, cs),
+                on_release=lambda x, cid=client_id, cs=callsign: self._confirm_revoke(cid, cs),
             )
             action_row.add_widget(stale_btn)
             action_row.add_widget(revoke_btn)
             row.add_widget(action_row)
         else:
-            row.add_widget(MDLabel(
-                text="DENY LIST",
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color="#ff3b3b",
-                size_hint_x=None,
-                width="100dp",
-                halign="center",
-            ))
+            row.add_widget(
+                MDLabel(
+                    text="DENY LIST",
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color="#ff3b3b",
+                    size_hint_x=None,
+                    width="100dp",
+                    halign="center",
+                )
+            )
 
         return row
 
@@ -255,7 +263,7 @@ class RegistryPanel(MDBoxLayout):
         self._confirm_dialog = MDDialog(
             title="Mark Client Stale",
             text=f"Mark [b]{callsign}[/b] as STALE?\n\nThis flags the client as "
-                 f"non-responsive. They can still re-connect.",
+            f"non-responsive. They can still re-connect.",
             buttons=[
                 MDFlatButton(
                     text="CANCEL",
@@ -321,18 +329,19 @@ class RegistryPanel(MDBoxLayout):
             return
 
         # Revoke in the client registry
-        self._talon.client_registry.revoke(
-            client_id, reason=f"Revoked by server operator"
-        )
+        self._talon.client_registry.revoke(client_id, reason="Revoked by server operator")
 
         # Rotate the group key — all remaining clients will need the new key
         from talon.crypto.group_key import rotate_group_key
+
         rotation_result = rotate_group_key()
 
         # Log the event
         from talon.server.audit import log_event
+
         log_event(
-            "CLIENT_REVOKED", "Server",
+            "CLIENT_REVOKED",
+            "Server",
             target=callsign,
             details=f"Group key rotated at {rotation_result['rotated_at']}",
         )

@@ -13,9 +13,9 @@
 
 import threading
 
-from kivymd.uix.screen import MDScreen
-from kivy.properties import StringProperty, BooleanProperty
 from kivy.clock import Clock
+from kivy.properties import BooleanProperty, StringProperty
+from kivymd.uix.screen import MDScreen
 
 
 class EnrollScreen(MDScreen):
@@ -28,8 +28,8 @@ class EnrollScreen(MDScreen):
     """
 
     status_text = StringProperty("")
-    is_loading  = BooleanProperty(False)
-    is_error    = BooleanProperty(False)
+    is_loading = BooleanProperty(False)
+    is_error = BooleanProperty(False)
 
     def on_field_text(self):
         """Clear status when the operator starts typing."""
@@ -40,9 +40,9 @@ class EnrollScreen(MDScreen):
     def on_enroll(self):
         """Called when the operator presses ENROLL."""
         server_hash = self.ids.server_hash_field.text.strip()
-        token       = self.ids.token_field.text.strip()
-        callsign    = self.ids.callsign_field.text.strip().upper()
-        passphrase  = self.ids.passphrase_field.text.strip()
+        token = self.ids.token_field.text.strip()
+        callsign = self.ids.callsign_field.text.strip().upper()
+        passphrase = self.ids.passphrase_field.text.strip()
 
         # Validation
         if not server_hash:
@@ -73,6 +73,7 @@ class EnrollScreen(MDScreen):
 
         # Run enrollment in background thread
         from kivy.app import App
+
         app = App.get_running_app()
         thread = threading.Thread(
             target=self._do_enroll,
@@ -93,24 +94,20 @@ class EnrollScreen(MDScreen):
             talon.config["server_destination_hash"] = server_hash
 
             # Set up data directory
-            data_dir = talon.config.get("database", {}).get(
-                "path", "data/client"
-            )
+            data_dir = talon.config.get("database", {}).get("path", "data/client")
             data_dir = data_dir.rsplit("/", 1)[0] if "/" in data_dir else "data"
 
             talon.setup_auth(data_dir)
             talon.setup_network()
 
             # Build the enrollment request
-            from talon.client.auth import ClientAuth
             enrollment_msg = talon.auth.request_enrollment(token, callsign)
 
             # Connect to the server
-            Clock.schedule_once(
-                lambda dt: self._update_status("Connecting to server..."), 0
-            )
+            Clock.schedule_once(lambda dt: self._update_status("Connecting to server..."), 0)
 
             from talon.net.link_manager import ClientLinkManager
+
             link_manager = ClientLinkManager(
                 identity=talon.identity,
                 server_dest_hash=bytes.fromhex(server_hash),
@@ -118,33 +115,23 @@ class EnrollScreen(MDScreen):
 
             if not link_manager.connect(timeout=20):
                 Clock.schedule_once(
-                    lambda dt: self._show_error(
-                        "Cannot reach server. Check the hash and try again."
-                    ), 0
+                    lambda dt: self._show_error("Cannot reach server. Check the hash and try again."), 0
                 )
                 return
 
-            Clock.schedule_once(
-                lambda dt: self._update_status("Sending enrollment request..."), 0
-            )
+            Clock.schedule_once(lambda dt: self._update_status("Sending enrollment request..."), 0)
 
             # Send enrollment request and wait for response
             response = link_manager.send_and_receive(enrollment_msg, timeout=30)
             link_manager.disconnect()
 
             if not response:
-                Clock.schedule_once(
-                    lambda dt: self._show_error(
-                        "No response from server. Try again."
-                    ), 0
-                )
+                Clock.schedule_once(lambda dt: self._show_error("No response from server. Try again."), 0)
                 return
 
             if not response.get("success"):
                 error = response.get("error", "Enrollment rejected by server.")
-                Clock.schedule_once(
-                    lambda dt, e=error: self._show_error(e), 0
-                )
+                Clock.schedule_once(lambda dt, e=error: self._show_error(e), 0)
                 return
 
             # Save the lease
@@ -160,10 +147,10 @@ class EnrollScreen(MDScreen):
 
             # Save server hash to client config for future connections
             import os
+
             import yaml
-            config_dir = talon.config_path or os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "config"
-            )
+
+            config_dir = talon.config_path or os.path.join(os.path.dirname(__file__), "..", "..", "..", "config")
             client_config_path = os.path.join(config_dir, "client.yaml")
             client_cfg = {}
             if os.path.isfile(client_config_path):
@@ -176,14 +163,10 @@ class EnrollScreen(MDScreen):
                 yaml.dump(client_cfg, f)
 
             # Now do the full client startup with the passphrase
-            Clock.schedule_once(
-                lambda dt: self._enrollment_complete(app, passphrase), 0
-            )
+            Clock.schedule_once(lambda dt: self._enrollment_complete(app, passphrase), 0)
 
         except Exception as e:
-            Clock.schedule_once(
-                lambda dt, err=str(e): self._show_error(f"Error: {err}"), 0
-            )
+            Clock.schedule_once(lambda dt, err=str(e): self._show_error(f"Error: {err}"), 0)
 
     def _enrollment_complete(self, app, passphrase):
         """Called on main thread after successful enrollment."""

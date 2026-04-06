@@ -7,11 +7,11 @@
 # provides helpers so the rest of the codebase doesn't need to care.
 
 import os
-import sys
 import platform as _platform
-
+import sys
 
 # --- Platform detection -----------------------------------------------------
+
 
 def _detect():
     """Detect the current platform.
@@ -40,6 +40,7 @@ IS_MACOS = PLATFORM == "macos"
 
 # --- Data directories -------------------------------------------------------
 
+
 def get_data_dir(app_name: str = "talon") -> str:
     """Get the platform-appropriate data directory.
 
@@ -60,24 +61,19 @@ def get_data_dir(app_name: str = "talon") -> str:
         # Android — use app-private internal storage
         try:
             from android.storage import app_storage_path  # type: ignore
+
             base = app_storage_path()
         except ImportError:
-            base = os.environ.get(
-                "ANDROID_PRIVATE", "/data/data/org.talon.talon/files"
-            )
+            base = os.environ.get("ANDROID_PRIVATE", "/data/data/org.talon.talon/files")
         path = os.path.join(base, app_name)
     elif IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
         path = os.path.join(base, app_name)
     elif IS_MACOS:
-        path = os.path.join(
-            os.path.expanduser("~"), "Library", "Application Support", app_name
-        )
+        path = os.path.join(os.path.expanduser("~"), "Library", "Application Support", app_name)
     else:
         # Linux / XDG
-        base = os.environ.get(
-            "XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")
-        )
+        base = os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share"))
         path = os.path.join(base, app_name)
 
     os.makedirs(path, exist_ok=True)
@@ -104,14 +100,9 @@ def get_config_dir(app_name: str = "talon") -> str:
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
         path = os.path.join(base, app_name, "config")
     elif IS_MACOS:
-        path = os.path.join(
-            os.path.expanduser("~"), "Library", "Application Support",
-            app_name, "config"
-        )
+        path = os.path.join(os.path.expanduser("~"), "Library", "Application Support", app_name, "config")
     else:
-        base = os.environ.get(
-            "XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")
-        )
+        base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
         path = os.path.join(base, app_name)
 
     os.makedirs(path, exist_ok=True)
@@ -119,6 +110,7 @@ def get_config_dir(app_name: str = "talon") -> str:
 
 
 # --- Bundled resource resolution --------------------------------------------
+
 
 def get_bundled_path(relative_path: str) -> str:
     """Resolve a path relative to the app bundle.
@@ -151,6 +143,7 @@ def get_bundled_path(relative_path: str) -> str:
 
 # --- Serial port enumeration ------------------------------------------------
 
+
 def list_serial_ports() -> list:
     """List all available serial ports on this machine.
 
@@ -165,17 +158,20 @@ def list_serial_ports() -> list:
     """
     try:
         from serial.tools.list_ports import comports
+
         ports = []
         for info in sorted(comports(), key=lambda p: p.device):
-            ports.append({
-                "port": info.device,
-                "description": info.description or "",
-                "hwid": info.hwid or "",
-                "vid": info.vid,
-                "pid": info.pid,
-                "serial_number": info.serial_number or "",
-                "manufacturer": info.manufacturer or "",
-            })
+            ports.append(
+                {
+                    "port": info.device,
+                    "description": info.description or "",
+                    "hwid": info.hwid or "",
+                    "vid": info.vid,
+                    "pid": info.pid,
+                    "serial_number": info.serial_number or "",
+                    "manufacturer": info.manufacturer or "",
+                }
+            )
         return ports
     except ImportError:
         return []
@@ -193,8 +189,8 @@ RNODE_USB_IDS = [
     (0x0403, 0x6015),  # FTDI FT-X series
     (0x303A, 0x1001),  # Espressif ESP32-S2 native USB
     (0x303A, 0x80D1),  # Espressif ESP32-S3 native USB
-    (0x239A, None),     # Adafruit boards (any PID)
-    (0x1209, 0x4F54),   # unsigned.io RNode (official VID:PID)
+    (0x239A, None),  # Adafruit boards (any PID)
+    (0x1209, 0x4F54),  # unsigned.io RNode (official VID:PID)
 ]
 
 
@@ -244,8 +240,7 @@ def _rnode_match_score(port_info: dict) -> int:
                     break
 
     # Keyword matching in description and hwid
-    desc = (port_info.get("description", "") + " " +
-            port_info.get("manufacturer", "")).lower()
+    desc = (port_info.get("description", "") + " " + port_info.get("manufacturer", "")).lower()
     for keyword in ("rnode", "lora", "esp32", "cp210", "ch340", "ftdi"):
         if keyword in desc:
             score += 3
@@ -306,6 +301,7 @@ def check_serial_port(port: str) -> dict:
 
     try:
         import serial
+
         ser = serial.Serial(port, baudrate=115200, timeout=1)
         ser.close()
         result["accessible"] = True
@@ -314,9 +310,7 @@ def check_serial_port(port: str) -> dict:
     except PermissionError:
         result["exists"] = True
         result["error"] = (
-            f"Permission denied on {port}. "
-            "Add your user to the 'dialout' group: "
-            "sudo usermod -aG dialout $USER"
+            f"Permission denied on {port}. Add your user to the 'dialout' group: sudo usermod -aG dialout $USER"
         )
     except Exception as exc:
         result["error"] = str(exc)
@@ -325,6 +319,7 @@ def check_serial_port(port: str) -> dict:
 
 
 # --- File viewer -------------------------------------------------------------
+
 
 def open_file(path: str) -> bool:
     """Open a file with the platform's default viewer.
@@ -345,6 +340,7 @@ def open_file(path: str) -> bool:
             # Android — use Intent via pyjnius
             try:
                 from jnius import autoclass  # type: ignore
+
                 Intent = autoclass("android.content.Intent")
                 Uri = autoclass("android.net.Uri")
                 File = autoclass("java.io.File")
@@ -357,12 +353,15 @@ def open_file(path: str) -> bool:
                 PythonActivity.mActivity.startActivity(intent)
             except ImportError:
                 import subprocess
+
                 subprocess.Popen(["xdg-open", path])
         elif IS_MACOS:
             import subprocess
+
             subprocess.Popen(["open", path])
         else:
             import subprocess
+
             subprocess.Popen(["xdg-open", path])
         return True
     except Exception:

@@ -11,8 +11,8 @@
 # - Entry point scripts exist and are importable
 # - build.py is importable and has expected targets
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -21,13 +21,16 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # --- Platform detection -----------------------------------------------------
 
+
 class TestPlatformDetection:
     def test_platform_is_detected(self):
         from talon.platform import PLATFORM
+
         assert PLATFORM in ("linux", "windows", "macos", "android", "unknown")
 
     def test_platform_flags_are_consistent(self):
-        from talon.platform import PLATFORM, IS_LINUX, IS_WINDOWS, IS_MACOS, IS_ANDROID
+        from talon.platform import IS_ANDROID, IS_LINUX, IS_MACOS, IS_WINDOWS, PLATFORM
+
         flags = {
             "linux": IS_LINUX,
             "windows": IS_WINDOWS,
@@ -44,6 +47,7 @@ class TestPlatformDetection:
 
     def test_get_data_dir_returns_string(self):
         from talon.platform import get_data_dir
+
         path = get_data_dir("talon_test")
         assert isinstance(path, str)
         assert os.path.isabs(path)
@@ -53,6 +57,7 @@ class TestPlatformDetection:
 
     def test_get_config_dir_returns_string(self):
         from talon.platform import get_config_dir
+
         path = get_config_dir("talon_test")
         assert isinstance(path, str)
         assert os.path.isabs(path)
@@ -61,6 +66,7 @@ class TestPlatformDetection:
 
     def test_get_default_serial_port(self):
         from talon.platform import get_default_serial_port
+
         port = get_default_serial_port()
         assert isinstance(port, str)
         assert len(port) > 0
@@ -68,28 +74,34 @@ class TestPlatformDetection:
 
 # --- Bundled path resolution ------------------------------------------------
 
+
 class TestBundledPaths:
     def test_resolves_config_default_yaml(self):
         from talon.platform import get_bundled_path
+
         path = get_bundled_path("config/default.yaml")
         assert os.path.isfile(path), f"Expected config file at {path}"
 
     def test_resolves_config_client_yaml(self):
         from talon.platform import get_bundled_path
+
         path = get_bundled_path("config/client.yaml")
         assert os.path.isfile(path)
 
     def test_resolves_config_server_yaml(self):
         from talon.platform import get_bundled_path
+
         path = get_bundled_path("config/server.yaml")
         assert os.path.isfile(path)
 
 
 # --- Config YAML validity ---------------------------------------------------
 
+
 class TestConfigFiles:
     def test_default_yaml_is_valid(self):
         import yaml
+
         path = os.path.join(ROOT, "config", "default.yaml")
         with open(path) as f:
             data = yaml.safe_load(f)
@@ -98,6 +110,7 @@ class TestConfigFiles:
 
     def test_client_yaml_is_valid(self):
         import yaml
+
         path = os.path.join(ROOT, "config", "client.yaml")
         with open(path) as f:
             data = yaml.safe_load(f)
@@ -105,6 +118,7 @@ class TestConfigFiles:
 
     def test_server_yaml_is_valid(self):
         import yaml
+
         path = os.path.join(ROOT, "config", "server.yaml")
         with open(path) as f:
             data = yaml.safe_load(f)
@@ -113,12 +127,14 @@ class TestConfigFiles:
 
 # --- Project structure ------------------------------------------------------
 
+
 class TestProjectStructure:
     def test_pyproject_toml_exists(self):
         assert os.path.isfile(os.path.join(ROOT, "pyproject.toml"))
 
     def test_pyproject_has_entry_points(self):
         import tomllib
+
         with open(os.path.join(ROOT, "pyproject.toml"), "rb") as f:
             data = tomllib.load(f)
         scripts = data.get("project", {}).get("scripts", {})
@@ -127,6 +143,7 @@ class TestProjectStructure:
 
     def test_pyproject_has_dependencies(self):
         import tomllib
+
         with open(os.path.join(ROOT, "pyproject.toml"), "rb") as f:
             data = tomllib.load(f)
         deps = data.get("project", {}).get("dependencies", [])
@@ -149,6 +166,7 @@ class TestProjectStructure:
 
 
 # --- Build spec files -------------------------------------------------------
+
 
 class TestBuildSpecs:
     def test_client_spec_exists(self):
@@ -178,12 +196,12 @@ class TestBuildSpecs:
         path = os.path.join(ROOT, "build", "buildozer.spec")
         with open(path) as f:
             content = f.read()
-        for field in ["title", "package.name", "requirements",
-                      "android.permissions", "android.api"]:
+        for field in ["title", "package.name", "requirements", "android.permissions", "android.api"]:
             assert field in content, f"Missing field: {field}"
 
 
 # --- Build script -----------------------------------------------------------
+
 
 class TestBuildScript:
     def test_build_py_exists(self):
@@ -192,9 +210,8 @@ class TestBuildScript:
     def test_build_py_importable(self):
         """build.py should be importable without side effects."""
         import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "build", os.path.join(ROOT, "build.py")
-        )
+
+        spec = importlib.util.spec_from_file_location("build", os.path.join(ROOT, "build.py"))
         mod = importlib.util.module_from_spec(spec)
         # Don't execute main — just verify it loads
         assert mod is not None
@@ -202,9 +219,12 @@ class TestBuildScript:
     def test_build_py_has_help(self):
         """build.py --help should exit cleanly."""
         import subprocess
+
         result = subprocess.run(
             [sys.executable, os.path.join(ROOT, "build.py"), "--help"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         assert result.returncode == 0
         assert "client" in result.stdout
@@ -214,20 +234,27 @@ class TestBuildScript:
 
 # --- CLI entry points -------------------------------------------------------
 
+
 class TestCLIEntryPoints:
     def test_client_cli_importable(self):
         from talon.client.cli import main
+
         assert callable(main)
 
     def test_server_cli_importable(self):
         from talon.server.cli import main
+
         assert callable(main)
 
     def test_platform_module_importable(self):
         from talon.platform import (
-            PLATFORM, get_data_dir, get_config_dir,
-            get_bundled_path, get_default_serial_port, open_file,
+            get_bundled_path,
+            get_config_dir,
+            get_data_dir,
+            get_default_serial_port,
+            open_file,
         )
+
         assert callable(get_data_dir)
         assert callable(get_config_dir)
         assert callable(get_bundled_path)
@@ -237,15 +264,19 @@ class TestCLIEntryPoints:
 
 # --- open_file safety -------------------------------------------------------
 
+
 class TestOpenFile:
     def test_open_file_returns_false_for_missing(self):
         from talon.platform import open_file
+
         assert open_file("/nonexistent/file.txt") is False
 
     def test_open_file_returns_false_for_none(self):
         from talon.platform import open_file
+
         assert open_file(None) is False
 
     def test_open_file_returns_false_for_empty(self):
         from talon.platform import open_file
+
         assert open_file("") is False

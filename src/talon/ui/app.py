@@ -14,17 +14,15 @@
 
 import os
 
+from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.lang import Builder
 from kivy.metrics import dp
-from kivy.core.window import Window
-from kivy.clock import Clock
-
 from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
 
 from talon.client.app import TalonClient
-from talon.ui.theme import KIVYMD_THEME, BG_BASE, DESKTOP_MIN_WIDTH
-
+from talon.ui.theme import BG_BASE, DESKTOP_MIN_WIDTH, KIVYMD_THEME
 
 # Load all KV layout files at import time.
 # Each screen registers itself via its KV string or .kv file.
@@ -45,9 +43,9 @@ class TalonApp(MDApp):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.title = "T.A.L.O.N."
-        self.talon = TalonClient()        # Backend client instance
-        self.screen_manager = None        # Kivy screen manager
-        self.is_mobile_layout = False     # True on Android / narrow window
+        self.talon = TalonClient()  # Backend client instance
+        self.screen_manager = None  # Kivy screen manager
+        self.is_mobile_layout = False  # True on Android / narrow window
 
     # ------------------------------------------------------------------
     # KivyMD lifecycle
@@ -60,11 +58,11 @@ class TalonApp(MDApp):
         and returns the root widget.
         """
         # Apply tactical dark theme
-        self.theme_cls.theme_style      = KIVYMD_THEME["theme_style"]
-        self.theme_cls.primary_palette  = KIVYMD_THEME["primary_palette"]
-        self.theme_cls.accent_palette   = KIVYMD_THEME["accent_palette"]
-        self.theme_cls.primary_hue      = KIVYMD_THEME["primary_hue"]
-        self.theme_cls.accent_hue       = KIVYMD_THEME["accent_hue"]
+        self.theme_cls.theme_style = KIVYMD_THEME["theme_style"]
+        self.theme_cls.primary_palette = KIVYMD_THEME["primary_palette"]
+        self.theme_cls.accent_palette = KIVYMD_THEME["accent_palette"]
+        self.theme_cls.primary_hue = KIVYMD_THEME["primary_hue"]
+        self.theme_cls.accent_hue = KIVYMD_THEME["accent_hue"]
 
         # Force the window background to our base colour.
         # KivyMD's dark theme is grey — we want near-black.
@@ -72,7 +70,7 @@ class TalonApp(MDApp):
 
         # Detect layout mode based on window width.
         # This runs once at build; window resize is handled by on_size().
-        self.is_mobile_layout = (Window.width < dp(DESKTOP_MIN_WIDTH))
+        self.is_mobile_layout = Window.width < dp(DESKTOP_MIN_WIDTH)
         Window.bind(on_resize=self._on_window_resize)
 
         # Load all KV layout files
@@ -101,6 +99,7 @@ class TalonApp(MDApp):
         Looks for a lease.json in the data directory.
         """
         import os
+
         # Check common data paths
         for data_dir in ["data/client", "data"]:
             lease_path = os.path.join(data_dir, "lease.json")
@@ -126,10 +125,10 @@ class TalonApp(MDApp):
         Screens are imported here (not at module level) to avoid
         circular imports and to ensure KV files are loaded first.
         """
-        from talon.ui.screens.login import LoginScreen
         from talon.ui.screens.enroll import EnrollScreen
-        from talon.ui.screens.main import MainScreen
         from talon.ui.screens.lock import LockScreen
+        from talon.ui.screens.login import LoginScreen
+        from talon.ui.screens.main import MainScreen
 
         self.screen_manager.add_widget(EnrollScreen(name="enroll"))
         self.screen_manager.add_widget(LoginScreen(name="login"))
@@ -151,9 +150,7 @@ class TalonApp(MDApp):
             passphrase: The operator's passphrase string.
         """
         # Schedule on next frame so the login button animation completes
-        Clock.schedule_once(
-            lambda dt: self._start_client(passphrase), 0.1
-        )
+        Clock.schedule_once(lambda dt: self._start_client(passphrase), 0.1)
 
     def _start_client(self, passphrase: str):
         """Run TalonClient startup and navigate to the correct screen.
@@ -198,7 +195,7 @@ class TalonApp(MDApp):
         handles the actual layout swap.
         """
         was_mobile = self.is_mobile_layout
-        self.is_mobile_layout = (width < dp(DESKTOP_MIN_WIDTH))
+        self.is_mobile_layout = width < dp(DESKTOP_MIN_WIDTH)
 
         if was_mobile != self.is_mobile_layout:
             # Layout mode changed — notify the main screen
@@ -221,7 +218,7 @@ class TalonApp(MDApp):
             (r, g, b, 1.0) with each channel in [0, 1].
         """
         h = hex_color.lstrip("#")
-        r, g, b = (int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+        r, g, b = (int(h[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
         return (r, g, b, 1.0)
 
     def _load_kv_files(self):

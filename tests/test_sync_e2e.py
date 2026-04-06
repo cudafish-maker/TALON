@@ -30,6 +30,7 @@ from talon.sync.protocol import (
 # Helpers
 # ------------------------------------------------------------------
 
+
 def _make_db():
     """Create an in-memory SQLite database with T.A.L.O.N. schema."""
     conn = sqlite3.connect(":memory:")
@@ -50,51 +51,80 @@ def _insert_record(conn, table, record_dict):
 
 def _make_operator(callsign="WOLF-1", version=1, sync_state="synced"):
     return {
-        "id": new_id(), "callsign": callsign,
+        "id": new_id(),
+        "callsign": callsign,
         "reticulum_identity": new_id(),
-        "role": "operator", "status": "active",
-        "skills": "[]", "custom_skills": "[]", "bio": "",
-        "enrolled_at": now(), "last_sync": now(),
-        "version": version, "sync_state": sync_state,
+        "role": "operator",
+        "status": "active",
+        "skills": "[]",
+        "custom_skills": "[]",
+        "bio": "",
+        "enrolled_at": now(),
+        "last_sync": now(),
+        "version": version,
+        "sync_state": sync_state,
     }
 
 
-def _make_sitrep(created_by="WOLF-1", importance="ROUTINE", version=1,
-                 sync_state="synced"):
+def _make_sitrep(created_by="WOLF-1", importance="ROUTINE", version=1, sync_state="synced"):
     return {
-        "id": new_id(), "type": "freeform", "template_name": None,
-        "importance": importance, "created_by": created_by,
-        "created_at": now(), "deleted": 0, "delete_reason": None,
-        "version": version, "sync_state": sync_state,
+        "id": new_id(),
+        "type": "freeform",
+        "template_name": None,
+        "importance": importance,
+        "created_by": created_by,
+        "created_at": now(),
+        "deleted": 0,
+        "delete_reason": None,
+        "version": version,
+        "sync_state": sync_state,
     }
 
 
-def _make_asset(name="Supply Cache", created_by="WOLF-1", version=1,
-                sync_state="synced"):
+def _make_asset(name="Supply Cache", created_by="WOLF-1", version=1, sync_state="synced"):
     return {
-        "id": new_id(), "name": name, "category": "SUPPLY",
-        "custom_category": None, "latitude": 34.05, "longitude": -118.24,
-        "status": "active", "verification": "unverified",
-        "verified_by": None, "created_by": created_by,
-        "created_at": now(), "updated_at": now(), "notes": "",
-        "version": version, "sync_state": sync_state,
+        "id": new_id(),
+        "name": name,
+        "category": "SUPPLY",
+        "custom_category": None,
+        "latitude": 34.05,
+        "longitude": -118.24,
+        "status": "active",
+        "verification": "unverified",
+        "verified_by": None,
+        "created_by": created_by,
+        "created_at": now(),
+        "updated_at": now(),
+        "notes": "",
+        "version": version,
+        "sync_state": sync_state,
     }
 
 
-def _make_message(channel_id, sender="WOLF-1", body="Test message",
-                  version=1, sync_state="synced"):
+def _make_message(channel_id, sender="WOLF-1", body="Test message", version=1, sync_state="synced"):
     return {
-        "id": new_id(), "channel_id": channel_id, "sender": sender,
-        "type": "TEXT", "body": body, "created_at": now(),
-        "edited": 0, "version": version, "sync_state": sync_state,
+        "id": new_id(),
+        "channel_id": channel_id,
+        "sender": sender,
+        "type": "TEXT",
+        "body": body,
+        "created_at": now(),
+        "edited": 0,
+        "version": version,
+        "sync_state": sync_state,
     }
 
 
 def _make_channel(name="General", channel_type="GENERAL", version=1):
     return {
-        "id": new_id(), "name": name, "type": channel_type,
-        "created_by": None, "created_at": now(), "mission_id": None,
-        "version": version, "sync_state": "synced",
+        "id": new_id(),
+        "name": name,
+        "type": channel_type,
+        "created_by": None,
+        "created_at": now(),
+        "mission_id": None,
+        "version": version,
+        "sync_state": "synced",
     }
 
 
@@ -112,6 +142,7 @@ def _make_client_cache():
 # ==================================================================
 # Protocol-level tests (build_sync_request / response / apply)
 # ==================================================================
+
 
 class TestProtocolRoundtrip:
     def test_empty_databases(self):
@@ -169,12 +200,18 @@ class TestProtocolRoundtrip:
         ident = new_id()
 
         old = {
-            "id": op_id, "callsign": "WOLF-1",
+            "id": op_id,
+            "callsign": "WOLF-1",
             "reticulum_identity": ident,
-            "role": "operator", "status": "active",
-            "skills": "[]", "custom_skills": "[]", "bio": "",
-            "enrolled_at": now(), "last_sync": now(),
-            "version": 1, "sync_state": "synced",
+            "role": "operator",
+            "status": "active",
+            "skills": "[]",
+            "custom_skills": "[]",
+            "bio": "",
+            "enrolled_at": now(),
+            "last_sync": now(),
+            "version": 1,
+            "sync_state": "synced",
         }
         new = old.copy()
         new["version"] = 5
@@ -188,9 +225,7 @@ class TestProtocolRoundtrip:
         conflicts = apply_sync_response(client_db, response)
 
         assert conflicts == []
-        row = client_db.execute(
-            "SELECT bio, version FROM operators WHERE id = ?", (op_id,)
-        ).fetchone()
+        row = client_db.execute("SELECT bio, version FROM operators WHERE id = ?", (op_id,)).fetchone()
         assert row[0] == "Updated bio"
         assert row[1] == 5
 
@@ -201,12 +236,18 @@ class TestProtocolRoundtrip:
         op_id = new_id()
         ident = new_id()
         record = {
-            "id": op_id, "callsign": "WOLF-1",
+            "id": op_id,
+            "callsign": "WOLF-1",
             "reticulum_identity": ident,
-            "role": "operator", "status": "active",
-            "skills": "[]", "custom_skills": "[]", "bio": "",
-            "enrolled_at": now(), "last_sync": now(),
-            "version": 5, "sync_state": "synced",
+            "role": "operator",
+            "status": "active",
+            "skills": "[]",
+            "custom_skills": "[]",
+            "bio": "",
+            "enrolled_at": now(),
+            "last_sync": now(),
+            "version": 5,
+            "sync_state": "synced",
         }
         _insert_record(client_db, "operators", record)
 
@@ -272,6 +313,7 @@ class TestBuildClientChanges:
 # ==================================================================
 # SyncEngine tests (server-side orchestration)
 # ==================================================================
+
 
 class TestSyncEngine:
     def test_handle_sync_request_empty(self):
@@ -373,6 +415,7 @@ class TestSyncEngine:
 # SyncClient tests (client-side orchestration)
 # ==================================================================
 
+
 class TestSyncClientBuildRequest:
     def test_build_request_has_versions(self):
         cache = _make_client_cache()
@@ -426,6 +469,7 @@ class TestSyncClientGetPendingChanges:
 # Full end-to-end sync (client ↔ server via mock transport)
 # ==================================================================
 
+
 class TestFullSync:
     def _make_pair(self):
         """Create a server engine + client sync pair."""
@@ -437,8 +481,10 @@ class TestFullSync:
 
     def _mock_transport(self, engine, client_id="test-client"):
         """Return a send_fn that routes messages through the engine."""
+
         def send_fn(message):
             return engine.handle_message(client_id, message)
+
         return send_fn
 
     def test_server_data_flows_to_client(self):
@@ -582,7 +628,7 @@ class TestFullSync:
         transport = self._mock_transport(engine)
 
         for i in range(5):
-            op = _make_operator(f"WOLF-{i+1}", version=i + 1)
+            op = _make_operator(f"WOLF-{i + 1}", version=i + 1)
             _insert_record(server_db, "operators", op)
             sync.full_sync(transport)
 
@@ -594,32 +640,44 @@ class TestSyncEngineFiltering:
         """Documents should be excluded over LoRa."""
         server_db = _make_db()
         doc = {
-            "id": new_id(), "title": "Field Manual", "category": "Manual",
-            "file_type": "pdf", "file_path": "/docs/fm.pdf",
-            "file_size": 1024, "tags": "[]", "access_level": "ALL",
-            "uploaded_by": "WOLF-1", "uploaded_at": now(),
-            "version": 1, "sync_state": "synced",
+            "id": new_id(),
+            "title": "Field Manual",
+            "category": "Manual",
+            "file_type": "pdf",
+            "file_path": "/docs/fm.pdf",
+            "file_size": 1024,
+            "tags": "[]",
+            "access_level": "ALL",
+            "uploaded_by": "WOLF-1",
+            "uploaded_at": now(),
+            "version": 1,
+            "sync_state": "synced",
         }
         _insert_record(server_db, "documents", doc)
 
         engine = SyncEngine(db=server_db)
-        result = engine.handle_sync_request("client1", {"documents": 0},
-                                            is_broadband=False)
+        result = engine.handle_sync_request("client1", {"documents": 0}, is_broadband=False)
         assert len(result["updates"].get("documents", [])) == 0
 
     def test_broadband_includes_documents(self):
         """Documents should be included over broadband."""
         server_db = _make_db()
         doc = {
-            "id": new_id(), "title": "Field Manual", "category": "Manual",
-            "file_type": "pdf", "file_path": "/docs/fm.pdf",
-            "file_size": 1024, "tags": "[]", "access_level": "ALL",
-            "uploaded_by": "WOLF-1", "uploaded_at": now(),
-            "version": 1, "sync_state": "synced",
+            "id": new_id(),
+            "title": "Field Manual",
+            "category": "Manual",
+            "file_type": "pdf",
+            "file_path": "/docs/fm.pdf",
+            "file_size": 1024,
+            "tags": "[]",
+            "access_level": "ALL",
+            "uploaded_by": "WOLF-1",
+            "uploaded_at": now(),
+            "version": 1,
+            "sync_state": "synced",
         }
         _insert_record(server_db, "documents", doc)
 
         engine = SyncEngine(db=server_db)
-        result = engine.handle_sync_request("client1", {"documents": 0},
-                                            is_broadband=True)
+        result = engine.handle_sync_request("client1", {"documents": 0}, is_broadband=True)
         assert len(result["updates"].get("documents", [])) == 1

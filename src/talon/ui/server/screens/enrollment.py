@@ -28,13 +28,12 @@
 
 import time
 
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton
-from kivymd.uix.textfield import MDTextField
-from kivymd.uix.scrollview import MDScrollView
 from kivy.core.clipboard import Clipboard
-
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton, MDRaisedButton
+from kivymd.uix.label import MDLabel
+from kivymd.uix.scrollview import MDScrollView
+from kivymd.uix.textfield import MDTextField
 
 
 class EnrollmentPanel(MDBoxLayout):
@@ -62,13 +61,15 @@ class EnrollmentPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0f1520",
         )
-        header.add_widget(MDLabel(
-            text="ENROLLMENT",
-            font_style="Button",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
+        header.add_widget(
+            MDLabel(
+                text="ENROLLMENT",
+                font_style="Button",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
         self.add_widget(header)
         self.add_widget(MDDivider(color="#1e2d3d"))
 
@@ -87,35 +88,41 @@ class EnrollmentPanel(MDBoxLayout):
                 spacing="8dp",
                 md_bg_color="#0a0e14",
             )
-            hash_row.add_widget(MDLabel(
-                text=f"SERVER HASH: [font=RobotoMono]{dest_hash}[/font]",
-                markup=True,
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color="#00e5a0",
-            ))
-            hash_row.add_widget(MDIconButton(
-                icon="content-copy",
-                theme_icon_color="Custom",
-                icon_color="#8a9bb0",
-                size_hint_x=None,
-                on_release=lambda x, h=dest_hash: self._copy_token(h),
-            ))
+            hash_row.add_widget(
+                MDLabel(
+                    text=f"SERVER HASH: [font=RobotoMono]{dest_hash}[/font]",
+                    markup=True,
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color="#00e5a0",
+                )
+            )
+            hash_row.add_widget(
+                MDIconButton(
+                    icon="content-copy",
+                    theme_icon_color="Custom",
+                    icon_color="#8a9bb0",
+                    size_hint_x=None,
+                    on_release=lambda x, h=dest_hash: self._copy_token(h),
+                )
+            )
             self.add_widget(hash_row)
 
         # Instruction text
-        self.add_widget(MDLabel(
-            text=(
-                "Generate a one-time token for a new operator.\n"
-                "Deliver the token AND server hash in person or over a trusted channel."
-            ),
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-            size_hint_y=None,
-            height="40dp",
-            padding=["16dp", "4dp"],
-        ))
+        self.add_widget(
+            MDLabel(
+                text=(
+                    "Generate a one-time token for a new operator.\n"
+                    "Deliver the token AND server hash in person or over a trusted channel."
+                ),
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+                size_hint_y=None,
+                height="40dp",
+                padding=["16dp", "4dp"],
+            )
+        )
 
         # Form
         form = MDBoxLayout(
@@ -140,21 +147,21 @@ class EnrollmentPanel(MDBoxLayout):
 
         form.add_widget(self._callsign_field)
 
-        form.add_widget(MDRaisedButton(
-            text="GENERATE TOKEN",
-            md_bg_color="#00e5a0",
-            theme_text_color="Custom",
-            text_color="#0a0e14",
-            size_hint_x=None,
-            pos_hint={"center_x": 0.5},
-            on_release=lambda x: self._generate(),
-        ))
+        form.add_widget(
+            MDRaisedButton(
+                text="GENERATE TOKEN",
+                md_bg_color="#00e5a0",
+                theme_text_color="Custom",
+                text_color="#0a0e14",
+                size_hint_x=None,
+                pos_hint={"center_x": 0.5},
+                on_release=lambda x: self._generate(),
+            )
+        )
 
         # Token display (shown after generation)
         if self._last_token:
-            form.add_widget(self._token_display_card(
-                self._last_token, self._last_callsign or "?"
-            ))
+            form.add_widget(self._token_display_card(self._last_token, self._last_callsign or "?"))
 
         self.add_widget(form)
         self.add_widget(MDDivider(color="#1e2d3d"))
@@ -170,12 +177,14 @@ class EnrollmentPanel(MDBoxLayout):
             padding=["16dp", "8dp"],
             md_bg_color="#0a0e14",
         )
-        pending_hdr.add_widget(MDLabel(
-            text=f"PENDING TOKENS ({len(pending_tokens)} unused)",
-            font_style="Overline",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-        ))
+        pending_hdr.add_widget(
+            MDLabel(
+                text=f"PENDING TOKENS ({len(pending_tokens)} unused)",
+                font_style="Overline",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+            )
+        )
         self.add_widget(pending_hdr)
 
         scroll = MDScrollView(size_hint_y=1)
@@ -187,15 +196,17 @@ class EnrollmentPanel(MDBoxLayout):
         rows.bind(minimum_height=rows.setter("height"))
 
         if not pending_tokens:
-            rows.add_widget(MDLabel(
-                text="No pending tokens.",
-                halign="center",
-                font_style="Caption",
-                theme_text_color="Custom",
-                text_color="#3d4f63",
-                size_hint_y=None,
-                height="32dp",
-            ))
+            rows.add_widget(
+                MDLabel(
+                    text="No pending tokens.",
+                    halign="center",
+                    font_style="Caption",
+                    theme_text_color="Custom",
+                    text_color="#3d4f63",
+                    size_hint_y=None,
+                    height="32dp",
+                )
+            )
         else:
             for info in pending_tokens:
                 rows.add_widget(self._pending_row(info["token"], info))
@@ -214,7 +225,7 @@ class EnrollmentPanel(MDBoxLayout):
 
         token = self._talon.create_enrollment_token(callsign)
 
-        self._last_token    = token
+        self._last_token = token
         self._last_callsign = callsign
 
         # Rebuild with the new token shown
@@ -232,15 +243,17 @@ class EnrollmentPanel(MDBoxLayout):
         )
         card.bind(minimum_height=card.setter("height"))
 
-        card.add_widget(MDLabel(
-            text=f"Token for: [b]{callsign}[/b]",
-            markup=True,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-            size_hint_y=None,
-            height="20dp",
-        ))
+        card.add_widget(
+            MDLabel(
+                text=f"Token for: [b]{callsign}[/b]",
+                markup=True,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+                size_hint_y=None,
+                height="20dp",
+            )
+        )
 
         # Token in monospace font, large and readable
         token_row = MDBoxLayout(
@@ -267,22 +280,24 @@ class EnrollmentPanel(MDBoxLayout):
         token_row.add_widget(copy_btn)
         card.add_widget(token_row)
 
-        card.add_widget(MDLabel(
-            text="Give this token to the operator. It is single-use.",
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#3d4f63",
-            size_hint_y=None,
-            height="20dp",
-        ))
+        card.add_widget(
+            MDLabel(
+                text="Give this token to the operator. It is single-use.",
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#3d4f63",
+                size_hint_y=None,
+                height="20dp",
+            )
+        )
 
         return card
 
     def _pending_row(self, token: str, info: dict) -> MDBoxLayout:
         """One row per pending (unused) token in the history list."""
-        callsign     = info.get("callsign", "?")
+        callsign = info.get("callsign", "?")
         generated_at = info.get("generated_at", 0)
-        ago_secs     = time.time() - generated_at
+        ago_secs = time.time() - generated_at
         if ago_secs < 3600:
             ago_str = f"{int(ago_secs / 60)}m ago"
         else:
@@ -298,44 +313,53 @@ class EnrollmentPanel(MDBoxLayout):
             spacing="8dp",
             md_bg_color="#151d2b",
         )
-        row.add_widget(MDLabel(
-            text=f"[font=RobotoMono]{token_short}[/font]",
-            markup=True,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#8a9bb0",
-            size_hint_x=None,
-            width="120dp",
-        ))
-        row.add_widget(MDLabel(
-            text=callsign,
-            font_style="Caption",
-            bold=True,
-            theme_text_color="Custom",
-            text_color="#e8edf4",
-        ))
-        row.add_widget(MDLabel(
-            text=ago_str,
-            font_style="Caption",
-            theme_text_color="Custom",
-            text_color="#3d4f63",
-            halign="right",
-            size_hint_x=None,
-            width="64dp",
-        ))
-        row.add_widget(MDIconButton(
-            icon="content-copy",
-            theme_icon_color="Custom",
-            icon_color="#3d4f63",
-            size_hint_x=None,
-            on_release=lambda x, t=token: self._copy_token(t),
-        ))
+        row.add_widget(
+            MDLabel(
+                text=f"[font=RobotoMono]{token_short}[/font]",
+                markup=True,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#8a9bb0",
+                size_hint_x=None,
+                width="120dp",
+            )
+        )
+        row.add_widget(
+            MDLabel(
+                text=callsign,
+                font_style="Caption",
+                bold=True,
+                theme_text_color="Custom",
+                text_color="#e8edf4",
+            )
+        )
+        row.add_widget(
+            MDLabel(
+                text=ago_str,
+                font_style="Caption",
+                theme_text_color="Custom",
+                text_color="#3d4f63",
+                halign="right",
+                size_hint_x=None,
+                width="64dp",
+            )
+        )
+        row.add_widget(
+            MDIconButton(
+                icon="content-copy",
+                theme_icon_color="Custom",
+                icon_color="#3d4f63",
+                size_hint_x=None,
+                on_release=lambda x, t=token: self._copy_token(t),
+            )
+        )
         return row
 
     def _copy_token(self, token: str):
         """Copy a token to the clipboard."""
         Clipboard.copy(token)
         from kivymd.uix.snackbar import MDSnackbar
+
         MDSnackbar(
             MDLabel(
                 text="Token copied to clipboard.",
