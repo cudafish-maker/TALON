@@ -93,15 +93,17 @@
                 opacity: 1 if root.error_text else 0
 
             MDButton:
-                text: "STARTING SERVER..." if root.is_loading else "START SERVER"
                 disabled: root.is_loading
                 on_release: root.on_submit()
                 md_bg_color: "#f5a623" if not root.is_loading else "#1c2637"
-                theme_text_color: "Custom"
-                text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
                 size_hint_x: 1
                 height: "48dp"
-                bold: True
+
+                MDButtonText:
+                    text: "STARTING SERVER..." if root.is_loading else "START SERVER"
+                    bold: True
+                    theme_text_color: "Custom"
+                    text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
 
         Widget:
             size_hint_y: 0.3

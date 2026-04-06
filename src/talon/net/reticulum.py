@@ -202,9 +202,9 @@ def create_destination(
         An RNS.Destination object.
     """
     if direction == "in":
-        return RNS.Destination(identity, RNS.Destination.IN, app_name, aspect)
+        return RNS.Destination(identity, RNS.Destination.IN, RNS.Destination.SINGLE, app_name, aspect)
     else:
-        return RNS.Destination(identity, RNS.Destination.OUT, app_name, aspect)
+        return RNS.Destination(identity, RNS.Destination.OUT, RNS.Destination.SINGLE, app_name, aspect)
 
 
 def announce_destination(destination: RNS.Destination) -> None:

@@ -159,16 +159,18 @@
                 opacity: 1 if root.status_text else 0
 
             MDButton:
-                text: "ENROLLING..." if root.is_loading else "ENROLL"
                 disabled: root.is_loading
                 on_release: root.on_enroll()
                 md_bg_color: "#00e5a0" if not root.is_loading else "#1c2637"
-                theme_text_color: "Custom"
-                text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
                 size_hint_x: 1
                 height: "48dp"
-                font_size: "14sp"
-                bold: True
+
+                MDButtonText:
+                    text: "ENROLLING..." if root.is_loading else "ENROLL"
+                    font_size: "14sp"
+                    bold: True
+                    theme_text_color: "Custom"
+                    text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
 
         # Push content up
         Widget:

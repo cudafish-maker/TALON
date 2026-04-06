@@ -179,6 +179,8 @@ def install_kivy_mocks():
         "kivymd.uix.button",
         {
             "MDButton": MagicMock,
+            "MDButtonText": MagicMock,
+            "MDButtonIcon": MagicMock,
             "MDRaisedButton": MagicMock,
             "MDFlatButton": MagicMock,
             "MDIconButton": MagicMock,

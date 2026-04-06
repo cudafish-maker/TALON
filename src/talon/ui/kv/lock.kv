@@ -66,16 +66,18 @@
             height: "16dp"
 
         MDButton:
-            text: "REQUESTING..." if root.is_requesting else "REQUEST RE-AUTHENTICATION"
             disabled: root.is_requesting or root.is_approved
             on_release: root.on_request_reauth()
             md_bg_color: "#f5a623" if not root.is_requesting else "#1c2637"
-            theme_text_color: "Custom"
-            text_color: "#0a0e14" if not root.is_requesting else "#3d4f63"
             size_hint: None, None
             size: min(root.width - 64, 360), "48dp"
             pos_hint: {"center_x": 0.5}
-            bold: True
+
+            MDButtonText:
+                text: "REQUESTING..." if root.is_requesting else "REQUEST RE-AUTHENTICATION"
+                bold: True
+                theme_text_color: "Custom"
+                text_color: "#0a0e14" if not root.is_requesting else "#3d4f63"
 
         Widget:
             size_hint_y: 0.3

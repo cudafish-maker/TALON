@@ -67,7 +67,13 @@ class ServerLinkManager:
         Args:
             aspect: The destination aspect (default "sync").
         """
-        self.destination = RNS.Destination(self.identity, RNS.Destination.IN, APP_NAME, aspect)
+        self.destination = RNS.Destination(
+            self.identity,
+            RNS.Destination.IN,
+            RNS.Destination.SINGLE,
+            APP_NAME,
+            aspect,
+        )
         self.destination.set_link_established_callback(self._link_established)
         self.destination.announce()
 
@@ -220,7 +226,13 @@ class ClientLinkManager:
                 return False
 
         # Build the destination and request a link
-        server_dest = RNS.Destination(server_identity, RNS.Destination.OUT, APP_NAME, "sync")
+        server_dest = RNS.Destination(
+            server_identity,
+            RNS.Destination.OUT,
+            RNS.Destination.SINGLE,
+            APP_NAME,
+            "sync",
+        )
 
         self.link = RNS.Link(server_dest)
 
