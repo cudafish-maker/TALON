@@ -5,26 +5,26 @@
 # No mocks (except transport). Both sides use real in-memory SQLite
 # databases with the full T.A.L.O.N. schema.
 
-import sys
 import os
 import sqlite3
-import time
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from talon.db.database import initialize_tables
-from talon.db.models import (
-    Asset, Channel, Document, Message, Mission, MissionNote,
-    Objective, Operator, SITREP, SITREPEntry, new_id, now,
-)
-from talon.sync.protocol import (
-    build_sync_request, build_sync_response, apply_sync_response,
-    build_client_changes, ConflictError,
-)
-from talon.server.sync_engine import SyncEngine
 from talon.client.cache import ClientCache
 from talon.client.sync_client import SyncClient
-
+from talon.db.database import initialize_tables
+from talon.db.models import (
+    new_id,
+    now,
+)
+from talon.server.sync_engine import SyncEngine
+from talon.sync.protocol import (
+    apply_sync_response,
+    build_client_changes,
+    build_sync_request,
+    build_sync_response,
+)
 
 # ------------------------------------------------------------------
 # Helpers
@@ -196,7 +196,6 @@ class TestProtocolRoundtrip:
 
     def test_conflict_detected(self):
         """Client with same/higher version should trigger a conflict."""
-        server_db = _make_db()
         client_db = _make_db()
 
         op_id = new_id()

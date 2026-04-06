@@ -14,22 +14,22 @@
 # - Full sync round-trip: build request → server response → apply
 # - Enrollment over link: token → lease → registered client
 
-import sys
-import os
 import json
-import time
+import os
+import sys
 import tempfile
 import threading
-from unittest.mock import MagicMock, patch, PropertyMock
+import time
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import RNS
-from talon.net.link_manager import ServerLinkManager, ClientLinkManager
-from talon.net.transport import TransportManager
-from talon.net.heartbeat import HeartbeatMonitor, HeartbeatSender
-from talon.constants import TransportType
 
+from talon.constants import TransportType
+from talon.net.heartbeat import HeartbeatMonitor, HeartbeatSender
+from talon.net.link_manager import ClientLinkManager, ServerLinkManager
+from talon.net.transport import TransportManager
 
 # ================================================================
 # Helpers
@@ -346,8 +346,8 @@ class TestServerStartupSequence:
 
     def test_server_setup_network_passes_rnode_override(self):
         """If RNode is detected, its config should be passed as override."""
-        from talon.server.app import TalonServer
         from talon.net.rnode import RNodeManager, RNodeStatus
+        from talon.server.app import TalonServer
 
         server = TalonServer.__new__(TalonServer)
         server.config = make_server_config()
@@ -765,7 +765,7 @@ class TestSyncRoundTrip:
         # Mock the protocol functions
         with patch("talon.client.sync_client.build_sync_request") as mock_req, \
              patch("talon.client.sync_client.build_client_changes") as mock_changes, \
-             patch("talon.client.sync_client.apply_sync_response") as mock_apply:
+             patch("talon.client.sync_client.apply_sync_response"):
 
             mock_req.return_value = {
                 "type": "sync_request",
@@ -882,7 +882,7 @@ class TestRNodeStartupIntegration:
 
     def test_rnode_detect_falls_back_to_auto(self):
         """When configured port missing, should try auto-detection."""
-        from talon.net.rnode import RNodeManager, RNodeStatus
+        from talon.net.rnode import RNodeManager
 
         config = {"port": "/dev/ttyNONE", "frequency": 915000000}
         mgr = RNodeManager(config)
@@ -933,8 +933,8 @@ class TestRNodeStartupIntegration:
 
     def test_end_to_end_config_generation_with_rnode(self):
         """Full path: RNode detected → config generated with correct port."""
-        from talon.net.rnode import RNodeManager, RNodeStatus
         from talon.net.reticulum import write_reticulum_config
+        from talon.net.rnode import RNodeManager, RNodeStatus
 
         config = make_server_config()
         mgr = RNodeManager(config["interfaces"]["rnode"])

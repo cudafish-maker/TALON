@@ -7,20 +7,19 @@
 # These tests mock the RNS objects (Identity, Destination, Link, Packet)
 # so no real network or hardware is needed.
 
-import sys
-import os
 import json
-import time
+import os
+import sys
 import threading
-from unittest.mock import MagicMock, patch, PropertyMock
+import time
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import RNS
-from talon.net.link_manager import ServerLinkManager, ClientLinkManager
-from talon.net.transport import TransportManager
-from talon.constants import TransportType
 
+from talon.constants import TransportType
+from talon.net.link_manager import ClientLinkManager, ServerLinkManager
 
 # ================================================================
 # Helpers
@@ -66,7 +65,7 @@ class TestServerLinkManager:
         slm = ServerLinkManager(identity)
 
         with patch("talon.net.link_manager.RNS.Destination",
-                   return_value=make_mock_destination()) as mock_dest_cls:
+                   return_value=make_mock_destination()):
             slm.start()
 
         assert slm.destination is not None
@@ -91,7 +90,7 @@ class TestServerLinkManager:
         identity = make_mock_identity()
         slm = ServerLinkManager(identity)
         connected_calls = []
-        slm.on_client_connected = lambda h, l: connected_calls.append(h)
+        slm.on_client_connected = lambda h, _l: connected_calls.append(h)
 
         with patch("talon.net.link_manager.RNS.Destination",
                    return_value=make_mock_destination()):
@@ -275,7 +274,7 @@ class TestClientLinkManager:
         clm = ClientLinkManager(identity, b"\x01\x02\x03\x04")
 
         with patch("talon.net.link_manager.RNS.Identity") as mock_id_cls, \
-             patch("talon.net.link_manager.RNS.Transport") as mock_transport:
+             patch("talon.net.link_manager.RNS.Transport"):
             mock_id_cls.recall = MagicMock(return_value=None)
             result = clm.connect(timeout=0.5)
 

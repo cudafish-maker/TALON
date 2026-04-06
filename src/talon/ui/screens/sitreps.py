@@ -19,23 +19,19 @@
 
 import time
 
-from kivy.properties import StringProperty, ListProperty, BooleanProperty, ObjectProperty
-from kivy.uix.widget import Widget
-
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton
-from kivymd.uix.list import MDList, TwoLineIconListItem, IconLeftWidget
+from kivymd.uix.list import IconLeftWidget, MDList, TwoLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.dialog import MDDialog
-from kivymd.uix.selectioncontrol import MDRadioButton
 
 from talon.models.sitrep import (
-    create_sitrep, append_entry,
-    get_available_templates, get_template,
+    append_entry,
+    create_sitrep,
 )
-from talon.ui.theme import IMPORTANCE_COLORS, BG_SURFACE, BG_ELEVATED, TEXT_SECONDARY
+from talon.ui.theme import IMPORTANCE_COLORS
 
 
 class SITREPPanel(MDBoxLayout):
@@ -474,7 +470,7 @@ class _SITREPComposeContent(MDBoxLayout):
                 md_bg_color=color if self.selected_importance == level else "#1c2637",
                 theme_text_color="Custom",
                 text_color="#0a0e14" if self.selected_importance == level else "#8a9bb0",
-                on_release=lambda x, l=level: self._select_importance(l),
+                on_release=lambda x, lv=level: self._select_importance(lv),
             )
             importance_row.add_widget(btn)
 

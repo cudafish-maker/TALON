@@ -16,17 +16,16 @@
 # kivy_garden.mapview docs:
 #   https://github.com/kivy-garden/mapview
 
-from kivy.uix.widget import Widget
+from kivy.graphics import Color, Line
 from kivy.properties import (
-    NumericProperty, ListProperty, BooleanProperty, StringProperty,
-    ObjectProperty,
+    BooleanProperty,
+    NumericProperty,
+    StringProperty,
 )
-from kivy.clock import Clock
-from kivy.graphics import Color, Line, Ellipse
-from kivy.metrics import dp
+from kivy.uix.widget import Widget
 
 try:
-    from kivy_garden.mapview import MapView, MapMarker, MapLayer
+    from kivy_garden.mapview import MapMarker, MapView
     MAPVIEW_AVAILABLE = True
 except ImportError:
     # kivy_garden.mapview not installed — use a fallback placeholder
@@ -251,7 +250,7 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
 
     def _draw_placeholder(self):
         """Draw a dark grid placeholder when MapView is unavailable."""
-        from kivy.graphics import Color, Rectangle, Line
+        from kivy.graphics import Rectangle
         with self.canvas:
             Color(0.04, 0.055, 0.078, 1)    # BG_BASE
             Rectangle(pos=self.pos, size=self.size)

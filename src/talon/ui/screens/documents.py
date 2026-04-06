@@ -18,18 +18,18 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton
-from kivymd.uix.list import MDList, TwoLineIconListItem, IconLeftWidget
+from kivymd.uix.list import IconLeftWidget, MDList, TwoLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.dialog import MDDialog
 
 from talon.models.document import (
-    create_document, validate_document,
-    can_view_document, can_delete_document,
+    can_view_document,
+    create_document,
+    validate_document,
 )
-
 
 ACCESS_COLORS = {
     "ALL":        "#00e5a0",
@@ -383,7 +383,7 @@ class _UploadContent(MDBoxLayout):
                 md_bg_color=color if level == self.selected_access else "#1c2637",
                 theme_text_color="Custom",
                 text_color="#0a0e14" if level == self.selected_access else "#8a9bb0",
-                on_release=lambda x, l=level: self._select_access(l),
+                on_release=lambda x, lv=level: self._select_access(lv),
             ))
         self.add_widget(row)
 

@@ -5,14 +5,14 @@
 # They test the logic around transport selection, heartbeat timing,
 # and config generation — not actual network communication.
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from talon.net.transport import TransportManager
-from talon.net.heartbeat import HeartbeatMonitor
 from talon.constants import TransportType
-
+from talon.net.heartbeat import HeartbeatMonitor
+from talon.net.transport import TransportManager
 
 # ---------- Transport ----------
 
@@ -23,7 +23,6 @@ def test_transport_priority_order():
     tm.set_available(TransportType.YGGDRASIL, True)
     tm.set_available(TransportType.I2P, True)
 
-    available = tm.get_all_available()
     # The active transport should be the highest priority (Yggdrasil)
     assert tm.get_active() == TransportType.YGGDRASIL
 
