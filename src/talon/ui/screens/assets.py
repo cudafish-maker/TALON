@@ -63,7 +63,8 @@ class AssetsPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="ASSETS",
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -162,7 +163,8 @@ class AssetsPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text=asset.name,
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -187,7 +189,8 @@ class AssetsPanel(MDBoxLayout):
             row.add_widget(
                 MDLabel(
                     text=label,
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     size_hint_x=0.4,
@@ -196,7 +199,8 @@ class AssetsPanel(MDBoxLayout):
             row.add_widget(
                 MDLabel(
                     text=value,
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color=value_color or "#e8edf4",
                     size_hint_x=0.6,
@@ -366,7 +370,8 @@ class _AssetAddContent(MDBoxLayout):
         # Category picker (simple row of buttons)
         cat_label = MDLabel(
             text="Category",
-            font_style="Body", role="small",
+            font_style="Body",
+            role="small",
             theme_text_color="Custom",
             text_color="#8a9bb0",
             size_hint_y=None,

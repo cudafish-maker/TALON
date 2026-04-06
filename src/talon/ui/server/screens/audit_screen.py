@@ -88,7 +88,8 @@ class AuditPanel(MDBoxLayout):
         title_row.add_widget(
             MDLabel(
                 text="AUDIT LOG",
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -136,7 +137,8 @@ class AuditPanel(MDBoxLayout):
         col_hdr.add_widget(
             MDLabel(
                 text="TIME",
-                font_style="Label", role="small",
+                font_style="Label",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
                 size_hint_x=None,
@@ -146,7 +148,8 @@ class AuditPanel(MDBoxLayout):
         col_hdr.add_widget(
             MDLabel(
                 text="CLIENT",
-                font_style="Label", role="small",
+                font_style="Label",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
                 size_hint_x=None,
@@ -156,7 +159,8 @@ class AuditPanel(MDBoxLayout):
         col_hdr.add_widget(
             MDLabel(
                 text="EVENT",
-                font_style="Label", role="small",
+                font_style="Label",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
             )
@@ -180,7 +184,8 @@ class AuditPanel(MDBoxLayout):
                 MDLabel(
                     text="No audit events recorded yet.",
                     halign="center",
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color="#3d4f63",
                     size_hint_y=None,
@@ -254,7 +259,8 @@ class AuditPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=ts_str,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
                 size_hint_x=None,
@@ -264,7 +270,8 @@ class AuditPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=callsign,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
@@ -275,7 +282,8 @@ class AuditPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=event_type,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color=color,
             )

@@ -64,7 +64,8 @@ class EnrollmentPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="ENROLLMENT",
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -92,7 +93,8 @@ class EnrollmentPanel(MDBoxLayout):
                 MDLabel(
                     text=f"SERVER HASH: [font=RobotoMono]{dest_hash}[/font]",
                     markup=True,
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color="#00e5a0",
                 )
@@ -115,7 +117,8 @@ class EnrollmentPanel(MDBoxLayout):
                     "Generate a one-time token for a new operator.\n"
                     "Deliver the token AND server hash in person or over a trusted channel."
                 ),
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
                 size_hint_y=None,
@@ -181,7 +184,8 @@ class EnrollmentPanel(MDBoxLayout):
         pending_hdr.add_widget(
             MDLabel(
                 text=f"PENDING TOKENS ({len(pending_tokens)} unused)",
-                font_style="Label", role="small",
+                font_style="Label",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
             )
@@ -201,7 +205,8 @@ class EnrollmentPanel(MDBoxLayout):
                 MDLabel(
                     text="No pending tokens.",
                     halign="center",
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color="#3d4f63",
                     size_hint_y=None,
@@ -248,7 +253,8 @@ class EnrollmentPanel(MDBoxLayout):
             MDLabel(
                 text=f"Token for: [b]{callsign}[/b]",
                 markup=True,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
                 size_hint_y=None,
@@ -265,7 +271,8 @@ class EnrollmentPanel(MDBoxLayout):
         token_label = MDLabel(
             text=f"[font=RobotoMono]{token}[/font]",
             markup=True,
-            font_style="Body", role="large",
+            font_style="Body",
+            role="large",
             bold=True,
             theme_text_color="Custom",
             text_color="#00e5a0",
@@ -284,7 +291,8 @@ class EnrollmentPanel(MDBoxLayout):
         card.add_widget(
             MDLabel(
                 text="Give this token to the operator. It is single-use.",
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
                 size_hint_y=None,
@@ -318,7 +326,8 @@ class EnrollmentPanel(MDBoxLayout):
             MDLabel(
                 text=f"[font=RobotoMono]{token_short}[/font]",
                 markup=True,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
                 size_hint_x=None,
@@ -328,7 +337,8 @@ class EnrollmentPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=callsign,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -337,7 +347,8 @@ class EnrollmentPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=ago_str,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
                 halign="right",

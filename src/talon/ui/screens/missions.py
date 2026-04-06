@@ -73,7 +73,8 @@ class MissionsPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="MISSIONS",
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -161,7 +162,8 @@ class MissionsPanel(MDBoxLayout):
             MDLabel(
                 text=f"{mission.name}  [color={color}]{mission.status}[/color]",
                 markup=True,
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -186,7 +188,8 @@ class MissionsPanel(MDBoxLayout):
         content.add_widget(
             MDLabel(
                 text="OBJECTIVES",
-                font_style="Label", role="small",
+                font_style="Label",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
                 size_hint_y=None,
@@ -226,7 +229,8 @@ class MissionsPanel(MDBoxLayout):
                 obj_row.add_widget(
                     MDLabel(
                         text=obj.assigned_to,
-                        font_style="Body", role="small",
+                        font_style="Body",
+                        role="small",
                         theme_text_color="Custom",
                         text_color="#8a9bb0",
                         size_hint_x=None,
@@ -272,7 +276,8 @@ class MissionsPanel(MDBoxLayout):
         content.add_widget(
             MDLabel(
                 text="NOTES LOG",
-                font_style="Label", role="small",
+                font_style="Label",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
                 size_hint_y=None,
@@ -303,7 +308,8 @@ class MissionsPanel(MDBoxLayout):
                     markup=True,
                     theme_text_color="Custom",
                     text_color="#e8edf4",
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     size_hint_y=None,
                     height="20dp",
                 )

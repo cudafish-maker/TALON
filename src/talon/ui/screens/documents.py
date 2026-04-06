@@ -87,7 +87,8 @@ class DocumentsPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="DOCUMENTS",
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -179,7 +180,8 @@ class DocumentsPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text=doc.title,
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -208,7 +210,8 @@ class DocumentsPanel(MDBoxLayout):
             r.add_widget(
                 MDLabel(
                     text=label,
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     size_hint_x=0.4,
@@ -217,7 +220,8 @@ class DocumentsPanel(MDBoxLayout):
             r.add_widget(
                 MDLabel(
                     text=value,
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color=color or "#e8edf4",
                     size_hint_x=0.6,
@@ -382,7 +386,8 @@ class _UploadContent(MDBoxLayout):
 
         access_label = MDLabel(
             text="Access level",
-            font_style="Body", role="small",
+            font_style="Body",
+            role="small",
             theme_text_color="Custom",
             text_color="#8a9bb0",
             size_hint_y=None,

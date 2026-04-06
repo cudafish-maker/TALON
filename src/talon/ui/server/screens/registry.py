@@ -65,7 +65,8 @@ class RegistryPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="CLIENT REGISTRY",
-                font_style="Label", role="large",
+                font_style="Label",
+                role="large",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -76,7 +77,8 @@ class RegistryPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text=f"{total} enrolled",
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 halign="right",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
@@ -102,7 +104,8 @@ class RegistryPanel(MDBoxLayout):
         ]:
             lbl = MDLabel(
                 text=text,
-                font_style="Label", role="small",
+                font_style="Label",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
             )
@@ -179,7 +182,8 @@ class RegistryPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=status,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color=color,
                 size_hint_x=None,
@@ -191,7 +195,8 @@ class RegistryPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=transport,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
                 size_hint_x=None,
@@ -203,7 +208,8 @@ class RegistryPanel(MDBoxLayout):
         row.add_widget(
             MDLabel(
                 text=ts_str,
-                font_style="Body", role="small",
+                font_style="Body",
+                role="small",
                 theme_text_color="Custom",
                 text_color="#3d4f63",
                 size_hint_x=None,
@@ -247,7 +253,8 @@ class RegistryPanel(MDBoxLayout):
             row.add_widget(
                 MDLabel(
                     text="DENY LIST",
-                    font_style="Body", role="small",
+                    font_style="Body",
+                    role="small",
                     theme_text_color="Custom",
                     text_color="#ff3b3b",
                     size_hint_x=None,
