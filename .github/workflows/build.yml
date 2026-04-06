@@ -103,6 +103,11 @@ jobs:
       - name: Build client binary
         run: xvfb-run -a pyinstaller build/talon-client.spec
 
+      - name: Set executable permissions
+        run: |
+          chmod +x dist/talon-server/talon-server
+          chmod +x dist/talon-client/talon-client
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:

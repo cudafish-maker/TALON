@@ -51,6 +51,7 @@ a = Analysis(
         'kivy',
         'kivymd',
         'kivymd.uix',
+        'kivymd.icon_definitions',
         'kivymd.uix.boxlayout',
         'kivymd.uix.label',
         'kivymd.uix.button',
