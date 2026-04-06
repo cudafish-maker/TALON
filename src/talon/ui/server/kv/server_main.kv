@@ -168,7 +168,8 @@
 
 
 # --- Server nav rail button ---
-<ServerNavButton@MDBoxLayout>:
+# Mix in ButtonBehavior so the dynamic class fires on_press / on_release.
+<ServerNavButton@ButtonBehavior+MDBoxLayout>:
     is_active: False
     icon: "circle"
     label: ""

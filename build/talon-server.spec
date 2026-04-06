@@ -67,6 +67,8 @@ a = Analysis(
         'kivymd.uix.snackbar',
         'kivymd.uix.snackbar.snackbar',
         'materialyoucolor',
+        'kivy.uix.behaviors',
+        'kivy.uix.behaviors.button',
         'kivy.core.window',
         'kivy.core.text',
         'kivy.core.image',
