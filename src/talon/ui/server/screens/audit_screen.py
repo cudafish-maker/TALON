@@ -21,7 +21,7 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton
+from kivymd.uix.button import MDButton
 from kivymd.uix.label import MDLabel
 from kivymd.uix.scrollview import MDScrollView
 
@@ -105,7 +105,8 @@ class AuditPanel(MDBoxLayout):
         )
         for f in FILTER_OPTIONS:
             is_active = f == self._active_filter
-            btn = MDFlatButton(
+            btn = MDButton(
+                style="text",
                 text=f,
                 theme_text_color="Custom",
                 text_color="#00e5a0" if is_active else "#8a9bb0",

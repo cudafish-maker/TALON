@@ -20,8 +20,13 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton, MDRaisedButton
-from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDButton
+from kivymd.uix.dialog import (
+    MDDialog,
+    MDDialogButtonContainer,
+    MDDialogHeadlineText,
+    MDDialogSupportingText,
+)
 from kivymd.uix.label import MDLabel
 from kivymd.uix.scrollview import MDScrollView
 
@@ -214,7 +219,8 @@ class RegistryPanel(MDBoxLayout):
                 spacing="4dp",
             )
             # Mark stale button
-            stale_btn = MDFlatButton(
+            stale_btn = MDButton(
+                style="text",
                 text="STALE",
                 theme_text_color="Custom",
                 text_color="#f5a623",
@@ -224,7 +230,8 @@ class RegistryPanel(MDBoxLayout):
                 on_release=lambda x, cid=client_id, cs=callsign: self._confirm_mark_stale(cid, cs),
             )
             # Revoke button
-            revoke_btn = MDFlatButton(
+            revoke_btn = MDButton(
+                style="text",
                 text="REVOKE",
                 theme_text_color="Custom",
                 text_color="#ff3b3b",
@@ -261,24 +268,28 @@ class RegistryPanel(MDBoxLayout):
             self._confirm_dialog.dismiss()
 
         self._confirm_dialog = MDDialog(
-            title="Mark Client Stale",
-            text=f"Mark [b]{callsign}[/b] as STALE?\n\nThis flags the client as "
-            f"non-responsive. They can still re-connect.",
-            buttons=[
-                MDFlatButton(
+            MDDialogHeadlineText(text="Mark Client Stale"),
+            MDDialogSupportingText(
+                text=f"Mark [b]{callsign}[/b] as STALE?\n\nThis flags the client as "
+                f"non-responsive. They can still re-connect."
+            ),
+            MDDialogButtonContainer(
+                MDButton(
+                    style="text",
                     text="CANCEL",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     on_release=lambda x: self._confirm_dialog.dismiss(),
                 ),
-                MDRaisedButton(
+                MDButton(
+                    style="elevated",
                     text="MARK STALE",
                     md_bg_color="#f5a623",
                     theme_text_color="Custom",
                     text_color="#0a0e14",
                     on_release=lambda x: self._do_mark_stale(client_id),
                 ),
-            ],
+            ),
         )
         self._confirm_dialog.open()
 
@@ -294,30 +305,34 @@ class RegistryPanel(MDBoxLayout):
             self._confirm_dialog.dismiss()
 
         self._confirm_dialog = MDDialog(
-            title="REVOKE CLIENT",
-            text=(
-                f"[b][color=#ff3b3b]REVOKE {callsign}?[/color][/b]\n\n"
-                f"This will:\n"
-                f"  • Add {callsign} to the deny list\n"
-                f"  • Rotate the group encryption key\n"
-                f"  • Require in-person re-enrollment to restore access\n\n"
-                f"[b]This action cannot be undone.[/b]"
+            MDDialogHeadlineText(text="REVOKE CLIENT"),
+            MDDialogSupportingText(
+                text=(
+                    f"[b][color=#ff3b3b]REVOKE {callsign}?[/color][/b]\n\n"
+                    f"This will:\n"
+                    f"  • Add {callsign} to the deny list\n"
+                    f"  • Rotate the group encryption key\n"
+                    f"  • Require in-person re-enrollment to restore access\n\n"
+                    f"[b]This action cannot be undone.[/b]"
+                )
             ),
-            buttons=[
-                MDFlatButton(
+            MDDialogButtonContainer(
+                MDButton(
+                    style="text",
                     text="CANCEL",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     on_release=lambda x: self._confirm_dialog.dismiss(),
                 ),
-                MDRaisedButton(
+                MDButton(
+                    style="elevated",
                     text="REVOKE",
                     md_bg_color="#ff3b3b",
                     theme_text_color="Custom",
                     text_color="#ffffff",
                     on_release=lambda x: self._do_revoke(client_id, callsign),
                 ),
-            ],
+            ),
         )
         self._confirm_dialog.open()
 

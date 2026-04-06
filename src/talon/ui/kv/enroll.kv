@@ -153,7 +153,7 @@
                 height: self.texture_size[1] if root.status_text else 0
                 opacity: 1 if root.status_text else 0
 
-            MDRaisedButton:
+            MDButton:
                 text: "ENROLLING..." if root.is_loading else "ENROLL"
                 disabled: root.is_loading
                 on_release: root.on_enroll()

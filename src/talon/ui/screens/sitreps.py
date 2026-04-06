@@ -20,8 +20,13 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDIconButton, MDRaisedButton
-from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.dialog import (
+    MDDialog,
+    MDDialogButtonContainer,
+    MDDialogContentContainer,
+    MDDialogHeadlineText,
+)
 from kivymd.uix.label import MDLabel
 from kivymd.uix.list import IconLeftWidget, MDList, TwoLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
@@ -371,25 +376,26 @@ class SITREPPanel(MDBoxLayout):
 
         content = _SITREPComposeContent()
         self._compose_dialog = MDDialog(
-            title="New SITREP",
-            type="custom",
-            content_cls=content,
-            buttons=[
-                MDRaisedButton(
+            MDDialogHeadlineText(text="New SITREP"),
+            MDDialogContentContainer(content),
+            MDDialogButtonContainer(
+                MDButton(
+                    style="elevated",
                     text="CANCEL",
                     md_bg_color="#1c2637",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     on_release=lambda x: self._compose_dialog.dismiss(),
                 ),
-                MDRaisedButton(
+                MDButton(
+                    style="elevated",
                     text="CREATE",
                     md_bg_color="#00e5a0",
                     theme_text_color="Custom",
                     text_color="#0a0e14",
                     on_release=lambda x: self._submit_new_sitrep(content),
                 ),
-            ],
+            ),
         )
         self._compose_dialog.open()
 
@@ -467,7 +473,8 @@ class _SITREPComposeContent(MDBoxLayout):
 
         for level in ("ROUTINE", "PRIORITY", "FLASH"):
             color = IMPORTANCE_COLORS.get(level, "#4a9eff")
-            btn = MDRaisedButton(
+            btn = MDButton(
+                style="elevated",
                 text=level,
                 md_bg_color=color if self.selected_importance == level else "#1c2637",
                 theme_text_color="Custom",

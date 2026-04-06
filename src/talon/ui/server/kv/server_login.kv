@@ -87,7 +87,7 @@
                 height: self.texture_size[1] if root.error_text else 0
                 opacity: 1 if root.error_text else 0
 
-            MDRaisedButton:
+            MDButton:
                 text: "STARTING SERVER..." if root.is_loading else "START SERVER"
                 disabled: root.is_loading
                 on_release: root.on_submit()

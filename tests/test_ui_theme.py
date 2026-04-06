@@ -143,7 +143,8 @@ def test_kivymd_theme_is_dark():
 
 
 def test_kivymd_theme_has_required_keys():
-    required = {"theme_style", "primary_palette", "accent_palette", "primary_hue", "accent_hue"}
+    # KivyMD 2.x removed accent_palette, primary_hue, accent_hue
+    required = {"theme_style", "primary_palette"}
     assert required.issubset(set(KIVYMD_THEME.keys()))
 
 

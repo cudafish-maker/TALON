@@ -18,8 +18,13 @@
 
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDIconButton, MDRaisedButton
-from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.dialog import (
+    MDDialog,
+    MDDialogButtonContainer,
+    MDDialogContentContainer,
+    MDDialogHeadlineText,
+)
 from kivymd.uix.label import MDLabel
 from kivymd.uix.list import IconLeftWidget, MDList, TwoLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
@@ -222,7 +227,8 @@ class AssetsPanel(MDBoxLayout):
         # Verify button — only shown if the current operator can verify
         callsign = self._get_my_callsign()
         if can_verify(asset, callsign, "operator"):
-            verify_btn = MDRaisedButton(
+            verify_btn = MDButton(
+                style="elevated",
                 text="VERIFY ASSET",
                 md_bg_color="#00e5a0",
                 theme_text_color="Custom",
@@ -257,25 +263,26 @@ class AssetsPanel(MDBoxLayout):
     def open_add_dialog(self):
         content = _AssetAddContent()
         self._add_dialog = MDDialog(
-            title="New Asset",
-            type="custom",
-            content_cls=content,
-            buttons=[
-                MDRaisedButton(
+            MDDialogHeadlineText(text="New Asset"),
+            MDDialogContentContainer(content),
+            MDDialogButtonContainer(
+                MDButton(
+                    style="elevated",
                     text="CANCEL",
                     md_bg_color="#1c2637",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     on_release=lambda x: self._add_dialog.dismiss(),
                 ),
-                MDRaisedButton(
+                MDButton(
+                    style="elevated",
                     text="ADD",
                     md_bg_color="#00e5a0",
                     theme_text_color="Custom",
                     text_color="#0a0e14",
                     on_release=lambda x: self._submit_new_asset(content),
                 ),
-            ],
+            ),
         )
         self._add_dialog.open()
 
@@ -368,7 +375,8 @@ class _AssetAddContent(MDBoxLayout):
         self.add_widget(cat_label)
 
         for cat in self.CATEGORIES:
-            btn = MDRaisedButton(
+            btn = MDButton(
+                style="elevated",
                 text=cat,
                 md_bg_color="#00e5a0" if cat == self.selected_category else "#1c2637",
                 theme_text_color="Custom",

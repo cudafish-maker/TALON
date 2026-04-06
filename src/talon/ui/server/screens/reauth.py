@@ -24,8 +24,13 @@ import time
 
 from kivy.clock import Clock
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton, MDRaisedButton
-from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDButton
+from kivymd.uix.dialog import (
+    MDDialog,
+    MDDialogButtonContainer,
+    MDDialogHeadlineText,
+    MDDialogSupportingText,
+)
 from kivymd.uix.label import MDLabel
 from kivymd.uix.scrollview import MDScrollView
 
@@ -214,7 +219,8 @@ class ReauthPanel(MDBoxLayout):
             padding=["0dp", "4dp"],
         )
         btn_row.add_widget(
-            MDRaisedButton(
+            MDButton(
+                style="elevated",
                 text="APPROVE",
                 md_bg_color="#00e5a0",
                 theme_text_color="Custom",
@@ -223,7 +229,8 @@ class ReauthPanel(MDBoxLayout):
             )
         )
         btn_row.add_widget(
-            MDRaisedButton(
+            MDButton(
+                style="elevated",
                 text="DENY",
                 md_bg_color="#ff3b3b",
                 theme_text_color="Custom",
@@ -294,23 +301,27 @@ class ReauthPanel(MDBoxLayout):
             self._dialog.dismiss()
 
         self._dialog = MDDialog(
-            title="Deny Re-Authentication",
-            text=(f"Deny re-auth for [b]{callsign}[/b]?\n\nThey will remain locked until approved or revoked."),
-            buttons=[
-                MDFlatButton(
+            MDDialogHeadlineText(text="Deny Re-Authentication"),
+            MDDialogSupportingText(
+                text=(f"Deny re-auth for [b]{callsign}[/b]?\n\nThey will remain locked until approved or revoked.")
+            ),
+            MDDialogButtonContainer(
+                MDButton(
+                    style="text",
                     text="CANCEL",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     on_release=lambda x: self._dialog.dismiss(),
                 ),
-                MDRaisedButton(
+                MDButton(
+                    style="elevated",
                     text="DENY",
                     md_bg_color="#ff3b3b",
                     theme_text_color="Custom",
                     text_color="#ffffff",
                     on_release=lambda x: self._do_deny(client_id, callsign),
                 ),
-            ],
+            ),
         )
         self._dialog.open()
 

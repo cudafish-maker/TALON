@@ -147,7 +147,8 @@ class TestProjectStructure:
         with open(os.path.join(ROOT, "pyproject.toml"), "rb") as f:
             data = tomllib.load(f)
         deps = data.get("project", {}).get("dependencies", [])
-        dep_names = [d.split(">=")[0].split("<")[0].strip().lower() for d in deps]
+        # Handle both pinned ("kivymd>=1.2") and URL-based ("kivymd @ https://...")
+        dep_names = [d.split(">=")[0].split("<")[0].split(" @")[0].strip().lower() for d in deps]
         for required in ["rns", "kivy", "kivymd", "pynacl", "pyyaml"]:
             assert required in dep_names, f"Missing dependency: {required}"
 

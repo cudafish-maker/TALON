@@ -30,7 +30,7 @@ import time
 
 from kivy.core.clipboard import Clipboard
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDIconButton, MDRaisedButton
+from kivymd.uix.button import MDButton, MDIconButton
 from kivymd.uix.label import MDLabel
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
@@ -148,7 +148,8 @@ class EnrollmentPanel(MDBoxLayout):
         form.add_widget(self._callsign_field)
 
         form.add_widget(
-            MDRaisedButton(
+            MDButton(
+                style="elevated",
                 text="GENERATE TOKEN",
                 md_bg_color="#00e5a0",
                 theme_text_color="Custom",

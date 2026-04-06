@@ -61,9 +61,6 @@ TRANSPORT_COLORS = {
 KIVYMD_THEME = {
     "theme_style": "Dark",
     "primary_palette": "Teal",  # Closest built-in to #00e5a0
-    "accent_palette": "Amber",
-    "primary_hue": "A400",
-    "accent_hue": "600",
 }
 
 # ---------- Typography ----------

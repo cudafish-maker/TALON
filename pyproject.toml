@@ -18,7 +18,7 @@ dependencies = [
 
     # UI Framework
     "kivy>=2.3.0,<3.0",
-    "kivymd>=1.2.0,<2.0",
+    "kivymd @ https://github.com/kivymd/KivyMD/archive/master.zip",
 
     # Database — encrypted SQLite
     "sqlcipher3>=0.5.0,<1.0",

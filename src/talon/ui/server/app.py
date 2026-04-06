@@ -54,9 +54,6 @@ class TalonServerApp(MDApp):
         """Set up theme, load KV files, create screen manager."""
         self.theme_cls.theme_style = KIVYMD_THEME["theme_style"]
         self.theme_cls.primary_palette = KIVYMD_THEME["primary_palette"]
-        self.theme_cls.accent_palette = KIVYMD_THEME["accent_palette"]
-        self.theme_cls.primary_hue = KIVYMD_THEME["primary_hue"]
-        self.theme_cls.accent_hue = KIVYMD_THEME["accent_hue"]
 
         Window.clearcolor = self._hex_to_rgba(BG_BASE)
 

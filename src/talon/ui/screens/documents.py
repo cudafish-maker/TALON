@@ -18,8 +18,13 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDIconButton, MDRaisedButton
-from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.dialog import (
+    MDDialog,
+    MDDialogButtonContainer,
+    MDDialogContentContainer,
+    MDDialogHeadlineText,
+)
 from kivymd.uix.label import MDLabel
 from kivymd.uix.list import IconLeftWidget, MDList, TwoLineIconListItem
 from kivymd.uix.scrollview import MDScrollView
@@ -235,7 +240,8 @@ class DocumentsPanel(MDBoxLayout):
         self.add_widget(details)
 
         # Open / view button — launches the file with the system viewer
-        open_btn = MDRaisedButton(
+        open_btn = MDButton(
+            style="elevated",
             text="OPEN DOCUMENT",
             md_bg_color="#00e5a0",
             theme_text_color="Custom",
@@ -262,25 +268,26 @@ class DocumentsPanel(MDBoxLayout):
         """Open file chooser and queue upload."""
         content = _UploadContent()
         self._dialog = MDDialog(
-            title="Upload Document",
-            type="custom",
-            content_cls=content,
-            buttons=[
-                MDRaisedButton(
+            MDDialogHeadlineText(text="Upload Document"),
+            MDDialogContentContainer(content),
+            MDDialogButtonContainer(
+                MDButton(
+                    style="elevated",
                     text="CANCEL",
                     md_bg_color="#1c2637",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
                     on_release=lambda x: self._dialog.dismiss(),
                 ),
-                MDRaisedButton(
+                MDButton(
+                    style="elevated",
                     text="QUEUE UPLOAD",
                     md_bg_color="#00e5a0",
                     theme_text_color="Custom",
                     text_color="#0a0e14",
                     on_release=lambda x: self._submit_upload(content),
                 ),
-            ],
+            ),
         )
         self._dialog.open()
 
@@ -392,7 +399,8 @@ class _UploadContent(MDBoxLayout):
         for level in self.ACCESS_LEVELS:
             color = ACCESS_COLORS.get(level, "#8a9bb0")
             row.add_widget(
-                MDRaisedButton(
+                MDButton(
+                    style="elevated",
                     text=level,
                     md_bg_color=color if level == self.selected_access else "#1c2637",
                     theme_text_color="Custom",
