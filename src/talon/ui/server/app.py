@@ -29,6 +29,7 @@ from kivymd.uix.screenmanager import MDScreenManager
 
 from talon.server.app import TalonServer
 from talon.ui.theme import BG_BASE, KIVYMD_THEME
+from talon.ui.widgets import MapWidget, StatusBar  # noqa: F401 — register with Factory
 
 KV_DIR = os.path.join(os.path.dirname(__file__), "kv")
 
