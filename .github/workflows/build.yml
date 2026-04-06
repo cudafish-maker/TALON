@@ -91,7 +91,9 @@ jobs:
           sudo apt-get install -y libsqlcipher-dev libsodium-dev
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
 
       - name: Build server binary
         run: pyinstaller build/talon-server.spec
@@ -123,7 +125,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
 
       - name: Build server binary
         run: pyinstaller build/talon-server.spec
@@ -177,10 +181,11 @@ jobs:
             automake \
             libtool \
             pkg-config \
-            openjdk-17-jdk
+            openjdk-17-jdk \
+            cython3
 
       - name: Install Buildozer
-        run: pip install buildozer
+        run: pip install buildozer cython
 
       # Cache the Android SDK/NDK so subsequent builds are much faster.
       # The first build downloads ~2GB of SDK/NDK tools.
