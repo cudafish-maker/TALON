@@ -1,0 +1,7 @@
+# Development dependencies
+# Install: pip install -r requirements-dev.txt
+
+pytest>=8.0
+ruff>=0.4.0
+pyinstaller>=6.0
+buildozer>=1.5

@@ -20,10 +20,34 @@ on:
 
 jobs:
   # ------------------------------------------------------------------
-  # Job 1: Run tests
+  # Job 1: Lint
+  # ------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff check
+        run: ruff check src/ tests/
+
+      - name: Run ruff format check
+        run: ruff format --check src/ tests/
+
+  # ------------------------------------------------------------------
+  # Job 2: Run tests
   # ------------------------------------------------------------------
   test:
     name: Run Tests
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,13 +63,15 @@ jobs:
           sudo apt-get install -y libsqlcipher-dev libsodium-dev
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
 
       - name: Run tests
         run: pytest tests/ -v
 
   # ------------------------------------------------------------------
-  # Job 2: Build Linux binary
+  # Job 3: Build Linux binary
   # ------------------------------------------------------------------
   build-linux:
     name: Build Linux
@@ -82,7 +108,7 @@ jobs:
             dist/talon-client/
 
   # ------------------------------------------------------------------
-  # Job 3: Build Windows binary
+  # Job 4: Build Windows binary
   # ------------------------------------------------------------------
   build-windows:
     name: Build Windows
@@ -114,7 +140,7 @@ jobs:
             dist/talon-client/
 
   # ------------------------------------------------------------------
-  # Job 4: Build Android APK
+  # Job 5: Build Android APK
   # ------------------------------------------------------------------
   build-android:
     name: Build Android APK
@@ -177,7 +203,7 @@ jobs:
           path: build/bin/*.apk
 
   # ------------------------------------------------------------------
-  # Job 5: Create release (only on tag push)
+  # Job 6: Create release (only on tag push)
   # ------------------------------------------------------------------
   release:
     name: Create Release
