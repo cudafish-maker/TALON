@@ -93,6 +93,11 @@ def install_kivy_mocks():
         },
     )
 
+    # Factory mock — Factory.register() is a no-op in tests
+    _factory_mock = MagicMock()
+    _factory_mock.register = MagicMock(return_value=None)
+    _make_mock_module("kivy.factory", {"Factory": _factory_mock})
+
     # Window mock
     window_mock = MagicMock()
     window_mock.width = 1920
