@@ -173,6 +173,7 @@ def install_kivy_mocks():
     _make_mock_module(
         "kivymd.uix.button",
         {
+            "MDButton": MagicMock,
             "MDRaisedButton": MagicMock,
             "MDFlatButton": MagicMock,
             "MDIconButton": MagicMock,
@@ -180,7 +181,16 @@ def install_kivy_mocks():
     )
     _make_mock_module("kivymd.uix.textfield", {"MDTextField": MagicMock})
     _make_mock_module("kivymd.uix.scrollview", {"MDScrollView": MagicMock})
-    _make_mock_module("kivymd.uix.dialog", {"MDDialog": MagicMock})
+    _make_mock_module(
+        "kivymd.uix.dialog",
+        {
+            "MDDialog": MagicMock,
+            "MDDialogHeadlineText": MagicMock,
+            "MDDialogSupportingText": MagicMock,
+            "MDDialogContentContainer": MagicMock,
+            "MDDialogButtonContainer": MagicMock,
+        },
+    )
     _make_mock_module(
         "kivymd.uix.list",
         {
