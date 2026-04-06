@@ -12,6 +12,10 @@ import argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
+# Suppress Kivy's clipboard provider search — the server has no clipboard needs.
+# Must be set before any kivy import to take effect.
+os.environ.setdefault("KIVY_CLIPBOARD", "dummy")
+
 
 def main():
     parser = argparse.ArgumentParser(

@@ -365,7 +365,7 @@ class _UploadContent(MDBoxLayout):
     def _build(self):
         self.title_field = MDTextField(
             hint_text="Document title",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -375,7 +375,7 @@ class _UploadContent(MDBoxLayout):
         self.add_widget(self.title_field)
         self.path_field = MDTextField(
             hint_text="File path",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",

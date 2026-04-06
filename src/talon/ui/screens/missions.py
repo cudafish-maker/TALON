@@ -340,7 +340,7 @@ class MissionsPanel(MDBoxLayout):
         )
         note_field = MDTextField(
             hint_text="Add note...",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -446,7 +446,7 @@ class _MissionCreateContent(MDBoxLayout):
         self.bind(minimum_height=self.setter("height"))
         self.name_field = MDTextField(
             hint_text="Mission name",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -456,7 +456,7 @@ class _MissionCreateContent(MDBoxLayout):
         self.add_widget(self.name_field)
         self.desc_field = MDTextField(
             hint_text="Description (optional)",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",

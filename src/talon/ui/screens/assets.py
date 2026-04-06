@@ -358,7 +358,7 @@ class _AssetAddContent(MDBoxLayout):
     def _build(self):
         self.name_field = MDTextField(
             hint_text="Asset name",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -400,7 +400,7 @@ class _AssetAddContent(MDBoxLayout):
         )
         self.lat_field = MDTextField(
             hint_text="Latitude (optional)",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -408,7 +408,7 @@ class _AssetAddContent(MDBoxLayout):
         )
         self.lon_field = MDTextField(
             hint_text="Longitude (optional)",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -420,7 +420,7 @@ class _AssetAddContent(MDBoxLayout):
 
         self.notes_field = MDTextField(
             hint_text="Notes (optional)",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",

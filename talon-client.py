@@ -14,6 +14,10 @@ import argparse
 # whether running directly or via PyInstaller bundle.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
+# Suppress Kivy's clipboard provider search when xclip/xsel are absent.
+# Falls back to GTK clipboard if available, otherwise dummy.
+os.environ.setdefault("KIVY_CLIPBOARD", "dummy")
+
 
 def main():
     parser = argparse.ArgumentParser(

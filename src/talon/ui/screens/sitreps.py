@@ -317,7 +317,7 @@ class SITREPPanel(MDBoxLayout):
 
         entry_field = MDTextField(
             hint_text="Append entry...",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -495,7 +495,7 @@ class _SITREPComposeContent(MDBoxLayout):
             MDTextField(
                 id="entry_field",
                 hint_text="Initial entry (what happened?)",
-                mode="rectangle",
+                mode="outlined",
                 multiline=True,
                 fill_color_normal="#151d2b",
                 fill_color_focus="#151d2b",

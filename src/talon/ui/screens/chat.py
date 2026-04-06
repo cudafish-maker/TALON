@@ -194,7 +194,7 @@ class ChatPanel(MDBoxLayout):
         )
         self._msg_field = MDTextField(
             hint_text="Message...",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
@@ -383,7 +383,7 @@ class _NewChannelContent(MDBoxLayout):
         self.bind(minimum_height=self.setter("height"))
         self.name_field = MDTextField(
             hint_text="Channel name",
-            mode="rectangle",
+            mode="outlined",
             fill_color_normal="#151d2b",
             fill_color_focus="#151d2b",
             line_color_focus="#00e5a0",
