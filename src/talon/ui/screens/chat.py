@@ -66,7 +66,7 @@ class ChatPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="CHAT",
-                font_style="Button",
+                font_style="LabelLarge",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -151,7 +151,7 @@ class ChatPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text=channel.name,
-                font_style="Button",
+                font_style="LabelLarge",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -256,7 +256,7 @@ class ChatPanel(MDBoxLayout):
                     MDLabel(
                         text=f"[b]{msg.sender}[/b]  [color=#3d4f63]{ts}[/color]",
                         markup=True,
-                        font_style="Caption",
+                        font_style="BodySmall",
                         theme_text_color="Custom",
                         text_color="#8a9bb0",
                         size_hint_y=None,

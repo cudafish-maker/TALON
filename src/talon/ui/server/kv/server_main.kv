@@ -34,7 +34,7 @@
 
                     MDLabel:
                         text: "SRV"
-                        font_style: "Caption"
+                        font_style: "BodySmall"
                         bold: True
                         halign: "center"
                         theme_text_color: "Custom"
@@ -83,7 +83,7 @@
                 # Uptime at bottom of rail
                 MDLabel:
                     text: root.uptime_text
-                    font_style: "Caption"
+                    font_style: "BodySmall"
                     halign: "center"
                     theme_text_color: "Custom"
                     text_color: "#3d4f63"
@@ -124,7 +124,7 @@
             # Online indicator
             MDLabel:
                 text: "● SERVER ONLINE"
-                font_style: "Caption"
+                font_style: "BodySmall"
                 bold: True
                 theme_text_color: "Custom"
                 text_color: "#00e5a0"
@@ -134,7 +134,7 @@
             MDLabel:
                 text: f"[b]{root.online_count}[/b] clients online"
                 markup: True
-                font_style: "Caption"
+                font_style: "BodySmall"
                 theme_text_color: "Custom"
                 text_color: "#8a9bb0"
                 size_hint_x: None
@@ -143,7 +143,7 @@
             MDLabel:
                 text: f"[b]{root.pending_reauth}[/b] pending re-auth" if root.pending_reauth else ""
                 markup: True
-                font_style: "Caption"
+                font_style: "BodySmall"
                 theme_text_color: "Custom"
                 text_color: "#f5a623" if root.pending_reauth else "#3d4f63"
                 size_hint_x: None
@@ -153,7 +153,7 @@
 
             MDLabel:
                 text: f"uptime {root.uptime_text}"
-                font_style: "Caption"
+                font_style: "BodySmall"
                 theme_text_color: "Custom"
                 text_color: "#3d4f63"
                 size_hint_x: None
@@ -206,7 +206,7 @@
     MDLabel:
         text: root.label
         halign: "center"
-        font_style: "Caption"
+        font_style: "BodySmall"
         font_size: "9sp"
         theme_text_color: "Custom"
         text_color: "#f5a623" if root.is_active else "#8a9bb0"

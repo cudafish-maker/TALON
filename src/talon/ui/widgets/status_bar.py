@@ -76,7 +76,7 @@ class StatusBar(MDBoxLayout):
         # Transport name
         self._transport_label = MDLabel(
             text=self.transport.upper(),
-            font_style="Caption",
+            font_style="BodySmall",
             bold=True,
             size_hint_x=None,
             width="96dp",
@@ -93,7 +93,7 @@ class StatusBar(MDBoxLayout):
         # Callsign
         self._callsign_label = MDLabel(
             text=self.callsign,
-            font_style="Caption",
+            font_style="BodySmall",
             bold=True,
             size_hint_x=None,
             width="96dp",
@@ -109,7 +109,7 @@ class StatusBar(MDBoxLayout):
         # Sync state
         self._sync_label = MDLabel(
             text=self._sync_text(),
-            font_style="Caption",
+            font_style="BodySmall",
             size_hint_x=None,
             width="96dp",
             halign="right",

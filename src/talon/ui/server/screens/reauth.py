@@ -71,7 +71,7 @@ class ReauthPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="RE-AUTHENTICATION REQUESTS",
-                font_style="Button",
+                font_style="LabelLarge",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -98,7 +98,7 @@ class ReauthPanel(MDBoxLayout):
                 MDLabel(
                     text="No pending re-authentication requests.",
                     halign="center",
-                    font_style="Body1",
+                    font_style="BodyLarge",
                     theme_text_color="Custom",
                     text_color="#3d4f63",
                     size_hint_y=None,
@@ -181,7 +181,7 @@ class ReauthPanel(MDBoxLayout):
             MDLabel(
                 text=f"[b]{callsign}[/b]",
                 markup=True,
-                font_style="Body1",
+                font_style="BodyLarge",
                 theme_text_color="Custom",
                 text_color="#e8edf4",
             )
@@ -189,7 +189,7 @@ class ReauthPanel(MDBoxLayout):
         top_row.add_widget(
             MDLabel(
                 text=f"requested {req_ts}",
-                font_style="Caption",
+                font_style="BodySmall",
                 halign="right",
                 theme_text_color="Custom",
                 text_color="#8a9bb0",
@@ -201,7 +201,7 @@ class ReauthPanel(MDBoxLayout):
         card.add_widget(
             MDLabel(
                 text=f"Lease expired {ago_str}  ({exp_ts})",
-                font_style="Caption",
+                font_style="BodySmall",
                 theme_text_color="Custom",
                 text_color="#f5a623",
                 size_hint_y=None,

@@ -75,7 +75,7 @@ class SITREPPanel(MDBoxLayout):
 
         title = MDLabel(
             text="SITREPS",
-            font_style="Button",
+            font_style="LabelLarge",
             bold=True,
             theme_text_color="Custom",
             text_color="#e8edf4",
@@ -212,7 +212,7 @@ class SITREPPanel(MDBoxLayout):
             markup=True,
             theme_text_color="Custom",
             text_color="#e8edf4",
-            font_style="Button",
+            font_style="LabelLarge",
         )
 
         header.add_widget(back_btn)
@@ -223,7 +223,7 @@ class SITREPPanel(MDBoxLayout):
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(sitrep.created_at))
         meta = MDLabel(
             text=f"Created by {sitrep.created_by} at {ts}",
-            font_style="Caption",
+            font_style="BodySmall",
             theme_text_color="Custom",
             text_color="#8a9bb0",
             size_hint_y=None,
@@ -269,7 +269,7 @@ class SITREPPanel(MDBoxLayout):
                 markup=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
-                font_style="Caption",
+                font_style="BodySmall",
                 size_hint_y=None,
                 height="20dp",
             )
@@ -456,7 +456,7 @@ class _SITREPComposeContent(MDBoxLayout):
         # Importance selector
         importance_label = MDLabel(
             text="Importance",
-            font_style="Caption",
+            font_style="BodySmall",
             theme_text_color="Custom",
             text_color="#8a9bb0",
             size_hint_y=None,

@@ -70,7 +70,7 @@ class DashboardPanel(MDBoxLayout):
         header.add_widget(
             MDLabel(
                 text="DASHBOARD",
-                font_style="Button",
+                font_style="LabelLarge",
                 bold=True,
                 theme_text_color="Custom",
                 text_color="#e8edf4",
@@ -106,7 +106,7 @@ class DashboardPanel(MDBoxLayout):
             card.add_widget(
                 MDLabel(
                     text=str(count),
-                    font_style="H5",
+                    font_style="HeadlineSmall",
                     bold=True,
                     halign="center",
                     theme_text_color="Custom",
@@ -116,7 +116,7 @@ class DashboardPanel(MDBoxLayout):
             card.add_widget(
                 MDLabel(
                     text=label,
-                    font_style="Caption",
+                    font_style="BodySmall",
                     halign="center",
                     theme_text_color="Custom",
                     text_color="#8a9bb0",
@@ -188,7 +188,7 @@ def _section_header(text: str) -> MDBoxLayout:
     box.add_widget(
         MDLabel(
             text=text,
-            font_style="Overline",
+            font_style="LabelSmall",
             theme_text_color="Custom",
             text_color="#8a9bb0",
         )
@@ -240,7 +240,7 @@ def _client_row(client: dict) -> MDBoxLayout:
     row.add_widget(
         MDLabel(
             text=transport.upper(),
-            font_style="Caption",
+            font_style="BodySmall",
             theme_text_color="Custom",
             text_color="#8a9bb0",
             size_hint_x=None,
@@ -251,7 +251,7 @@ def _client_row(client: dict) -> MDBoxLayout:
     row.add_widget(
         MDLabel(
             text=ts_str,
-            font_style="Caption",
+            font_style="BodySmall",
             theme_text_color="Custom",
             text_color="#3d4f63",
             size_hint_x=None,
@@ -274,7 +274,7 @@ def _audit_row(ts: str, callsign: str, event_type: str) -> MDBoxLayout:
     row.add_widget(
         MDLabel(
             text=ts,
-            font_style="Caption",
+            font_style="BodySmall",
             theme_text_color="Custom",
             text_color="#3d4f63",
             size_hint_x=None,
@@ -284,7 +284,7 @@ def _audit_row(ts: str, callsign: str, event_type: str) -> MDBoxLayout:
     row.add_widget(
         MDLabel(
             text=callsign,
-            font_style="Caption",
+            font_style="BodySmall",
             bold=True,
             theme_text_color="Custom",
             text_color="#8a9bb0",
@@ -295,7 +295,7 @@ def _audit_row(ts: str, callsign: str, event_type: str) -> MDBoxLayout:
     row.add_widget(
         MDLabel(
             text=event_type,
-            font_style="Caption",
+            font_style="BodySmall",
             theme_text_color="Custom",
             text_color="#e8edf4",
         )
@@ -307,7 +307,7 @@ def _empty_label(text: str) -> MDLabel:
     return MDLabel(
         text=text,
         halign="center",
-        font_style="Caption",
+        font_style="BodySmall",
         theme_text_color="Custom",
         text_color="#3d4f63",
         size_hint_y=None,
