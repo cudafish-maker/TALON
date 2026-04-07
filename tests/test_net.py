@@ -113,6 +113,4 @@ def test_rns_interfaces_are_preloaded_on_talon_net_import():
         "AutoInterface",
         "TCPInterface",
     ):
-        assert name in rns_reticulum_module.__dict__, (
-            f"RNS.Reticulum module missing {name} after talon.net import"
-        )
+        assert name in rns_reticulum_module.__dict__, f"RNS.Reticulum module missing {name} after talon.net import"
