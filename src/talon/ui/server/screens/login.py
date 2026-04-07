@@ -20,6 +20,12 @@ class ServerLoginScreen(MDScreen):
         self.error_text = message
 
     def on_submit(self):
+        # Reject re-entry while a start is already in flight — Enter
+        # on the text field and the button click can both fire here,
+        # and a second start() would crash on Reticulum's process-wide
+        # singleton check.
+        if self.is_loading:
+            return
         passphrase = self.ids.passphrase_field.text.strip()
         if not passphrase:
             self.error_text = "Passphrase is required."

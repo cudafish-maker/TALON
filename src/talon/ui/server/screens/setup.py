@@ -32,6 +32,10 @@ class ServerSetupScreen(MDScreen):
         self.error_text = message
 
     def on_submit(self):
+        # Reject re-entry while a start is already in flight — see the
+        # matching guard in ServerLoginScreen.on_submit for context.
+        if self.is_loading:
+            return
         passphrase = self.ids.passphrase_field.text
         confirm = self.ids.confirm_field.text
 

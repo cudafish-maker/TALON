@@ -150,6 +150,16 @@ def initialize_reticulum(
     else:
         log.info("Starting Reticulum with config at %s", config_path or "~/.reticulum/")
 
+    # RNS keeps a process-wide singleton — calling RNS.Reticulum() a second
+    # time raises OSError("Attempt to reinitialise Reticulum…"). That happens
+    # when an earlier start() got past this point but failed later (e.g. in
+    # setup_services()) and the user clicks login again. Reuse the running
+    # instance instead so retries work cleanly.
+    existing = RNS.Reticulum.get_instance()
+    if existing is not None:
+        log.warning("Reticulum already initialised in this process; reusing existing instance")
+        return existing
+
     return RNS.Reticulum(config_path)
 
 

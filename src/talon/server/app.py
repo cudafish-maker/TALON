@@ -162,6 +162,15 @@ class TalonServer:
 
         self.identity = create_identity(identity_path=net_config.get("identity_path"))
 
+        # If a previous start() attempt failed after creating the link
+        # manager, tear down its destination before replacing it so we
+        # don't leak announces.
+        if self.link_manager is not None:
+            try:
+                self.link_manager.stop()
+            except Exception:
+                pass
+
         # Start the link manager — accepts incoming client connections
         self.link_manager = ServerLinkManager(self.identity)
         self.link_manager.on_sync_message = self._on_sync_message

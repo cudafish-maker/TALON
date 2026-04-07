@@ -62,6 +62,13 @@ class LoginScreen(MDScreen):
         Reads the passphrase field, clears any error, and hands off
         to TalonApp.do_login() to run the startup sequence.
         """
+        # Reject re-entry while a start is already in flight — Enter
+        # on the field and the button click can both fire here, and a
+        # second start() would crash on Reticulum's process-wide
+        # singleton check.
+        if self.is_loading:
+            return
+
         passphrase = self.ids.passphrase_field.text.strip()
 
         if not passphrase:
