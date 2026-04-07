@@ -92,16 +92,27 @@ def test_explicit_interface_does_not_get_autointerface_fallback():
 
 
 def test_rns_interfaces_are_preloaded_on_talon_net_import():
-    """Importing talon.net must bind every interface module on
-    RNS.Reticulum so the wildcard import inside RNS does not leave
-    `LocalInterface` undefined in PyInstaller-frozen builds."""
-    import RNS.Reticulum
+    """Importing talon.net must bind every interface module on the
+    RNS.Reticulum *module* so the wildcard import inside RNS does
+    not leave `LocalInterface` undefined in PyInstaller-frozen
+    builds. Note we check sys.modules['RNS.Reticulum'], not
+    RNS.Reticulum: the latter is bound to the *class* via the
+    re-export in RNS/__init__.py, and class attributes do not
+    satisfy the module-globals lookup that RNS/Reticulum.py's
+    interface instantiation code uses at runtime."""
+    import sys
 
-    import talon.net  # noqa: F401 — side-effect import that does the preload
+    # Importing talon.net runs the patching as a side effect, and
+    # internally imports RNS.Reticulum which registers the module in
+    # sys.modules.
+    import talon.net  # noqa: F401
 
+    rns_reticulum_module = sys.modules["RNS.Reticulum"]
     for name in (
         "LocalInterface",
         "AutoInterface",
         "TCPInterface",
     ):
-        assert hasattr(RNS.Reticulum, name), f"RNS.Reticulum missing {name} after talon.net import"
+        assert name in rns_reticulum_module.__dict__, (
+            f"RNS.Reticulum module missing {name} after talon.net import"
+        )

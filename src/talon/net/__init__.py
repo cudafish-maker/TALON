@@ -7,8 +7,9 @@
 # - Heartbeat monitoring
 # - Interface configuration (I2P, Yggdrasil, TCP, RNode 915MHz)
 #
-# IMPORTANT: This file patches RNS.Reticulum at import time so the
-# PyInstaller-frozen build can find the interface classes.
+# IMPORTANT: This file patches the RNS.Reticulum module at import
+# time so the PyInstaller-frozen build can find the interface
+# classes.
 #
 # Why: RNS/Interfaces/__init__.py builds its `__all__` list with
 # `glob('*.py')` against its own directory. In a PyInstaller bundle
@@ -20,13 +21,25 @@
 # `name 'LocalInterface' is not defined`.
 #
 # The fix: explicitly import every interface submodule and inject
-# it into both `RNS.Interfaces` and `RNS.Reticulum`'s module globals.
-# `import RNS` triggers `RNS.Reticulum` loading (and its broken
-# wildcard import) first, so we have to do this AFTER that runs.
+# it into both `RNS.Interfaces` and the `RNS.Reticulum` MODULE's
+# globals. The runtime lookup inside RNS/Reticulum.py walks module
+# globals, not class attributes, which is why we have to grab the
+# module out of sys.modules instead of using the bare `RNS.Reticulum`
+# attribute — `RNS/__init__.py` does `from .Reticulum import Reticulum`
+# which shadows the package attribute with the class of the same name.
+
+import sys  # noqa: E402
 
 import RNS  # noqa: E402 — must come before the patching below
 import RNS.Interfaces  # noqa: E402
-import RNS.Reticulum  # noqa: E402
+import RNS.Reticulum  # noqa: E402 — registers the module in sys.modules
+
+# Grab the actual module object. Do NOT use `RNS.Reticulum` here:
+# that name is bound to the Reticulum class via the re-export in
+# RNS/__init__.py, and setting attributes on the class does not
+# affect the module globals that RNS/Reticulum.py's interface
+# instantiation code resolves through.
+_RNS_RETICULUM_MODULE = sys.modules["RNS.Reticulum"]
 
 # Every interface module RNS expects to find via glob().
 # Wrapping each in its own try/except so a single missing optional
@@ -56,6 +69,8 @@ for _name in _RNS_INTERFACE_MODULES:
         continue
     # Bind the submodule under the package (in case glob saw nothing).
     setattr(RNS.Interfaces, _name, _mod)
-    # Bind it inside RNS.Reticulum's globals too — that is where the
-    # broken `from RNS.Interfaces import *` was supposed to have put it.
-    setattr(RNS.Reticulum, _name, _mod)
+    # Bind it inside the RNS.Reticulum MODULE's globals — that is
+    # where the broken `from RNS.Interfaces import *` was supposed
+    # to have put it, and where references like
+    # `LocalInterface.LocalServerInterface(...)` resolve at runtime.
+    setattr(_RNS_RETICULUM_MODULE, _name, _mod)
