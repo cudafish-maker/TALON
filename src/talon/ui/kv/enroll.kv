@@ -111,6 +111,8 @@
                 hint_text_color_normal: "#3d4f63"
                 fill_color_normal: "#0f1520"
                 fill_color_focus: "#0f1520"
+                write_tab: False
+                focus_next: token_field
                 on_text: root.on_field_text()
 
             MDTextField:
@@ -122,6 +124,9 @@
                 hint_text_color_normal: "#3d4f63"
                 fill_color_normal: "#0f1520"
                 fill_color_focus: "#0f1520"
+                write_tab: False
+                focus_previous: server_hash_field
+                focus_next: callsign_field
                 on_text: root.on_field_text()
 
             MDTextField:
@@ -133,6 +138,9 @@
                 hint_text_color_normal: "#3d4f63"
                 fill_color_normal: "#0f1520"
                 fill_color_focus: "#0f1520"
+                write_tab: False
+                focus_previous: token_field
+                focus_next: passphrase_field
                 on_text: root.on_field_text()
 
             MDTextField:
@@ -145,6 +153,8 @@
                 hint_text_color_normal: "#3d4f63"
                 fill_color_normal: "#0f1520"
                 fill_color_focus: "#0f1520"
+                write_tab: False
+                focus_previous: callsign_field
                 on_text_validate: root.on_enroll()
 
             # Error / status message

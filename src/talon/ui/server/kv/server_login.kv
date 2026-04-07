@@ -31,7 +31,7 @@
                 height: self.texture_size[1]
 
             MDLabel:
-                text: "SERVER — THE CHAIR"
+                text: 'SERVER — "The Man in the Chair"'
                 halign: "center"
                 font_style: "Label"
                 role: "small"
@@ -78,7 +78,8 @@
                 text_color_focus: "#e8edf4"
                 hint_text_color_normal: "#3d4f63"
                 fill_color_normal: "#0f1520"
-                fill_color_focus: "#0f1520"
+                fill_color_focus: "#f18c07"
+                write_tab: False
                 on_text: root.on_passphrase_text(self, self.text)
                 on_text_validate: root.on_submit()
 
@@ -103,7 +104,7 @@
                     text: "STARTING SERVER..." if root.is_loading else "START SERVER"
                     bold: True
                     theme_text_color: "Custom"
-                    text_color: "#0a0e14" if not root.is_loading else "#3d4f63"
+                    text_color: "#14120a" if not root.is_loading else "#3d4f63"
 
         Widget:
             size_hint_y: 0.3

@@ -20,7 +20,7 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.button import MDButton, MDButtonText, MDIconButton
 from kivymd.uix.dialog import (
     MDDialog,
     MDDialogButtonContainer,
@@ -384,19 +384,23 @@ class SITREPPanel(MDBoxLayout):
             MDDialogContentContainer(content),
             MDDialogButtonContainer(
                 MDButton(
+                    MDButtonText(
+                        text="CANCEL",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                    ),
                     style="elevated",
-                    text="CANCEL",
                     md_bg_color="#1c2637",
-                    theme_text_color="Custom",
-                    text_color="#8a9bb0",
                     on_release=lambda x: self._compose_dialog.dismiss(),
                 ),
                 MDButton(
+                    MDButtonText(
+                        text="CREATE",
+                        theme_text_color="Custom",
+                        text_color="#0a0e14",
+                    ),
                     style="elevated",
-                    text="CREATE",
                     md_bg_color="#00e5a0",
-                    theme_text_color="Custom",
-                    text_color="#0a0e14",
                     on_release=lambda x: self._submit_new_sitrep(content),
                 ),
             ),
@@ -479,11 +483,13 @@ class _SITREPComposeContent(MDBoxLayout):
         for level in ("ROUTINE", "PRIORITY", "FLASH"):
             color = IMPORTANCE_COLORS.get(level, "#4a9eff")
             btn = MDButton(
+                MDButtonText(
+                    text=level,
+                    theme_text_color="Custom",
+                    text_color="#0a0e14" if self.selected_importance == level else "#8a9bb0",
+                ),
                 style="elevated",
-                text=level,
                 md_bg_color=color if self.selected_importance == level else "#1c2637",
-                theme_text_color="Custom",
-                text_color="#0a0e14" if self.selected_importance == level else "#8a9bb0",
                 on_release=lambda x, lv=level: self._select_importance(lv),
             )
             importance_row.add_widget(btn)

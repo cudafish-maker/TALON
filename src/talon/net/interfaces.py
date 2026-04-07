@@ -106,4 +106,15 @@ def build_reticulum_config(talon_config: dict, is_server: bool) -> dict:
             "tx_power": rnode.get("tx_power", 17),
         }
 
+    # --- Default fallback ---
+    # If no transport is enabled in the config (e.g. fresh install,
+    # operator hasn't picked one yet), enable AutoInterface so the
+    # node can still discover and reach peers on the local subnet.
+    # AutoInterface uses link-local discovery on the local network
+    # only — it does not expose anything beyond the LAN.
+    if not interfaces:
+        interfaces["Default"] = {
+            "type": "AutoInterface",
+        }
+
     return interfaces

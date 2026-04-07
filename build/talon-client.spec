@@ -16,6 +16,8 @@ import os
 import sys
 import platform
 
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
 ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
 
@@ -24,6 +26,9 @@ datas = [
     (os.path.join(ROOT, 'config', '*.yaml'), 'config'),
     (os.path.join(ROOT, 'src', 'talon', 'ui', 'kv', '*.kv'), os.path.join('talon', 'ui', 'kv')),
 ]
+
+# kivy_garden.mapview ships marker icons as package data — bundle them.
+datas += collect_data_files('kivy_garden.mapview')
 
 # On Windows, include the SQLCipher DLL if present in deps/
 binaries = []
@@ -88,7 +93,20 @@ a = Analysis(
         'kivymd.uix.snackbar',
         'kivymd.uix.snackbar.snackbar',
         'materialyoucolor',
-        'mapview',
+        # kivy_garden.mapview — tile-based map widget. The package
+        # uses an implicit namespace package layout, which PyInstaller
+        # cannot follow without explicit hints.
+        'kivy_garden',
+        'kivy_garden.mapview',
+        'kivy_garden.mapview.view',
+        'kivy_garden.mapview.source',
+        'kivy_garden.mapview.downloader',
+        'kivy_garden.mapview.utils',
+        'kivy_garden.mapview.constants',
+        'kivy_garden.mapview.types',
+        'kivy_garden.mapview.geojson',
+        'kivy_garden.mapview.mbtsource',
+        'kivy_garden.mapview.clustered_marker_layer',
         'kivy.uix.behaviors',
         'kivy.uix.behaviors.button',
         'kivy.core.window',

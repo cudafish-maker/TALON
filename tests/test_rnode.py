@@ -337,11 +337,13 @@ class TestRNodeStatus:
 
 class TestReticulumConfigGeneration:
     def test_build_reticulum_config_empty(self):
-        """Empty config should produce no interfaces."""
+        """Empty config falls back to a single AutoInterface so RNS
+        always has somewhere to send packets — without it the node
+        would log `No interfaces could process the outbound packet`."""
         from talon.net.interfaces import build_reticulum_config
 
         result = build_reticulum_config({}, is_server=True)
-        assert result == {}
+        assert result == {"Default": {"type": "AutoInterface"}}
 
     def test_build_reticulum_config_rnode(self):
         """RNode config should produce RNodeInterface."""
@@ -401,7 +403,8 @@ class TestReticulumConfigGeneration:
         assert result["TCP"]["type"] == "TCPClientInterface"
 
     def test_build_reticulum_config_disabled_ignored(self):
-        """Disabled interfaces should not appear in output."""
+        """Disabled interfaces should not appear in output. With nothing
+        else enabled the AutoInterface fallback is used."""
         from talon.net.interfaces import build_reticulum_config
 
         config = {
@@ -411,7 +414,9 @@ class TestReticulumConfigGeneration:
             }
         }
         result = build_reticulum_config(config, is_server=True)
-        assert result == {}
+        assert "TCP" not in result
+        assert "RNode" not in result
+        assert result == {"Default": {"type": "AutoInterface"}}
 
     def test_build_reticulum_config_yggdrasil_server(self):
         """Yggdrasil server should produce TCPServerInterface."""

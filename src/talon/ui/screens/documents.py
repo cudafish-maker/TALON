@@ -18,7 +18,7 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.button import MDButton, MDButtonText, MDIconButton
 from kivymd.uix.dialog import (
     MDDialog,
     MDDialogButtonContainer,
@@ -245,11 +245,13 @@ class DocumentsPanel(MDBoxLayout):
 
         # Open / view button — launches the file with the system viewer
         open_btn = MDButton(
+            MDButtonText(
+                text="OPEN DOCUMENT",
+                theme_text_color="Custom",
+                text_color="#0a0e14",
+            ),
             style="elevated",
-            text="OPEN DOCUMENT",
             md_bg_color="#00e5a0",
-            theme_text_color="Custom",
-            text_color="#0a0e14",
             size_hint_x=None,
             pos_hint={"center_x": 0.5},
             on_release=lambda x: self._open_file(doc),
@@ -276,19 +278,23 @@ class DocumentsPanel(MDBoxLayout):
             MDDialogContentContainer(content),
             MDDialogButtonContainer(
                 MDButton(
+                    MDButtonText(
+                        text="CANCEL",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                    ),
                     style="elevated",
-                    text="CANCEL",
                     md_bg_color="#1c2637",
-                    theme_text_color="Custom",
-                    text_color="#8a9bb0",
                     on_release=lambda x: self._dialog.dismiss(),
                 ),
                 MDButton(
+                    MDButtonText(
+                        text="QUEUE UPLOAD",
+                        theme_text_color="Custom",
+                        text_color="#0a0e14",
+                    ),
                     style="elevated",
-                    text="QUEUE UPLOAD",
                     md_bg_color="#00e5a0",
-                    theme_text_color="Custom",
-                    text_color="#0a0e14",
                     on_release=lambda x: self._submit_upload(content),
                 ),
             ),
@@ -405,11 +411,13 @@ class _UploadContent(MDBoxLayout):
             color = ACCESS_COLORS.get(level, "#8a9bb0")
             row.add_widget(
                 MDButton(
+                    MDButtonText(
+                        text=level,
+                        theme_text_color="Custom",
+                        text_color="#0a0e14" if level == self.selected_access else "#8a9bb0",
+                    ),
                     style="elevated",
-                    text=level,
                     md_bg_color=color if level == self.selected_access else "#1c2637",
-                    theme_text_color="Custom",
-                    text_color="#0a0e14" if level == self.selected_access else "#8a9bb0",
                     on_release=lambda x, lv=level: self._select_access(lv),
                 )
             )

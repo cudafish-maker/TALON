@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from talon.constants import TransportType
 from talon.net.heartbeat import HeartbeatMonitor
+from talon.net.interfaces import build_reticulum_config
 from talon.net.transport import TransportManager
 
 # ---------- Transport ----------
@@ -58,3 +59,49 @@ def test_heartbeat_monitor_tracks_clients():
 
     # Client should be tracked
     assert monitor.get_client_info("client-1") is not None
+
+
+# ---------- Reticulum interface fallback ----------
+
+
+def test_no_interfaces_configured_falls_back_to_autointerface():
+    """A config with no enabled interfaces should still produce an
+    AutoInterface so RNS has somewhere to send packets — otherwise
+    the node logs `No interfaces could process the outbound packet`."""
+    config = {"interfaces": {}}
+    interfaces = build_reticulum_config(config, is_server=False)
+    assert "Default" in interfaces
+    assert interfaces["Default"]["type"] == "AutoInterface"
+
+
+def test_explicit_interface_does_not_get_autointerface_fallback():
+    """If the operator has configured a real interface, the fallback
+    must NOT be added — that would silently broadcast on the LAN."""
+    config = {
+        "interfaces": {
+            "yggdrasil": {
+                "enabled": True,
+                "target_host": "200::1",
+                "target_port": 4243,
+            },
+        },
+    }
+    interfaces = build_reticulum_config(config, is_server=False)
+    assert "Yggdrasil" in interfaces
+    assert "Default" not in interfaces
+
+
+def test_rns_interfaces_are_preloaded_on_talon_net_import():
+    """Importing talon.net must bind every interface module on
+    RNS.Reticulum so the wildcard import inside RNS does not leave
+    `LocalInterface` undefined in PyInstaller-frozen builds."""
+    import RNS.Reticulum
+
+    import talon.net  # noqa: F401 — side-effect import that does the preload
+
+    for name in (
+        "LocalInterface",
+        "AutoInterface",
+        "TCPInterface",
+    ):
+        assert hasattr(RNS.Reticulum, name), f"RNS.Reticulum missing {name} after talon.net import"

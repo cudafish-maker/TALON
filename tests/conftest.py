@@ -20,6 +20,24 @@ def _make_mock_module(name, attrs=None):
     return mod
 
 
+def _mock_widget_class():
+    """Build a fresh mock-widget factory.
+
+    KivyMD 2.x widgets accept BOTH children as positional args
+    (e.g. ``MDButton(MDButtonText(...), style="elevated")``) and
+    keyword props. We can't use ``MagicMock`` directly as the class
+    because then ``MagicMock(MagicMock(...))`` would treat the
+    positional arg as a spec — and Mock rejects mock specs with
+    ``InvalidSpecError``. This wrapper accepts any args/kwargs and
+    returns a fresh MagicMock instance.
+    """
+
+    def _factory(*args, **kwargs):
+        return MagicMock()
+
+    return _factory
+
+
 def install_kivy_mocks():
     """Install mock Kivy and KivyMD modules into sys.modules.
 
@@ -178,12 +196,12 @@ def install_kivy_mocks():
     _make_mock_module(
         "kivymd.uix.button",
         {
-            "MDButton": MagicMock,
-            "MDButtonText": MagicMock,
-            "MDButtonIcon": MagicMock,
-            "MDRaisedButton": MagicMock,
-            "MDFlatButton": MagicMock,
-            "MDIconButton": MagicMock,
+            "MDButton": _mock_widget_class(),
+            "MDButtonText": _mock_widget_class(),
+            "MDButtonIcon": _mock_widget_class(),
+            "MDRaisedButton": _mock_widget_class(),
+            "MDFlatButton": _mock_widget_class(),
+            "MDIconButton": _mock_widget_class(),
         },
     )
     _make_mock_module("kivymd.uix.textfield", {"MDTextField": MagicMock})

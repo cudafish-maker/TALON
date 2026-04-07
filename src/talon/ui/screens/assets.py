@@ -18,7 +18,7 @@
 
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.button import MDButton, MDButtonText, MDIconButton
 from kivymd.uix.dialog import (
     MDDialog,
     MDDialogButtonContainer,
@@ -232,11 +232,13 @@ class AssetsPanel(MDBoxLayout):
         callsign = self._get_my_callsign()
         if can_verify(asset, callsign, "operator"):
             verify_btn = MDButton(
+                MDButtonText(
+                    text="VERIFY ASSET",
+                    theme_text_color="Custom",
+                    text_color="#0a0e14",
+                ),
                 style="elevated",
-                text="VERIFY ASSET",
                 md_bg_color="#00e5a0",
-                theme_text_color="Custom",
-                text_color="#0a0e14",
                 size_hint_x=None,
                 pos_hint={"center_x": 0.5},
                 on_release=lambda x: self._verify_asset(asset),
@@ -271,19 +273,23 @@ class AssetsPanel(MDBoxLayout):
             MDDialogContentContainer(content),
             MDDialogButtonContainer(
                 MDButton(
+                    MDButtonText(
+                        text="CANCEL",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                    ),
                     style="elevated",
-                    text="CANCEL",
                     md_bg_color="#1c2637",
-                    theme_text_color="Custom",
-                    text_color="#8a9bb0",
                     on_release=lambda x: self._add_dialog.dismiss(),
                 ),
                 MDButton(
+                    MDButtonText(
+                        text="ADD",
+                        theme_text_color="Custom",
+                        text_color="#0a0e14",
+                    ),
                     style="elevated",
-                    text="ADD",
                     md_bg_color="#00e5a0",
-                    theme_text_color="Custom",
-                    text_color="#0a0e14",
                     on_release=lambda x: self._submit_new_asset(content),
                 ),
             ),
@@ -381,11 +387,13 @@ class _AssetAddContent(MDBoxLayout):
 
         for cat in self.CATEGORIES:
             btn = MDButton(
+                MDButtonText(
+                    text=cat,
+                    theme_text_color="Custom",
+                    text_color="#0a0e14" if cat == self.selected_category else "#8a9bb0",
+                ),
                 style="elevated",
-                text=cat,
                 md_bg_color="#00e5a0" if cat == self.selected_category else "#1c2637",
-                theme_text_color="Custom",
-                text_color="#0a0e14" if cat == self.selected_category else "#8a9bb0",
                 size_hint_y=None,
                 height="36dp",
                 on_release=lambda x, c=cat: self._select_category(c),

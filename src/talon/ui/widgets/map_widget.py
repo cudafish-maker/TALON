@@ -16,7 +16,7 @@
 # kivy_garden.mapview docs:
 #   https://github.com/kivy-garden/mapview
 
-from kivy.graphics import Color, Line
+from kivy.graphics import Color
 from kivy.properties import (
     BooleanProperty,
     NumericProperty,
@@ -250,23 +250,23 @@ class TalonMapWidget(MapView if MAPVIEW_AVAILABLE else Widget):
     # ------------------------------------------------------------------
 
     def _draw_placeholder(self):
-        """Draw a dark grid placeholder when MapView is unavailable."""
+        """Draw a dark background when MapView is unavailable.
+
+        The Rectangle is stored so the position/size bindings can
+        update it in place rather than re-issuing canvas instructions.
+        """
         from kivy.graphics import Rectangle
 
-        with self.canvas:
+        with self.canvas.before:
             Color(0.04, 0.055, 0.078, 1)  # BG_BASE
-            Rectangle(pos=self.pos, size=self.size)
-            Color(0.12, 0.18, 0.24, 1)  # Grid lines
-            # Draw a simple grid
-            for i in range(0, 2000, 40):
-                Line(points=[i, 0, i, 2000], width=0.5)
-                Line(points=[0, i, 2000, i], width=0.5)
+            self._bg_rect = Rectangle(pos=self.pos, size=self.size)
 
-        self.bind(size=self._update_placeholder, pos=self._update_placeholder)
+        self.bind(pos=self._update_placeholder, size=self._update_placeholder)
 
     def _update_placeholder(self, *args):
-        self.canvas.clear()
-        self._draw_placeholder()
+        if hasattr(self, "_bg_rect"):
+            self._bg_rect.pos = self.pos
+            self._bg_rect.size = self.size
 
     # ------------------------------------------------------------------
     # Utilities

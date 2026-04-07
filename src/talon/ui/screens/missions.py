@@ -18,7 +18,7 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.button import MDButton, MDButtonText, MDIconButton
 from kivymd.uix.dialog import (
     MDDialog,
     MDDialogButtonContainer,
@@ -389,19 +389,23 @@ class MissionsPanel(MDBoxLayout):
             MDDialogContentContainer(content),
             MDDialogButtonContainer(
                 MDButton(
+                    MDButtonText(
+                        text="CANCEL",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                    ),
                     style="elevated",
-                    text="CANCEL",
                     md_bg_color="#1c2637",
-                    theme_text_color="Custom",
-                    text_color="#8a9bb0",
                     on_release=lambda x: self._dialog.dismiss(),
                 ),
                 MDButton(
+                    MDButtonText(
+                        text="CREATE",
+                        theme_text_color="Custom",
+                        text_color="#0a0e14",
+                    ),
                     style="elevated",
-                    text="CREATE",
                     md_bg_color="#00e5a0",
-                    theme_text_color="Custom",
-                    text_color="#0a0e14",
                     on_release=lambda x: self._submit_new_mission(content),
                 ),
             ),

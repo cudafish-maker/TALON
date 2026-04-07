@@ -20,7 +20,7 @@
 import time
 
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDButton
+from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.dialog import (
     MDDialog,
     MDDialogButtonContainer,
@@ -226,22 +226,26 @@ class RegistryPanel(MDBoxLayout):
             )
             # Mark stale button
             stale_btn = MDButton(
+                MDButtonText(
+                    text="STALE",
+                    theme_text_color="Custom",
+                    text_color="#f5a623",
+                    font_size="10sp",
+                ),
                 style="text",
-                text="STALE",
-                theme_text_color="Custom",
-                text_color="#f5a623",
-                font_size="10sp",
                 size_hint_x=None,
                 width="44dp",
                 on_release=lambda x, cid=client_id, cs=callsign: self._confirm_mark_stale(cid, cs),
             )
             # Revoke button
             revoke_btn = MDButton(
+                MDButtonText(
+                    text="REVOKE",
+                    theme_text_color="Custom",
+                    text_color="#ff3b3b",
+                    font_size="10sp",
+                ),
                 style="text",
-                text="REVOKE",
-                theme_text_color="Custom",
-                text_color="#ff3b3b",
-                font_size="10sp",
                 size_hint_x=None,
                 width="52dp",
                 on_release=lambda x, cid=client_id, cs=callsign: self._confirm_revoke(cid, cs),
@@ -282,18 +286,22 @@ class RegistryPanel(MDBoxLayout):
             ),
             MDDialogButtonContainer(
                 MDButton(
+                    MDButtonText(
+                        text="CANCEL",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                    ),
                     style="text",
-                    text="CANCEL",
-                    theme_text_color="Custom",
-                    text_color="#8a9bb0",
                     on_release=lambda x: self._confirm_dialog.dismiss(),
                 ),
                 MDButton(
+                    MDButtonText(
+                        text="MARK STALE",
+                        theme_text_color="Custom",
+                        text_color="#0a0e14",
+                    ),
                     style="elevated",
-                    text="MARK STALE",
                     md_bg_color="#f5a623",
-                    theme_text_color="Custom",
-                    text_color="#0a0e14",
                     on_release=lambda x: self._do_mark_stale(client_id),
                 ),
             ),
@@ -325,18 +333,22 @@ class RegistryPanel(MDBoxLayout):
             ),
             MDDialogButtonContainer(
                 MDButton(
+                    MDButtonText(
+                        text="CANCEL",
+                        theme_text_color="Custom",
+                        text_color="#8a9bb0",
+                    ),
                     style="text",
-                    text="CANCEL",
-                    theme_text_color="Custom",
-                    text_color="#8a9bb0",
                     on_release=lambda x: self._confirm_dialog.dismiss(),
                 ),
                 MDButton(
+                    MDButtonText(
+                        text="REVOKE",
+                        theme_text_color="Custom",
+                        text_color="#ffffff",
+                    ),
                     style="elevated",
-                    text="REVOKE",
                     md_bg_color="#ff3b3b",
-                    theme_text_color="Custom",
-                    text_color="#ffffff",
                     on_release=lambda x: self._do_revoke(client_id, callsign),
                 ),
             ),
