@@ -44,6 +44,9 @@ cache/
 .mypy_cache/
 .ruff_cache/
 
+# Project-local docs not meant for GitHub repo history
+wiki/
+
 # OS
 .DS_Store
 Thumbs.db
