@@ -1,3 +1,0 @@
-- [T.A.L.O.N. Architecture](talon_architecture.md) — Full architecture plan for tactical awareness platform built on Reticulum mesh networking
-- [Audio alerts opt-in](feedback_audio_alerts.md) — FLASH SITREP audio must be opt-in only, never automatic — operator safety
-- [TCP transport warning](feedback_tcp_warning.md) — TCP exposes operator IP; always warn user and recommend VPN when TCP is selected
