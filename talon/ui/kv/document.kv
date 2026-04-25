@@ -1,0 +1,70 @@
+#:kivy 2.0
+<DocumentScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+
+        # Header bar
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "48dp"
+
+            MDIconButton:
+                icon: "arrow-left"
+                on_release: root.on_back_pressed()
+
+            MDLabel:
+                text: "DOCUMENTS"
+                font_style: "Title"
+                role: "large"
+                valign: "center"
+
+            MDIconButton:
+                icon: "refresh"
+                on_release: root.on_refresh_pressed()
+
+            MDIconButton:
+                icon: "upload"
+                on_release: root.on_upload_pressed()
+
+        MDDivider:
+
+        # Column headers
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "28dp"
+            spacing: "8dp"
+            padding: "8dp", "0dp"
+
+            MDLabel:
+                text: "Filename"
+                font_style: "Label"
+                role: "small"
+                theme_text_color: "Secondary"
+                size_hint_x: 0.45
+
+            MDLabel:
+                text: "Type / Size"
+                font_style: "Label"
+                role: "small"
+                theme_text_color: "Secondary"
+                size_hint_x: 0.25
+
+            MDLabel:
+                text: "Uploaded"
+                font_style: "Label"
+                role: "small"
+                theme_text_color: "Secondary"
+                size_hint_x: 0.30
+
+        MDDivider:
+
+        # Document list
+        MDScrollView:
+            MDBoxLayout:
+                id: document_list
+                orientation: "vertical"
+                spacing: "2dp"
+                padding: "4dp", "4dp"
+                adaptive_height: True

@@ -1,0 +1,10 @@
+# Append this stanza to ~/.talon/reticulum/config under the [interfaces] section.
+# It lets the client connect to the server over localhost TCP.
+# Run `python main.py` once first so Reticulum generates the config file,
+# then add this block and restart.
+
+  [[TALON Local TCP Server]]
+    type = TCPServerInterface
+    enabled = yes
+    listen_ip = 127.0.0.1
+    listen_port = 4242

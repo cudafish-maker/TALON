@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# TALON runtime files — never commit
+talon.ini
+*.db
+*.db-wal
+*.db-shm
+*.salt
+
+# Reticulum identity files
+*.identity
+
+# Buildozer workspace and output
+.buildozer/
+bin/
+
+# PyInstaller output (but keep *.spec files in build/)
+build/dist/
+build/build/
+build/pyinstaller-*/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tooling / local caches
+.pytest_cache/
+cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.key
+*.pem

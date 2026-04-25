@@ -1,0 +1,83 @@
+#:kivy 2.0
+<EnrollScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "16dp"
+        spacing: "12dp"
+
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "48dp"
+
+            MDIconButton:
+                icon: "arrow-left"
+                on_release: root.on_back_pressed()
+
+            MDLabel:
+                text: "Enrollment"
+                font_style: "Title"
+                role: "large"
+                valign: "center"
+
+        MDDivider:
+
+        MDLabel:
+            text: "Generate a one-time token and deliver it out-of-band to the new operator."
+            theme_text_color: "Secondary"
+            size_hint_y: None
+            height: self.texture_size[1]
+
+        MDButton:
+            style: "elevated"
+            size_hint_x: None
+            on_release: root.on_generate_pressed()
+
+            MDButtonText:
+                text: "GENERATE TOKEN"
+
+        MDTextField:
+            id: token_display
+            disabled: True
+            mode: "outlined"
+
+            MDTextFieldHintText:
+                text: "Generated token will appear here"
+
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "36dp"
+            spacing: "8dp"
+
+            MDLabel:
+                id: copy_status
+                text: ""
+                theme_text_color: "Secondary"
+                font_style: "Label"
+
+            MDButton:
+                style: "tonal"
+                size_hint_x: None
+                width: "140dp"
+                on_release: root.on_copy_pressed()
+
+                MDButtonText:
+                    text: "COPY TO CLIPBOARD"
+
+        MDDivider:
+
+        MDLabel:
+            text: "Pending Tokens"
+            font_style: "Title"
+            role: "medium"
+            size_hint_y: None
+            height: "32dp"
+
+        MDScrollView:
+            MDBoxLayout:
+                id: pending_list
+                orientation: "vertical"
+                spacing: "4dp"
+                adaptive_height: True
+                padding: "0dp", "4dp"

@@ -1,0 +1,34 @@
+#:kivy 2.0
+<LockScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "48dp"
+        spacing: "24dp"
+        pos_hint: {"center_x": .5, "center_y": .5}
+        size_hint: .5, None
+        height: self.minimum_height
+
+        MDIcon:
+            icon: "lock"
+            halign: "center"
+            font_size: "64sp"
+            theme_icon_color: "Error"
+
+        MDLabel:
+            text: "ACCESS SUSPENDED"
+            halign: "center"
+            font_style: "Headline"
+            role: "small"
+            theme_text_color: "Error"
+
+        MDLabel:
+            text: "Your lease has expired. Awaiting server re-authorisation."
+            halign: "center"
+            font_style: "Body"
+            role: "large"
+
+        MDLabel:
+            text: "Network sync is active. You will be notified when access is restored."
+            halign: "center"
+            font_style: "Body"
+            role: "small"

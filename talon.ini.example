@@ -1,0 +1,27 @@
+[talon]
+; Operating mode: "client" for field operators, "server" for the base station
+mode = client
+
+[paths]
+; Leave blank to use platform defaults (~/.talon on desktop, app data dir on Android).
+; IMPORTANT: rns_config_dir should always be set to a TALON-specific path so the
+; Reticulum node identity and interfaces stay isolated from any other RNS applications
+; the operator runs. Sharing ~/.reticulum leaks metadata to other RNS apps.
+data_dir =
+rns_config_dir = /path/to/.talon/reticulum
+
+[network]
+; Transport interface priority, highest first.
+; Available: yggdrasil, i2p, tcp, rnode
+; WARNING: tcp exposes your IP address — use a VPN when tcp is active.
+transport_priority = yggdrasil,i2p,tcp,rnode
+
+[security]
+; Soft-lock lease duration in seconds (default: 86400 = 24 hours)
+lease_duration_seconds = 86400
+
+[documents]
+; Directory where uploaded documents are stored (server only).
+; Files are field-encrypted before writing; filenames on disk are opaque UUIDs.
+; Leave blank to use <data_dir>/documents (~/.talon/documents by default).
+storage_path =

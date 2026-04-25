@@ -1,0 +1,92 @@
+#:kivy 2.0
+<KeysScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "16dp"
+        spacing: "12dp"
+
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "48dp"
+
+            MDIconButton:
+                icon: "arrow-left"
+                on_release: root.on_back_pressed()
+
+            MDLabel:
+                text: "Keys"
+                font_style: "Title"
+                role: "large"
+                valign: "center"
+
+        MDDivider:
+
+        # Group key section
+        MDCard:
+            orientation: "vertical"
+            padding: "16dp"
+            spacing: "8dp"
+            size_hint_y: None
+            height: "120dp"
+
+            MDLabel:
+                text: "Group Key"
+                font_style: "Title"
+                role: "medium"
+
+            MDLabel:
+                text: "Rotate the group encryption key for all operators."
+                theme_text_color: "Secondary"
+
+            MDButton:
+                style: "elevated"
+                size_hint_x: None
+                on_release: root.on_rotate_group_key_pressed()
+
+                MDButtonText:
+                    text: "ROTATE GROUP KEY"
+
+        MDDivider:
+
+        MDLabel:
+            text: "Operator Identities"
+            font_style: "Title"
+            role: "medium"
+            size_hint_y: None
+            height: "32dp"
+
+        # Column headers
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "28dp"
+            spacing: "8dp"
+            padding: "4dp"
+
+            MDLabel:
+                text: "Callsign"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: 0.5
+
+            MDLabel:
+                text: "Status"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: 0.3
+
+            MDLabel:
+                text: "Action"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: 0.2
+
+        MDDivider:
+
+        MDScrollView:
+            MDBoxLayout:
+                id: operator_list
+                orientation: "vertical"
+                spacing: "2dp"
+                adaptive_height: True

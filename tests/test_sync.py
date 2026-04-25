@@ -1,0 +1,1001 @@
+"""Tests for talon.network.sync."""
+import base64
+import configparser
+import threading
+import time
+import uuid
+
+import pytest
+
+from talon.db.connection import close_db, open_db
+from talon.db.migrations import apply_migrations
+from talon.network import protocol as proto
+from talon.network.client_sync import ClientSyncManager
+from talon.network.sync import SyncEngine, _validated_table
+from talon.server import net_components, net_handler
+from talon.services.assets import request_asset_deletion_command, verify_asset_command
+from talon.services.operators import revoke_operator_command
+from talon.constants import HEARTBEAT_BROADBAND_S, HEARTBEAT_LORA_S
+
+
+class _NoOpTimer:
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
+
+    def start(self) -> None:
+        return None
+
+
+def _open_test_db(tmp_path, name: str, key: bytes):
+    conn = open_db(tmp_path / name, key)
+    apply_migrations(conn)
+    return conn
+
+
+def _insert_operator(conn, operator_id: int, callsign: str, rns_hash: str) -> None:
+    conn.execute(
+        "INSERT INTO operators (id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+        "VALUES (?, ?, ?, '[]', '{}', 1000, 9999999999, 0)",
+        (operator_id, callsign, rns_hash),
+    )
+
+
+def _make_client_manager(conn, test_key: bytes, operator_id: int) -> ClientSyncManager:
+    manager = ClientSyncManager(conn, configparser.ConfigParser(), test_key)
+    manager._operator_id = operator_id
+    return manager
+
+
+# ---------------------------------------------------------------------------
+# Interval / start-stop
+# ---------------------------------------------------------------------------
+
+class TestSyncEngine:
+    def test_broadband_interval(self):
+        engine = SyncEngine(is_lora=False)
+        assert engine._interval == HEARTBEAT_BROADBAND_S
+
+    def test_lora_interval(self):
+        engine = SyncEngine(is_lora=True)
+        assert engine._interval == HEARTBEAT_LORA_S
+
+    def test_heartbeat_fires(self):
+        fired = threading.Event()
+        engine = SyncEngine(is_lora=False, on_heartbeat=fired.set)
+        engine._interval = 0  # fire immediately for test
+        engine.start()
+        assert fired.wait(timeout=2)
+        engine.stop()
+
+    def test_start_stop_idempotent(self):
+        engine = SyncEngine()
+        engine.start()
+        engine.start()  # second start should not raise
+        engine.stop()
+        engine.stop()   # second stop should not raise
+
+
+# ---------------------------------------------------------------------------
+# apply_server_record — version comparison (no DB needed)
+# ---------------------------------------------------------------------------
+
+class TestApplyServerRecordVersionLogic:
+    def test_skips_older_version(self):
+        result = SyncEngine.apply_server_record(
+            conn=None,
+            table="assets",
+            record={"id": 1, "version": 2},
+            local_version=3,  # local is newer — skip
+        )
+        assert result is False
+
+    def test_skips_same_version(self):
+        result = SyncEngine.apply_server_record(
+            conn=None,
+            table="assets",
+            record={"id": 1, "version": 3},
+            local_version=3,
+        )
+        assert result is False
+
+    def test_applies_newer(self):
+        result = SyncEngine.apply_server_record(
+            conn=None,
+            table="assets",
+            record={"id": 1, "version": 5},
+            local_version=3,
+        )
+        assert result is True
+
+    def test_applies_when_no_local(self):
+        result = SyncEngine.apply_server_record(
+            conn=None,
+            table="assets",
+            record={"id": 99, "version": 1},
+            local_version=None,
+        )
+        assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Table allowlist guard
+# ---------------------------------------------------------------------------
+
+class TestValidatedTable:
+    def test_valid_table_passes(self):
+        assert _validated_table("assets") == "assets"
+
+    def test_invalid_table_raises(self):
+        with pytest.raises(ValueError, match="sync allowlist"):
+            _validated_table("audit_log")
+
+    def test_sql_injection_attempt_raises(self):
+        with pytest.raises(ValueError):
+            _validated_table("assets; DROP TABLE operators")
+
+
+# ---------------------------------------------------------------------------
+# _upsert_record — real DB operations
+# ---------------------------------------------------------------------------
+
+class TestUpsertRecord:
+    def test_inserts_new_asset(self, tmp_db):
+        conn, _ = tmp_db
+        record = {
+            "id": 42,
+            "category": "cache",
+            "label": "Test Cache",
+            "description": "Sync test",
+            "lat": 51.5,
+            "lon": -0.1,
+            "verified": 0,
+            "created_by": 1,
+            "confirmed_by": None,
+            "created_at": 1000,
+            "version": 1,
+        }
+        SyncEngine._upsert_record(conn, "assets", record)
+        row = conn.execute("SELECT label FROM assets WHERE id = 42").fetchone()
+        assert row is not None
+        assert row[0] == "Test Cache"
+
+    def test_replaces_existing_asset(self, tmp_db):
+        conn, _ = tmp_db
+        # Insert initial row
+        conn.execute(
+            "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version) "
+            "VALUES (10, 'vehicle', 'Old Label', '', 0, 1, 1000, 1)"
+        )
+        conn.commit()
+        # Upsert with updated label + version
+        SyncEngine._upsert_record(conn, "assets", {
+            "id": 10, "category": "vehicle", "label": "New Label",
+            "description": "", "verified": 0, "created_by": 1,
+            "created_at": 1000, "version": 2,
+        })
+        row = conn.execute("SELECT label, version FROM assets WHERE id = 10").fetchone()
+        assert row[0] == "New Label"
+        assert row[1] == 2
+
+    def test_updates_in_place_preserving_child_rows(self, tmp_db):
+        conn, _ = tmp_db
+        conn.execute(
+            "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version) "
+            "VALUES (10, 'vehicle', 'Old Label', '', 0, 1, 1000, 1)"
+        )
+        conn.execute(
+            "INSERT INTO sitreps (id, level, template, body, author_id, asset_id, created_at, version) "
+            "VALUES (20, 'ROUTINE', '', ?, 1, 10, 1001, 1)",
+            (b"body",),
+        )
+        conn.commit()
+
+        SyncEngine._upsert_record(conn, "assets", {
+            "id": 10, "category": "vehicle", "label": "New Label",
+            "description": "", "verified": 0, "created_by": 1,
+            "created_at": 1000, "version": 2,
+        })
+
+        row = conn.execute("SELECT label, version FROM assets WHERE id = 10").fetchone()
+        child = conn.execute("SELECT asset_id FROM sitreps WHERE id = 20").fetchone()
+        assert row == ("New Label", 2)
+        assert child[0] == 10
+
+    def test_insert_without_id_allocates_new_row(self, tmp_db):
+        conn, _ = tmp_db
+        conn.execute(
+            "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version) "
+            "VALUES (1, 'cache', 'Server Asset', '', 0, 1, 1000, 1)"
+        )
+        conn.commit()
+
+        pushed_uuid = uuid.uuid4().hex
+        SyncEngine._upsert_record(conn, "assets", {
+            "uuid": pushed_uuid,
+            "category": "cache",
+            "label": "Client Asset",
+            "description": "",
+            "verified": 0,
+            "created_by": 1,
+            "created_at": 1001,
+            "version": 1,
+        })
+
+        original = conn.execute("SELECT label FROM assets WHERE id = 1").fetchone()
+        inserted = conn.execute("SELECT id, label FROM assets WHERE uuid = ?", (pushed_uuid,)).fetchone()
+        assert original[0] == "Server Asset"
+        assert inserted[0] != 1
+        assert inserted[1] == "Client Asset"
+
+    def test_ignores_unknown_columns(self, tmp_db):
+        conn, _ = tmp_db
+        # Extra key "injected_col" is not a real column and must be silently dropped.
+        record = {
+            "id": 55,
+            "category": "person",
+            "label": "Agent Smith",
+            "description": "",
+            "verified": 0,
+            "created_by": 1,
+            "created_at": 1000,
+            "version": 1,
+            "injected_col": "evil",
+        }
+        SyncEngine._upsert_record(conn, "assets", record)
+        row = conn.execute("SELECT label FROM assets WHERE id = 55").fetchone()
+        assert row[0] == "Agent Smith"
+
+    def test_raises_on_invalid_table(self, tmp_db):
+        conn, _ = tmp_db
+        with pytest.raises(ValueError, match="sync allowlist"):
+            SyncEngine._upsert_record(conn, "audit_log", {"id": 1})
+
+    def test_raises_when_no_valid_columns(self, tmp_db):
+        conn, _ = tmp_db
+        with pytest.raises(ValueError, match="no valid columns"):
+            SyncEngine._upsert_record(conn, "assets", {"not_a_col": "x"})
+
+
+# ---------------------------------------------------------------------------
+# apply_server_record — with real DB
+# ---------------------------------------------------------------------------
+
+class TestApplyServerRecordWithDB:
+    def test_upserts_when_newer(self, tmp_db):
+        conn, _ = tmp_db
+        conn.execute(
+            "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version) "
+            "VALUES (77, 'rally_point', 'Old', '', 0, 1, 1000, 1)"
+        )
+        conn.commit()
+        result = SyncEngine.apply_server_record(
+            conn=conn,
+            table="assets",
+            record={
+                "id": 77, "category": "rally_point", "label": "Updated",
+                "description": "", "verified": 0, "created_by": 1,
+                "created_at": 1000, "version": 3,
+            },
+            local_version=1,
+        )
+        assert result is True
+        row = conn.execute("SELECT label, version FROM assets WHERE id = 77").fetchone()
+        assert row[0] == "Updated"
+        assert row[1] == 3
+
+    def test_skips_when_current(self, tmp_db):
+        conn, _ = tmp_db
+        result = SyncEngine.apply_server_record(
+            conn=conn,
+            table="assets",
+            record={"id": 1, "version": 2},
+            local_version=2,
+        )
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Lease checking
+# ---------------------------------------------------------------------------
+
+class TestLeaseCheck:
+    def _make_engine(self, conn, operator_id, on_expired=None, on_renewed=None):
+        return SyncEngine(
+            conn=conn,
+            operator_id=operator_id,
+            on_lease_expired=on_expired,
+            on_lease_renewed=on_renewed,
+        )
+
+    def test_valid_lease_no_callback(self, tmp_db):
+        conn, _ = tmp_db
+        fired = threading.Event()
+        engine = self._make_engine(conn, operator_id=1, on_expired=fired.set)
+        # SERVER sentinel has lease_expires_at = 9999999999 — should not fire
+        engine._check_lease()
+        assert not fired.is_set()
+
+    def test_expired_lease_fires_on_expired(self, tmp_db):
+        conn, _ = tmp_db
+        # Insert an operator with an already-expired lease
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, "
+            "enrolled_at, lease_expires_at, revoked) "
+            "VALUES (99, 'EXPIRED', 'hash-expired', '[]', '{}', 0, 1, 0)"
+        )
+        conn.commit()
+        fired = threading.Event()
+        engine = self._make_engine(conn, operator_id=99, on_expired=fired.set)
+        engine._check_lease()
+        assert fired.is_set()
+        assert engine._locked is True
+
+    def test_expired_lease_only_fires_once(self, tmp_db):
+        conn, _ = tmp_db
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, "
+            "enrolled_at, lease_expires_at, revoked) "
+            "VALUES (98, 'EXP2', 'hash-exp2', '[]', '{}', 0, 1, 0)"
+        )
+        conn.commit()
+        call_count = [0]
+        def _counter():
+            call_count[0] += 1
+        engine = self._make_engine(conn, operator_id=98, on_expired=_counter)
+        engine._check_lease()
+        engine._check_lease()  # second call — already locked, should not fire again
+        assert call_count[0] == 1
+
+    def test_revoked_operator_fires_on_expired(self, tmp_db):
+        conn, _ = tmp_db
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, "
+            "enrolled_at, lease_expires_at, revoked) "
+            "VALUES (97, 'REVOKED_OP', 'hash-rev', '[]', '{}', 0, 9999999999, 1)"
+        )
+        conn.commit()
+        fired = threading.Event()
+        engine = self._make_engine(conn, operator_id=97, on_expired=fired.set)
+        engine._check_lease()
+        assert fired.is_set()
+
+    def test_renewal_fires_on_renewed(self, tmp_db):
+        conn, _ = tmp_db
+        # Start expired
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, "
+            "enrolled_at, lease_expires_at, revoked) "
+            "VALUES (96, 'RENEWED_OP', 'hash-ren', '[]', '{}', 0, 1, 0)"
+        )
+        conn.commit()
+        renewed = threading.Event()
+        engine = self._make_engine(conn, operator_id=96, on_renewed=renewed.set)
+        engine._locked = True  # simulate we're already on the lock screen
+        # Now update the lease to be valid
+        conn.execute(
+            "UPDATE operators SET lease_expires_at = 9999999999 WHERE id = 96"
+        )
+        conn.commit()
+        engine._check_lease()
+        assert renewed.is_set()
+        assert engine._locked is False
+
+    def test_no_conn_is_noop(self):
+        fired = threading.Event()
+        engine = SyncEngine(on_lease_expired=fired.set)
+        engine._check_lease()  # should not raise or fire
+        assert not fired.is_set()
+
+    def test_set_operator_id_updates_monitored_operator(self, tmp_db):
+        conn, _ = tmp_db
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, "
+            "enrolled_at, lease_expires_at, revoked) "
+            "VALUES (95, 'SET_OP', 'hash-set-op', '[]', '{}', 0, 1, 0)"
+        )
+        conn.commit()
+        fired = threading.Event()
+        engine = self._make_engine(conn, operator_id=None, on_expired=fired.set)
+        engine.set_operator_id(95)
+        assert engine._operator_id == 95
+        assert fired.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Chunk handling
+# ---------------------------------------------------------------------------
+
+class TestChunkHandling:
+    def test_server_rejects_out_of_range_chunk_without_raising(self, tmp_db, test_key):
+        conn, _ = tmp_db
+        handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+        msg = {
+            "id": "bad",
+            "seq": 99,
+            "total": 1,
+            "data": base64.b64encode(b"x").decode(),
+        }
+        assert handler._handle_chunk_data(msg) is None
+        assert handler._chunk_buffers == {}
+
+    def test_client_rejects_out_of_range_chunk_without_raising(self, tmp_db, test_key):
+        conn, _ = tmp_db
+        mgr = ClientSyncManager(conn, configparser.ConfigParser(), test_key)
+        msg = {
+            "id": "bad",
+            "seq": 99,
+            "total": 1,
+            "data": base64.b64encode(b"x").decode(),
+        }
+        assert mgr._handle_chunk_data(msg) is None
+        assert mgr._chunk_buffers == {}
+
+    def test_server_chunk_buffer_cap_drops_oldest(self, tmp_db, test_key):
+        conn, _ = tmp_db
+        handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+        for idx in range(net_handler._CHUNK_MAX_BUFFERS + 1):
+            handler._handle_chunk_data({
+                "id": f"chunk-{idx}",
+                "seq": 0,
+                "total": 2,
+                "data": base64.b64encode(b"x").decode(),
+            })
+        assert len(handler._chunk_buffers) == net_handler._CHUNK_MAX_BUFFERS
+        assert "chunk-0" not in handler._chunk_buffers
+
+
+# ---------------------------------------------------------------------------
+# Server client-push hardening
+# ---------------------------------------------------------------------------
+
+class TestServerClientPush:
+    def test_new_client_message_is_accepted_and_notifies_server_ui(
+        self, tmp_db, test_key, monkeypatch
+    ):
+        conn, _ = tmp_db
+        operator_hash = "d" * 64
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+            "VALUES (8, 'CHATTER', ?, '[]', '{}', 1000, 9999999999, 0)",
+            (operator_hash,),
+        )
+        conn.execute(
+            "INSERT INTO channels (id, name, mission_id, is_dm, version, group_type) "
+            "VALUES (10, '#general', NULL, 0, 1, 'allhands')"
+        )
+        conn.execute(
+            "INSERT INTO messages (id, channel_id, sender_id, body, sent_at, version, uuid) "
+            "VALUES (1, 10, 1, ?, 1000, 1, ?)",
+            (b"server already here", "e" * 32),
+        )
+        conn.commit()
+
+        sent = []
+        notified = []
+        ui_notified = []
+        monkeypatch.setattr(
+            net_handler,
+            "_smart_send",
+            lambda _link, data: sent.append(proto.decode(data)),
+        )
+        monkeypatch.setattr(net_handler, "_notify_ui", lambda table: ui_notified.append(table))
+        handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+        handler.notify_change = lambda table, record_id: notified.append((table, record_id))
+        pushed_uuid = uuid.uuid4().hex
+
+        handler._handle_client_push(object(), {
+            "operator_rns_hash": operator_hash,
+            "records": {
+                "messages": [{
+                    "id": 1,
+                    "uuid": pushed_uuid,
+                    "channel_id": 10,
+                    "sender_id": 999,
+                    "body": "client hello",
+                    "sent_at": 1001,
+                    "version": 99,
+                    "is_urgent": 1,
+                    "grid_ref": "AB1234",
+                    "sync_status": "pending",
+                }],
+            },
+        })
+
+        inserted = conn.execute(
+            "SELECT id, sender_id, body, version, sync_status FROM messages WHERE uuid = ?",
+            (pushed_uuid,),
+        ).fetchone()
+        assert inserted is not None
+        assert inserted[0] != 1
+        assert inserted[1] == 8
+        assert bytes(inserted[2]) == b"client hello"
+        assert inserted[3:] == (1, "synced")
+        assert sent[-1]["type"] == proto.MSG_PUSH_ACK
+        assert pushed_uuid in sent[-1]["accepted"]
+        assert notified == [("messages", inserted[0])]
+        assert ui_notified == ["messages"]
+
+    def test_new_client_record_strips_id_and_identity_fields(self, tmp_db, test_key, monkeypatch):
+        conn, _ = tmp_db
+        operator_hash = "a" * 64
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+            "VALUES (5, 'CLIENT', ?, '[]', '{}', 1000, 9999999999, 0)",
+            (operator_hash,),
+        )
+        conn.execute(
+            "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version) "
+            "VALUES (1, 'cache', 'Server Asset', '', 0, 1, 1000, 1)"
+        )
+        conn.commit()
+
+        sent = []
+        notified = []
+        monkeypatch.setattr(
+            net_handler,
+            "_smart_send",
+            lambda _link, data: sent.append(proto.decode(data)),
+        )
+        handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+        handler.notify_change = lambda table, record_id: notified.append((table, record_id))
+        pushed_uuid = uuid.uuid4().hex
+
+        handler._handle_client_push(object(), {
+            "operator_rns_hash": operator_hash,
+            "records": {
+                "assets": [{
+                    "id": 1,
+                    "uuid": pushed_uuid,
+                    "category": "cache",
+                    "label": "Client Asset",
+                    "description": "",
+                    "lat": None,
+                    "lon": None,
+                    "verified": 1,
+                    "created_by": 999,
+                    "confirmed_by": 999,
+                    "created_at": 1001,
+                    "version": 99,
+                    "sync_status": "pending",
+                }],
+            },
+        })
+
+        original = conn.execute("SELECT label FROM assets WHERE id = 1").fetchone()
+        inserted = conn.execute(
+            "SELECT id, created_by, verified, confirmed_by, version "
+            "FROM assets WHERE uuid = ?",
+            (pushed_uuid,),
+        ).fetchone()
+        assert original[0] == "Server Asset"
+        assert inserted[0] != 1
+        assert inserted[1:] == (5, 0, None, 1)
+        assert sent[-1]["type"] == proto.MSG_PUSH_ACK
+        assert pushed_uuid in sent[-1]["accepted"]
+        assert notified == [("assets", inserted[0])]
+
+    def test_client_push_rejects_malformed_uuid(self, tmp_db, test_key, monkeypatch):
+        conn, _ = tmp_db
+        operator_hash = "b" * 64
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+            "VALUES (6, 'CLIENT2', ?, '[]', '{}', 1000, 9999999999, 0)",
+            (operator_hash,),
+        )
+        conn.commit()
+
+        sent = []
+        monkeypatch.setattr(
+            net_handler,
+            "_smart_send",
+            lambda _link, data: sent.append(proto.decode(data)),
+        )
+        handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+        handler.notify_change = lambda _table, _record_id: None
+
+        handler._handle_client_push(object(), {
+            "operator_rns_hash": operator_hash,
+            "records": {
+                "assets": [{
+                    "uuid": "not-a-uuid",
+                    "category": "cache",
+                    "label": "Bad",
+                    "description": "",
+                    "verified": 0,
+                    "created_by": 6,
+                    "created_at": 1001,
+                }],
+            },
+        })
+
+        row = conn.execute("SELECT id FROM assets WHERE label = 'Bad'").fetchone()
+        assert row is None
+        assert sent[-1]["accepted"] == []
+
+
+class TestClientServerPushIntegration:
+    def test_startup_sync_refreshes_without_unread_badges(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_startup_badges.db", test_key)
+        try:
+            manager = _make_client_manager(client_conn, test_key, operator_id=1)
+            notifications = []
+            manager._ui_dispatcher._notify_ui = (
+                lambda table, *, badge=True: notifications.append((table, badge))
+            )
+
+            sync_done_event = threading.Event()
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_SYNC_RESPONSE,
+                    "table": "assets",
+                    "record": {
+                        "id": 70,
+                        "category": "cache",
+                        "label": "Cached Asset",
+                        "description": "",
+                        "lat": None,
+                        "lon": None,
+                        "verified": 0,
+                        "created_by": 1,
+                        "confirmed_by": None,
+                        "created_at": 1000,
+                        "version": 1,
+                    },
+                },
+                sync_done_event,
+            )
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_SYNC_DONE,
+                    "tombstones": [],
+                    "server_id_sets": {},
+                },
+                sync_done_event,
+            )
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_PUSH_UPDATE,
+                    "table": "assets",
+                    "record": {
+                        "id": 70,
+                        "category": "cache",
+                        "label": "Live Asset Update",
+                        "description": "",
+                        "lat": None,
+                        "lon": None,
+                        "verified": 0,
+                        "created_by": 1,
+                        "confirmed_by": None,
+                        "created_at": 1000,
+                        "version": 2,
+                    },
+                },
+                sync_done_event,
+            )
+
+            assert notifications == [("assets", False), ("assets", True)]
+        finally:
+            close_db(client_conn)
+
+    def test_pending_client_asset_is_replaced_with_server_canonical_record(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(tmp_path, "server.db", test_key)
+        client_conn = _open_test_db(tmp_path, "client.db", test_key)
+        try:
+            operator_hash = "9" * 64
+            _insert_operator(server_conn, 20, "CLIENT", operator_hash)
+            _insert_operator(client_conn, 20, "CLIENT", operator_hash)
+            _insert_operator(client_conn, 21, "SPOOF", "8" * 64)
+            server_conn.execute(
+                "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version, uuid) "
+                "VALUES (1, 'cache', 'Server Asset', '', 0, 1, 1000, 1, ?)",
+                (uuid.uuid4().hex,),
+            )
+            client_conn.execute(
+                "UPDATE meta SET value = '20' WHERE key = 'my_operator_id'"
+            )
+            server_conn.commit()
+            client_conn.commit()
+
+            local_id = client_conn.execute(
+                "INSERT INTO assets (category, label, description, lat, lon, verified, created_by, confirmed_by, "
+                "created_at, version, uuid, sync_status) "
+                "VALUES ('cache', 'Client Asset', '', NULL, NULL, 1, 21, 21, 1001, 99, ?, 'pending')",
+                (uuid.uuid4().hex,),
+            ).lastrowid
+            pending_uuid = client_conn.execute(
+                "SELECT uuid FROM assets WHERE id = ?",
+                (local_id,),
+            ).fetchone()[0]
+            client_conn.commit()
+
+            sent = []
+            fake_link = object()
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            monkeypatch.setattr(net_components.threading, "Timer", _NoOpTimer)
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler._active_links[operator_hash] = fake_link
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=20)
+            outbox = manager._collect_outbox()
+            handler._handle_client_push(
+                fake_link,
+                {
+                    "operator_rns_hash": operator_hash,
+                    "records": outbox,
+                },
+            )
+            handler._flush_push_buffer()
+
+            ack = next(msg for msg in sent if msg["type"] == proto.MSG_PUSH_ACK)
+            update = next(msg for msg in sent if msg["type"] == proto.MSG_PUSH_UPDATE)
+            manager._handle_incoming(ack, threading.Event())
+            manager._handle_incoming(update, threading.Event())
+
+            row = client_conn.execute(
+                "SELECT id, created_by, verified, confirmed_by, version, sync_status "
+                "FROM assets WHERE uuid = ?",
+                (pending_uuid,),
+            ).fetchone()
+            assert row[0] != local_id
+            assert row[1:] == (20, 0, None, 1, "synced")
+        finally:
+            close_db(client_conn)
+            close_db(server_conn)
+
+    def test_existing_asset_verification_round_trips_to_server_and_back(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(tmp_path, "server_verify.db", test_key)
+        client_conn = _open_test_db(tmp_path, "client_verify.db", test_key)
+        try:
+            operator_hash = "7" * 64
+            asset_uuid = uuid.uuid4().hex
+            _insert_operator(server_conn, 30, "VERIFY", operator_hash)
+            _insert_operator(server_conn, 31, "CREATOR", "6" * 64)
+            _insert_operator(client_conn, 30, "VERIFY", operator_hash)
+            _insert_operator(client_conn, 31, "CREATOR", "6" * 64)
+            server_conn.execute(
+                "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version, uuid, sync_status) "
+                "VALUES (5, 'cache', 'Shared Asset', '', 0, 31, 1000, 1, ?, 'synced')",
+                (asset_uuid,),
+            )
+            client_conn.execute(
+                "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version, uuid, sync_status) "
+                "VALUES (5, 'cache', 'Shared Asset', '', 0, 31, 1000, 1, ?, 'synced')",
+                (asset_uuid,),
+            )
+            client_conn.execute(
+                "UPDATE meta SET value = '30' WHERE key = 'my_operator_id'"
+            )
+            server_conn.commit()
+            client_conn.commit()
+
+            verify_asset_command(client_conn, 5, verified=True, confirmer_id=30)
+
+            sent = []
+            fake_link = object()
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            monkeypatch.setattr(net_components.threading, "Timer", _NoOpTimer)
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler._active_links[operator_hash] = fake_link
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=30)
+            manager._push_record_pending("assets", 5)
+            outbox = manager._collect_outbox()
+            handler._handle_client_push(
+                fake_link,
+                {
+                    "operator_rns_hash": operator_hash,
+                    "records": outbox,
+                },
+            )
+            handler._flush_push_buffer()
+
+            ack = next(msg for msg in sent if msg["type"] == proto.MSG_PUSH_ACK)
+            update = next(msg for msg in sent if msg["type"] == proto.MSG_PUSH_UPDATE)
+            manager._handle_incoming(ack, threading.Event())
+            manager._handle_incoming(update, threading.Event())
+
+            server_row = server_conn.execute(
+                "SELECT verified, confirmed_by, version FROM assets WHERE id = 5"
+            ).fetchone()
+            client_row = client_conn.execute(
+                "SELECT verified, confirmed_by, version, sync_status FROM assets WHERE id = 5"
+            ).fetchone()
+            assert ack["accepted"] == [asset_uuid]
+            assert server_row == (1, 30, 2)
+            assert client_row == (1, 30, 2, "synced")
+        finally:
+            close_db(client_conn)
+            close_db(server_conn)
+
+    def test_existing_asset_deletion_request_round_trips_to_server_and_back(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(tmp_path, "server_delete.db", test_key)
+        client_conn = _open_test_db(tmp_path, "client_delete.db", test_key)
+        try:
+            operator_hash = "5" * 64
+            asset_uuid = uuid.uuid4().hex
+            _insert_operator(server_conn, 40, "REQUEST", operator_hash)
+            _insert_operator(client_conn, 40, "REQUEST", operator_hash)
+            server_conn.execute(
+                "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version, uuid, sync_status) "
+                "VALUES (6, 'cache', 'Delete Me', '', 0, 1, 1000, 1, ?, 'synced')",
+                (asset_uuid,),
+            )
+            client_conn.execute(
+                "INSERT INTO assets (id, category, label, description, verified, created_by, created_at, version, uuid, sync_status) "
+                "VALUES (6, 'cache', 'Delete Me', '', 0, 1, 1000, 1, ?, 'synced')",
+                (asset_uuid,),
+            )
+            client_conn.execute(
+                "UPDATE meta SET value = '40' WHERE key = 'my_operator_id'"
+            )
+            server_conn.commit()
+            client_conn.commit()
+
+            request_asset_deletion_command(client_conn, 6)
+
+            sent = []
+            fake_link = object()
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            monkeypatch.setattr(net_components.threading, "Timer", _NoOpTimer)
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler._active_links[operator_hash] = fake_link
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=40)
+            manager._push_record_pending("assets", 6)
+            outbox = manager._collect_outbox()
+            handler._handle_client_push(
+                fake_link,
+                {
+                    "operator_rns_hash": operator_hash,
+                    "records": outbox,
+                },
+            )
+            handler._flush_push_buffer()
+
+            ack = next(msg for msg in sent if msg["type"] == proto.MSG_PUSH_ACK)
+            update = next(msg for msg in sent if msg["type"] == proto.MSG_PUSH_UPDATE)
+            manager._handle_incoming(ack, threading.Event())
+            manager._handle_incoming(update, threading.Event())
+
+            server_row = server_conn.execute(
+                "SELECT deletion_requested, version FROM assets WHERE id = 6"
+            ).fetchone()
+            client_row = client_conn.execute(
+                "SELECT deletion_requested, version, sync_status FROM assets WHERE id = 6"
+            ).fetchone()
+            assert ack["accepted"] == [asset_uuid]
+            assert server_row == (1, 2)
+            assert client_row == (1, 2, "synced")
+        finally:
+            close_db(client_conn)
+            close_db(server_conn)
+
+    def test_operator_revocation_push_marks_client_revoked_and_triggers_lock(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(tmp_path, "server_revoke.db", test_key)
+        client_conn = _open_test_db(tmp_path, "client_revoke.db", test_key)
+        try:
+            operator_hash = "4" * 64
+            _insert_operator(server_conn, 50, "REVOKE", operator_hash)
+            _insert_operator(client_conn, 50, "REVOKE", operator_hash)
+            client_conn.execute(
+                "UPDATE meta SET value = '50' WHERE key = 'my_operator_id'"
+            )
+            server_conn.commit()
+            client_conn.commit()
+
+            sent = []
+            fake_link = object()
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            monkeypatch.setattr(net_components.threading, "Timer", _NoOpTimer)
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler._active_links[operator_hash] = fake_link
+
+            result = revoke_operator_command(server_conn, 50)
+            handler.notify_change("operators", result.operator_id)
+            handler._flush_push_buffer()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=50)
+            lock_checks = []
+            manager._trigger_local_lock_check = lambda: lock_checks.append(True)
+
+            for msg in sent:
+                if msg["type"] in {
+                    proto.MSG_PUSH_UPDATE,
+                    proto.MSG_OPERATOR_REVOKED,
+                }:
+                    manager._handle_incoming(msg, threading.Event())
+
+            msg_types = [msg["type"] for msg in sent]
+            assert proto.MSG_PUSH_UPDATE in msg_types
+            assert proto.MSG_OPERATOR_REVOKED in msg_types
+
+            row = client_conn.execute(
+                "SELECT revoked, rns_hash, lease_expires_at FROM operators WHERE id = 50"
+            ).fetchone()
+            assert row[0] == 1
+            assert row[1] == ""
+            assert row[2] <= int(time.time())
+            assert lock_checks == [True]
+
+        finally:
+            close_db(client_conn)
+            close_db(server_conn)
+
+    def test_operator_inactive_error_marks_local_operator_revoked(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_inactive.db", test_key)
+        try:
+            operator_hash = "3" * 64
+            _insert_operator(client_conn, 60, "INACTIVE", operator_hash)
+            client_conn.commit()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=60)
+            lock_checks = []
+            manager._trigger_local_lock_check = lambda: lock_checks.append(True)
+
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_ERROR,
+                    "message": "Operator not found or revoked",
+                    "code": proto.ERROR_OPERATOR_INACTIVE,
+                },
+                threading.Event(),
+            )
+
+            row = client_conn.execute(
+                "SELECT revoked, rns_hash, lease_expires_at FROM operators WHERE id = 60"
+            ).fetchone()
+            assert row[0] == 1
+            assert row[1] == ""
+            assert row[2] <= int(time.time())
+            assert lock_checks == [True]
+
+        finally:
+            close_db(client_conn)

@@ -1,0 +1,49 @@
+#:kivy 2.0
+#:import theme talon.ui.theme
+
+<LoginScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "32dp"
+        spacing: "32dp"
+        pos_hint: {"center_x": .5, "center_y": .5}
+        size_hint: .7, None
+        height: self.minimum_height
+
+        MDLabel:
+            id: title_label
+            text: "T.A.L.O.N."
+            halign: "center"
+            font_style: "Display"
+            role: "small"
+            size_hint_x: 1
+            text_size: self.width, None # takes full width of the parent
+
+        MDLabel:
+            text: "Tactical Awareness & Linked Operations Network"
+            halign: "center"
+            font_style: "Body"
+            role: "small"
+
+        MDTextField:
+            id: passphrase_field
+            password: True
+            mode: "outlined"
+
+            MDTextFieldHintText:
+                text: "Passphrase"
+
+        MDButton:
+            id: unlock_button
+            style: "elevated"
+            pos_hint: {"center_x": .5}
+            on_release: root.on_login_pressed(passphrase_field.text)
+
+            MDButtonText:
+                text: "UNLOCK"
+
+        MDLabel:
+            id: error_label
+            text: ""
+            halign: "center"
+            theme_text_color: "Error"

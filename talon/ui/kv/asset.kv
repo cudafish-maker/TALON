@@ -1,0 +1,70 @@
+#:kivy 2.0
+
+<AssetScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "16dp"
+        spacing: "12dp"
+
+        # ── Header bar ──────────────────────────────────────────────────
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "48dp"
+
+            MDIconButton:
+                icon: "arrow-left"
+                on_release: root.on_back_pressed()
+
+            MDLabel:
+                text: "Assets"
+                font_style: "Title"
+                role: "large"
+                valign: "center"
+
+            MDIconButton:
+                icon: "refresh"
+                on_release: root.on_refresh_pressed()
+
+            MDIconButton:
+                icon: "plus"
+                on_release: root.on_add_pressed()
+
+        MDDivider:
+
+        # ── Category filter ───────────────────────────────────────────
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "40dp"
+            spacing: "8dp"
+
+            MDLabel:
+                text: "Category:"
+                size_hint_x: None
+                width: "80dp"
+                font_style: "Label"
+                role: "medium"
+                theme_text_color: "Secondary"
+                valign: "center"
+
+            MDButton:
+                id: filter_button
+                style: "outlined"
+                size_hint_x: None
+                width: "140dp"
+                on_release: root.on_filter_pressed()
+
+                MDButtonText:
+                    id: filter_button_text
+                    text: "All"
+
+        MDDivider:
+
+        # ── Asset list ────────────────────────────────────────────────
+        MDScrollView:
+            MDBoxLayout:
+                id: asset_list
+                orientation: "vertical"
+                spacing: "2dp"
+                adaptive_height: True

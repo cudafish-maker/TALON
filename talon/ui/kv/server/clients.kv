@@ -1,0 +1,68 @@
+#:kivy 2.0
+<ClientsScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "16dp"
+        spacing: "12dp"
+
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "48dp"
+
+            MDIconButton:
+                icon: "arrow-left"
+                on_release: root.on_back_pressed()
+
+            MDLabel:
+                text: "Clients"
+                font_style: "Title"
+                role: "large"
+                valign: "center"
+
+            MDIconButton:
+                icon: "refresh"
+                on_release: root.on_refresh_pressed()
+
+        MDDivider:
+
+        # Column headers
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "32dp"
+            spacing: "8dp"
+            padding: "4dp"
+
+            MDLabel:
+                text: "Callsign"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: 0.2
+
+            MDLabel:
+                text: "RNS Hash"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: 0.3
+
+            MDLabel:
+                text: "Status"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: 0.2
+
+            MDLabel:
+                text: "Actions"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: 0.3
+
+        MDDivider:
+
+        MDScrollView:
+            MDBoxLayout:
+                id: operator_list
+                orientation: "vertical"
+                spacing: "2dp"
+                adaptive_height: True

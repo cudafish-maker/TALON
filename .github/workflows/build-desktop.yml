@@ -1,0 +1,50 @@
+name: Build Desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            spec: build/pyinstaller-linux.spec
+            artifact: talon-linux
+          - os: windows-latest
+            spec: build/pyinstaller-windows.spec
+            artifact: talon-windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libsqlcipher-dev libgl1-mesa-dev xclip
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[desktop]"
+
+      - name: Build with PyInstaller
+        run: pyinstaller ${{ matrix.spec }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}/

@@ -1,0 +1,82 @@
+#:kivy 2.0
+<AuditScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "16dp"
+        spacing: "12dp"
+
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "48dp"
+
+            MDIconButton:
+                icon: "arrow-left"
+                on_release: root.on_back_pressed()
+
+            MDLabel:
+                text: "Audit Log"
+                font_style: "Title"
+                role: "large"
+                valign: "center"
+
+            MDIconButton:
+                icon: "refresh"
+                on_release: root.on_refresh_pressed()
+
+        MDDivider:
+
+        # Filter bar
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "56dp"
+            spacing: "8dp"
+
+            MDTextField:
+                id: filter_field
+                mode: "outlined"
+                size_hint_x: 1
+
+                MDTextFieldHintText:
+                    text: "Filter by event type (exact match, e.g. operator_enrolled)"
+
+            MDButton:
+                style: "elevated"
+                size_hint_x: None
+                width: "96dp"
+                on_release: root.on_search_pressed()
+
+                MDButtonText:
+                    text: "SEARCH"
+
+        MDDivider:
+
+        # Column headers
+        MDBoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "28dp"
+            spacing: "8dp"
+            padding: "4dp", "0dp"
+
+            MDLabel:
+                text: "Timestamp"
+                font_style: "Label"
+                role: "small"
+                size_hint_x: None
+                width: "120dp"
+
+            MDLabel:
+                text: "Event  /  payload"
+                font_style: "Label"
+                role: "small"
+
+        MDDivider:
+
+        MDScrollView:
+            MDBoxLayout:
+                id: log_list
+                orientation: "vertical"
+                spacing: "2dp"
+                adaptive_height: True

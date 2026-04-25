@@ -1,0 +1,51 @@
+name: Build Android
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          # p4a requires Python 3.10 for Android target compatibility
+          python-version: "3.10"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            libffi-dev libssl-dev autoconf libtool \
+            libsqlcipher-dev
+
+      - name: Install Python build tools
+        run: |
+          pip install --upgrade pip
+          # Cython 3.x breaks multiple p4a recipes — pin to 0.29.x
+          pip install "cython==0.29.37" buildozer
+
+      - name: Cache Buildozer global dir
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('build/buildozer.spec') }}
+
+      - name: Build APK
+        working-directory: build
+        run: buildozer android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: talon-android-debug
+          path: build/bin/*.apk
