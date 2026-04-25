@@ -85,10 +85,24 @@ run_as_root() {
     fi
 }
 
+ldconfig_path() {
+    if command -v ldconfig >/dev/null 2>&1; then
+        command -v ldconfig
+    elif [[ -x /sbin/ldconfig ]]; then
+        printf '%s\n' /sbin/ldconfig
+    elif [[ -x /usr/sbin/ldconfig ]]; then
+        printf '%s\n' /usr/sbin/ldconfig
+    else
+        return 1
+    fi
+}
+
 have_library() {
     local library=$1
-    command -v ldconfig >/dev/null 2>&1 || return 1
-    ldconfig -p 2>/dev/null | grep -Eq "(^|[[:space:]])${library}([[:space:]]|$)"
+    local ldconfig_bin
+
+    ldconfig_bin=$(ldconfig_path) || return 1
+    "$ldconfig_bin" -p 2>/dev/null | grep -Eq "(^|[[:space:]])${library}([[:space:]]|$)"
 }
 
 runtime_dependency_gaps() {
@@ -378,6 +392,12 @@ find_release_archives() {
         -print0
 }
 
+canonical_dir() {
+    local path=$1
+
+    (cd "$path" && pwd -P)
+}
+
 ensure_work_dir() {
     if [[ -z ${WORK_DIR:-} ]]; then
         WORK_DIR=$(mktemp -d)
@@ -431,7 +451,7 @@ discover_input_path() {
         fi
         while IFS= read -r -d '' archive; do
             if archive_has_candidate_payload "$archive"; then
-                printf '%s\n' "$search_dir"
+                printf '%s\n' "$archive"
                 return 0
             fi
         done < <(find_release_archives "$search_dir")
@@ -462,12 +482,19 @@ install_bundle() {
     local target_dir=$install_root/$BUNDLE_NAME
     local staging_dir=$install_root/.${BUNDLE_NAME}.new.$$
     local backup_dir=""
+    local source_real
+    local target_real
 
     validate_bundle "$source_dir"
     mkdir -p "$install_root"
     rm -rf "$staging_dir"
 
     if [[ -e $target_dir ]]; then
+        source_real=$(canonical_dir "$source_dir")
+        target_real=$(canonical_dir "$target_dir")
+        if [[ $source_real == "$target_real" ]]; then
+            die "Refusing to use the current install directory as the source bundle. Pass the downloaded release archive explicitly."
+        fi
         if [[ ! -x $target_dir/talon || ! -d $target_dir/_internal ]]; then
             die "Refusing to replace non-TALON path: $target_dir"
         fi
