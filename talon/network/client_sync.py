@@ -45,6 +45,7 @@ import RNS
 
 from talon.constants import RNS_APP_NAME, RNS_SERVER_ASPECT
 from talon.network.client_components import (
+    ClientDocumentTransfers,
     ClientEnrollment,
     ClientLinkLifecycle,
     ClientOutbox,
@@ -114,10 +115,17 @@ class ClientSyncManager:
         # server state.  It should refresh visible screens but not create
         # unread badges for records the operator may have seen last session.
         self._suppress_startup_sync_badges: bool = True
+        self._document_request_lock = threading.Lock()
+        self._pending_document_requests: dict[int, dict[str, typing.Any]] = {}
         self._ui_dispatcher = ClientUiDispatcher(notify_ui=_notify_ui)
         self._record_applier = ClientRecordApplier(
             self,
             ui_dispatcher=self._ui_dispatcher,
+            logger=_log,
+        )
+        self._document_transfers = ClientDocumentTransfers(
+            self,
+            smart_send=_smart_send,
             logger=_log,
         )
         self._tombstone_reconciler = ClientTombstoneReconciler(
@@ -266,6 +274,17 @@ class ClientSyncManager:
     def _push_record_pending(self, table: str, record_id: int) -> None:
         self._outbox.push_record_pending(table, record_id)
 
+    def fetch_document(
+        self,
+        document_id: int,
+        *,
+        timeout_s: float = 60.0,
+    ) -> bytes:
+        return self._document_transfers.fetch_document(
+            document_id,
+            timeout_s=timeout_s,
+        )
+
     def _handle_chunk_data(self, msg: dict) -> typing.Optional[bytes]:
         return self._record_applier.handle_chunk_data(msg)
 
@@ -274,6 +293,15 @@ class ClientSyncManager:
 
     def _update_lease_expiry(self, lease_expires_at: typing.Any) -> None:
         self._record_applier.update_lease_expiry(lease_expires_at)
+
+    def _handle_document_response(self, msg: dict) -> None:
+        self._document_transfers.handle_response(msg)
+
+    def _handle_document_resource(self, resource) -> None:
+        self._document_transfers.handle_resource(resource)
+
+    def _fail_pending_document_requests(self, message: str) -> None:
+        self._document_transfers.fail_all_pending(message)
 
     def _mark_operator_revoked(
         self,

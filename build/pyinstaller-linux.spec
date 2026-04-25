@@ -1,21 +1,29 @@
 # PyInstaller spec — Linux
 # Run from repo root: pyinstaller build/pyinstaller-linux.spec
+import importlib.util
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 root = Path(SPECPATH).parent
+icon_definitions_spec = importlib.util.find_spec("kivymd.icon_definitions")
+
+datas = [
+    (str(root / "talon" / "ui" / "kv"), "talon/ui/kv"),
+]
+datas += collect_data_files("kivy", includes=["data/**"])
+if icon_definitions_spec is not None and icon_definitions_spec.origin:
+    datas.append((icon_definitions_spec.origin, "kivymd"))
 
 a = Analysis(
     [str(root / "main.py")],
     pathex=[str(root)],
     binaries=[],
-    datas=[
-        (str(root / "talon" / "ui" / "kv"), "talon/ui/kv"),
-    ],
-    hiddenimports=["sqlcipher3", "nacl", "argon2", "RNS"],
+    datas=datas,
+    hiddenimports=["sqlcipher3", "nacl", "argon2", "RNS", "kivymd.icon_definitions"],
     hookspath=[],
-    runtime_hooks=[],
+    runtime_hooks=[str(root / "build" / "runtime_hooks" / "pyi_rth_kivymd_md_icons.py")],
     excludes=["pyinstaller"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

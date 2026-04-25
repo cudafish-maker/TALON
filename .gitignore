@@ -31,6 +31,8 @@ bin/
 build/dist/
 build/build/
 build/pyinstaller-*/
+build/.smoke-client-data/
+build/.smoke-client-rns/
 
 # IDE
 .vscode/

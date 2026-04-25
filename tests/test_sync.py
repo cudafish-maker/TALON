@@ -1,6 +1,7 @@
 """Tests for talon.network.sync."""
 import base64
 import configparser
+import hashlib
 import threading
 import time
 import uuid
@@ -9,6 +10,7 @@ import pytest
 
 from talon.db.connection import close_db, open_db
 from talon.db.migrations import apply_migrations
+from talon.documents import cache_document_download
 from talon.network import protocol as proto
 from talon.network.client_sync import ClientSyncManager
 from talon.network.sync import SyncEngine, _validated_table
@@ -44,6 +46,26 @@ def _make_client_manager(conn, test_key: bytes, operator_id: int) -> ClientSyncM
     manager = ClientSyncManager(conn, configparser.ConfigParser(), test_key)
     manager._operator_id = operator_id
     return manager
+
+
+def _insert_document_row(
+    conn,
+    *,
+    doc_id: int,
+    filename: str,
+    plaintext: bytes,
+    version: int = 1,
+) -> str:
+    sha256_hash = hashlib.sha256(plaintext).hexdigest()
+    conn.execute(
+        "INSERT INTO documents "
+        "(id, filename, mime_type, size_bytes, sha256_hash, description, "
+        "uploaded_by, uploaded_at, version) "
+        "VALUES (?, ?, 'text/plain', ?, ?, '', 1, 1000, ?)",
+        (doc_id, filename, len(plaintext), sha256_hash, version),
+    )
+    conn.commit()
+    return sha256_hash
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +276,97 @@ class TestUpsertRecord:
         conn, _ = tmp_db
         with pytest.raises(ValueError, match="no valid columns"):
             SyncEngine._upsert_record(conn, "assets", {"not_a_col": "x"})
+
+
+class TestClientDocumentCacheSync:
+    def test_apply_record_invalidates_stale_cached_document(
+        self,
+        tmp_db,
+        test_key,
+        tmp_path,
+    ):
+        conn, _ = tmp_db
+        storage_root = tmp_path / "client-docs"
+        old_plaintext = b"old cached content"
+        old_hash = _insert_document_row(
+            conn,
+            doc_id=31,
+            filename="brief.txt",
+            plaintext=old_plaintext,
+        )
+        cached = cache_document_download(
+            conn,
+            test_key,
+            storage_root,
+            31,
+            old_plaintext,
+        )
+        cached_path = storage_root / cached.file_path
+        assert cached_path.exists()
+
+        manager = _make_client_manager(conn, test_key, operator_id=1)
+        manager._cfg.read_dict({"documents": {"storage_path": str(storage_root)}})
+
+        new_plaintext = b"new server content"
+        new_hash = hashlib.sha256(new_plaintext).hexdigest()
+        assert new_hash != old_hash
+
+        manager._apply_record(
+            "documents",
+            {
+                "id": 31,
+                "filename": "brief.txt",
+                "mime_type": "text/plain",
+                "size_bytes": len(new_plaintext),
+                "sha256_hash": new_hash,
+                "description": "",
+                "uploaded_by": 1,
+                "uploaded_at": 1000,
+                "version": 2,
+            },
+            badge=False,
+        )
+
+        row = conn.execute(
+            "SELECT file_path, sha256_hash, version FROM documents WHERE id = 31"
+        ).fetchone()
+        assert row == ("", new_hash, 2)
+        assert not cached_path.exists()
+
+    def test_apply_delete_removes_cached_document_file(
+        self,
+        tmp_db,
+        test_key,
+        tmp_path,
+    ):
+        conn, _ = tmp_db
+        storage_root = tmp_path / "client-docs"
+        plaintext = b"cached document"
+        _insert_document_row(
+            conn,
+            doc_id=32,
+            filename="cache.txt",
+            plaintext=plaintext,
+        )
+        cached = cache_document_download(
+            conn,
+            test_key,
+            storage_root,
+            32,
+            plaintext,
+        )
+        cached_path = storage_root / cached.file_path
+        assert cached_path.exists()
+
+        manager = _make_client_manager(conn, test_key, operator_id=1)
+        manager._cfg.read_dict({"documents": {"storage_path": str(storage_root)}})
+
+        manager._apply_delete("documents", 32, badge=False)
+
+        assert conn.execute(
+            "SELECT 1 FROM documents WHERE id = 32"
+        ).fetchone() is None
+        assert not cached_path.exists()
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,290 @@ class ClientUiDispatcher:
         self._notify_ui(table, badge=badge)
 
 
+class ClientDocumentTransfers:
+    """Request, receive, cache, and reuse server-hosted documents."""
+
+    def __init__(
+        self,
+        manager,
+        *,
+        smart_send: typing.Callable[[RNS.Link, bytes], None],
+        logger,
+    ) -> None:
+        self._manager = manager
+        self._smart_send = smart_send
+        self._log = logger
+
+    def fetch_document(
+        self,
+        document_id: int,
+        *,
+        timeout_s: float = 60.0,
+    ) -> bytes:
+        from talon.config import get_document_storage_path
+        from talon.documents import (
+            DocumentError,
+            DocumentIntegrityError,
+            download_document,
+            evict_document_cache,
+        )
+
+        manager = self._manager
+        try:
+            doc_id = int(document_id)
+        except (TypeError, ValueError) as exc:
+            raise DocumentError(f"Invalid document id: {document_id!r}") from exc
+
+        storage_root = get_document_storage_path(manager._cfg)
+        local_error: typing.Optional[Exception] = None
+
+        with manager._lock:
+            try:
+                _, plaintext = download_document(
+                    manager._conn,
+                    manager._db_key,
+                    storage_root,
+                    doc_id,
+                    downloader_id=manager._operator_id or 0,
+                )
+                return plaintext
+            except DocumentIntegrityError as exc:
+                local_error = exc
+                try:
+                    evict_document_cache(
+                        manager._conn,
+                        storage_root,
+                        doc_id,
+                        clear_db_path=True,
+                        commit=True,
+                    )
+                except Exception as purge_exc:
+                    self._log.warning(
+                        "Could not purge corrupt cached document id=%s: %s",
+                        doc_id,
+                        purge_exc,
+                    )
+            except DocumentError as exc:
+                local_error = exc
+
+        link = manager._link
+        if link is None:
+            if isinstance(local_error, DocumentIntegrityError):
+                raise local_error
+            raise DocumentError(
+                "Document is not cached locally and no active broadband sync link is available."
+            )
+
+        with manager._document_request_lock:
+            state = manager._pending_document_requests.get(doc_id)
+            if state is None:
+                state = {
+                    "event": threading.Event(),
+                    "payload": None,
+                    "error": None,
+                }
+                manager._pending_document_requests[doc_id] = state
+                should_send = True
+            else:
+                should_send = False
+
+        if should_send:
+            my_rns_hash = manager._identity.hash.hex() if manager._identity else ""
+            try:
+                self._smart_send(
+                    link,
+                    proto.encode(
+                        {
+                            "type": proto.MSG_DOCUMENT_REQUEST,
+                            "operator_rns_hash": my_rns_hash,
+                            "document_id": doc_id,
+                        }
+                    ),
+                )
+                self._log.info("Requested document from server: id=%s", doc_id)
+            except Exception as exc:
+                self._resolve_request(
+                    doc_id,
+                    error=f"Could not request document download: {exc}",
+                )
+
+        if not state["event"].wait(timeout=timeout_s):
+            raise DocumentError(
+                "Timed out waiting for the server to transfer the document."
+            )
+
+        with manager._document_request_lock:
+            current = manager._pending_document_requests.get(doc_id)
+            if current is state:
+                del manager._pending_document_requests[doc_id]
+
+        error = state.get("error")
+        if error:
+            raise DocumentError(str(error))
+
+        payload = state.get("payload")
+        if not isinstance(payload, (bytes, bytearray)):
+            raise DocumentError("Server returned an invalid document payload.")
+        return bytes(payload)
+
+    def handle_response(self, msg: dict) -> None:
+        if msg.get("ok"):
+            return
+        self._resolve_request(
+            msg.get("document_id"),
+            error=msg.get("error") or "Server could not provide the requested document.",
+        )
+
+    def handle_resource(self, resource) -> None:
+        manager = self._manager
+        metadata = getattr(resource, "metadata", None)
+        if not isinstance(metadata, dict):
+            self._log.warning("Document resource missing metadata")
+            return
+
+        record = metadata.get("record")
+        if not isinstance(record, dict):
+            self._log.warning("Document resource missing record metadata")
+            return
+
+        try:
+            doc_id = int(record.get("id"))
+        except (TypeError, ValueError):
+            self._log.warning("Document resource missing valid id: %r", record.get("id"))
+            return
+
+        with manager._document_request_lock:
+            if doc_id not in manager._pending_document_requests:
+                self._log.debug("Ignoring unsolicited document resource id=%s", doc_id)
+                return
+
+        if resource.status != RNS.Resource.COMPLETE:
+            self._resolve_request(
+                doc_id,
+                error=f"Document transfer failed (status={resource.status}).",
+            )
+            return
+
+        try:
+            plaintext = resource.data.read()
+        except Exception as exc:
+            self._resolve_request(
+                doc_id,
+                error=f"Could not read document transfer: {exc}",
+            )
+            return
+
+        from talon.config import get_document_storage_path
+        from talon.documents import cache_document_download
+
+        storage_root = get_document_storage_path(manager._cfg)
+        try:
+            manager._apply_record("documents", record, badge=False)
+            with manager._lock:
+                cache_document_download(
+                    manager._conn,
+                    manager._db_key,
+                    storage_root,
+                    doc_id,
+                    plaintext,
+                )
+        except Exception as exc:
+            self._resolve_request(
+                doc_id,
+                error=f"Could not cache downloaded document: {exc}",
+            )
+            return
+
+        self._log.info("Document received from server: id=%s bytes=%d", doc_id, len(plaintext))
+        self._resolve_request(doc_id, payload=bytes(plaintext))
+
+    def invalidate_for_record(self, record: dict) -> None:
+        manager = self._manager
+        record_id = record.get("id")
+        incoming_hash = record.get("sha256_hash")
+        if record_id is None or not isinstance(incoming_hash, str):
+            return
+
+        from talon.config import get_document_storage_path
+        from talon.documents import evict_document_cache
+
+        try:
+            doc_id = int(record_id)
+        except (TypeError, ValueError):
+            return
+
+        row = manager._conn.execute(
+            "SELECT file_path, sha256_hash FROM documents WHERE id = ?",
+            (doc_id,),
+        ).fetchone()
+        if row is None:
+            return
+        cached_path, cached_hash = row
+        if not cached_path or cached_hash == incoming_hash:
+            return
+
+        storage_root = get_document_storage_path(manager._cfg)
+        evict_document_cache(
+            manager._conn,
+            storage_root,
+            doc_id,
+            clear_db_path=True,
+            commit=False,
+        )
+
+    def remove_for_delete(self, document_id: typing.Any) -> None:
+        manager = self._manager
+        try:
+            doc_id = int(document_id)
+        except (TypeError, ValueError):
+            return
+
+        from talon.config import get_document_storage_path
+        from talon.documents import evict_document_cache
+
+        storage_root = get_document_storage_path(manager._cfg)
+        evict_document_cache(
+            manager._conn,
+            storage_root,
+            doc_id,
+            clear_db_path=False,
+            commit=False,
+        )
+
+    def fail_all_pending(self, message: str) -> None:
+        manager = self._manager
+        with manager._document_request_lock:
+            pending = list(manager._pending_document_requests.values())
+            manager._pending_document_requests.clear()
+        for state in pending:
+            state["error"] = message
+            state["event"].set()
+
+    def _resolve_request(
+        self,
+        document_id: typing.Any,
+        *,
+        payload: typing.Optional[bytes] = None,
+        error: typing.Optional[str] = None,
+    ) -> None:
+        try:
+            doc_id = int(document_id)
+        except (TypeError, ValueError):
+            return
+
+        with self._manager._document_request_lock:
+            state = self._manager._pending_document_requests.pop(doc_id, None)
+        if state is None:
+            return
+
+        if error is not None:
+            state["error"] = error
+        else:
+            state["payload"] = payload
+            state["error"] = None
+        state["event"].set()
+
+
 class ClientRecordApplier:
     """Apply server-sourced records and deletes to the local store."""
 
@@ -190,6 +474,8 @@ class ClientRecordApplier:
                     local_operator_was_revoked = False
 
             try:
+                if table == "documents":
+                    manager._document_transfers.invalidate_for_record(record)
                 SyncEngine.apply_server_record(
                     manager._conn,
                     table,
@@ -238,6 +524,8 @@ class ClientRecordApplier:
         deleted = False
         with manager._lock:
             try:
+                if table == "documents":
+                    manager._document_transfers.remove_for_delete(rid)
                 for sql in predelete_sql(table):
                     try:
                         manager._conn.execute(sql, (rid,))
@@ -790,6 +1078,14 @@ class ClientLinkLifecycle:
                     return
             manager._handle_incoming(msg, sync_done_event, _send_sync_request)
 
+        def _process_resource(resource) -> None:
+            metadata = getattr(resource, "metadata", None)
+            if isinstance(metadata, dict) and metadata.get("type") == proto.MSG_DOCUMENT_RESPONSE:
+                manager._handle_document_resource(resource)
+                return
+            if resource.status == RNS.Resource.COMPLETE:
+                _process_data(resource.data.read())
+
         def _on_established(link: RNS.Link) -> None:
             manager._link = link
             outbox = manager._collect_outbox()
@@ -817,6 +1113,9 @@ class ClientLinkLifecycle:
         def _on_closed(_link: RNS.Link) -> None:
             manager._link = None
             manager._initial_sync_done = False
+            manager._fail_pending_document_requests(
+                "Document transfer interrupted because the sync link closed."
+            )
             self._log.info("Persistent link closed")
             session_ended.set()
             sync_done_event.set()
@@ -825,11 +1124,7 @@ class ClientLinkLifecycle:
         link.set_link_established_callback(_on_established)
         link.set_packet_callback(lambda data, _pkt: _process_data(data))
         link.set_resource_callback(lambda _resource: True)
-        link.set_resource_concluded_callback(
-            lambda resource: _process_data(resource.data.read())
-            if resource.status == RNS.Resource.COMPLETE
-            else None
-        )
+        link.set_resource_concluded_callback(_process_resource)
         link.set_link_closed_callback(_on_closed)
 
         if not sync_done_event.wait(timeout=self._link_timeout_s):
@@ -1195,6 +1490,9 @@ class ClientLinkLifecycle:
 
         elif msg_type == proto.MSG_HEARTBEAT_ACK:
             manager._update_lease_expiry(msg.get("lease_expires_at"))
+
+        elif msg_type == proto.MSG_DOCUMENT_RESPONSE:
+            manager._handle_document_response(msg)
 
         elif msg_type == proto.MSG_OPERATOR_REVOKED:
             manager._mark_operator_revoked(

@@ -18,6 +18,10 @@ Persistent sync session (broadband — one long-lived link per client):
     --- link stays open ---
     client  →  heartbeat         (every 60 s on the same link)
     server  →  heartbeat_ack     (on same link; no teardown)
+    client  →  document_request  (on-demand document fetch over the same link)
+    server  →  document_response (error/availability reply; successful payloads
+                                  are sent as an RNS Resource with the same
+                                  message type in resource metadata)
     server  →  push_update       (any time a record is created/changed)
     server  →  push_delete       (any time a record is deleted)
     server  →  operator_revoked  (operator identity has been revoked)
@@ -45,6 +49,8 @@ MSG_SYNC_RESPONSE   = "sync_response"
 MSG_SYNC_DONE       = "sync_done"
 MSG_HEARTBEAT       = "heartbeat"
 MSG_HEARTBEAT_ACK   = "heartbeat_ack"
+MSG_DOCUMENT_REQUEST = "document_request"
+MSG_DOCUMENT_RESPONSE = "document_response"
 MSG_PUSH_UPDATE     = "push_update"   # server → client: one record changed/created
 MSG_PUSH_DELETE     = "push_delete"   # server → client: one record deleted
 MSG_OPERATOR_REVOKED = "operator_revoked"  # server → client: operator must lock
@@ -61,6 +67,7 @@ CLIENT_MESSAGE_TYPES = frozenset({
     MSG_ENROLL_REQUEST,
     MSG_SYNC_REQUEST,
     MSG_HEARTBEAT,
+    MSG_DOCUMENT_REQUEST,
     MSG_CLIENT_PUSH_RECORDS,
     MSG_CHUNK,
 })
@@ -70,6 +77,7 @@ SERVER_MESSAGE_TYPES = frozenset({
     MSG_SYNC_RESPONSE,
     MSG_SYNC_DONE,
     MSG_HEARTBEAT_ACK,
+    MSG_DOCUMENT_RESPONSE,
     MSG_PUSH_UPDATE,
     MSG_PUSH_DELETE,
     MSG_OPERATOR_REVOKED,
@@ -270,6 +278,22 @@ def _validate_heartbeat_ack(msg: dict) -> None:
     _require(msg, "lease_expires_at", _is_int, "an integer")
 
 
+def _validate_document_request(msg: dict) -> None:
+    _require(msg, "operator_rns_hash", _is_str, "a string")
+    _require(msg, "document_id", _is_int, "an integer")
+
+
+def _validate_document_response(msg: dict) -> None:
+    _require(msg, "ok", _is_bool, "a boolean")
+    _require(msg, "document_id", _is_int, "an integer")
+    if (
+        "error" in msg
+        and msg.get("error") is not None
+        and not _is_str(msg.get("error"))
+    ):
+        raise ProtocolValidationError("document_response: error must be a string")
+
+
 def _validate_client_push_records(msg: dict) -> None:
     _require(msg, "operator_rns_hash", _is_str, "a string")
     records_by_table = _require(msg, "records", _is_dict, "an object")
@@ -345,6 +369,8 @@ _MESSAGE_VALIDATORS: dict[str, typing.Callable[[dict], None]] = {
     MSG_SYNC_DONE: _validate_sync_done,
     MSG_HEARTBEAT: _validate_heartbeat,
     MSG_HEARTBEAT_ACK: _validate_heartbeat_ack,
+    MSG_DOCUMENT_REQUEST: _validate_document_request,
+    MSG_DOCUMENT_RESPONSE: _validate_document_response,
     MSG_CLIENT_PUSH_RECORDS: _validate_client_push_records,
     MSG_PUSH_UPDATE: _validate_push_update,
     MSG_PUSH_DELETE: _validate_push_delete,

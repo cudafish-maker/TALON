@@ -282,6 +282,8 @@ class ServerLinkRouter:
                 self._handler._handle_sync(link, msg)
             elif msg_type == proto.MSG_HEARTBEAT:
                 self._handler._handle_heartbeat(link, msg)
+            elif msg_type == proto.MSG_DOCUMENT_REQUEST:
+                self._handler._handle_document_request(link, msg)
             else:
                 self._log.warning(
                     "Unknown message type from client: %r",
@@ -647,6 +649,96 @@ class ServerMessageHandlers:
         )
         if renewed_operator_id is not None:
             handler.notify_change("operators", renewed_operator_id)
+
+    def handle_document_request(self, link: RNS.Link, msg: dict) -> None:
+        from talon.config import get_document_storage_path
+        from talon.documents import DocumentError, download_document
+
+        handler = self._handler
+        operator_rns_hash = msg.get("operator_rns_hash", "").strip()
+        document_id = int(msg.get("document_id"))
+
+        with handler._lock:
+            if not handler._operator_active(operator_rns_hash):
+                handler._send_error(
+                    link,
+                    "Operator not found or revoked",
+                    code=proto.ERROR_OPERATOR_INACTIVE,
+                )
+                handler._teardown_link(link)
+                return
+
+            op_row = handler._conn.execute(
+                "SELECT id FROM operators WHERE rns_hash = ?",
+                (operator_rns_hash,),
+            ).fetchone()
+            if op_row is None:
+                handler._send_error(
+                    link,
+                    "Operator not found or revoked",
+                    code=proto.ERROR_OPERATOR_INACTIVE,
+                )
+                handler._teardown_link(link)
+                return
+
+            storage_root = get_document_storage_path(handler._cfg)
+            try:
+                record = handler._fetch_record("documents", document_id)
+                if record is None:
+                    raise DocumentError(f"Document id={document_id} not found.")
+                _doc, plaintext = download_document(
+                    handler._conn,
+                    handler._db_key,
+                    storage_root,
+                    document_id,
+                    downloader_id=op_row[0],
+                )
+            except DocumentError as exc:
+                self._smart_send(
+                    link,
+                    proto.encode(
+                        {
+                            "type": proto.MSG_DOCUMENT_RESPONSE,
+                            "ok": False,
+                            "document_id": document_id,
+                            "error": str(exc),
+                        }
+                    ),
+                )
+                return
+
+        try:
+            RNS.Resource(
+                plaintext,
+                link,
+                metadata={
+                    "type": proto.MSG_DOCUMENT_RESPONSE,
+                    "record": record,
+                },
+            )
+            self._log.info(
+                "Document transfer started: id=%s operator_id=%s bytes=%d",
+                document_id,
+                op_row[0],
+                len(plaintext),
+            )
+        except Exception as exc:
+            self._log.warning(
+                "Could not start document transfer id=%s: %s",
+                document_id,
+                exc,
+            )
+            self._smart_send(
+                link,
+                proto.encode(
+                    {
+                        "type": proto.MSG_DOCUMENT_RESPONSE,
+                        "ok": False,
+                        "document_id": document_id,
+                        "error": "Could not start document transfer.",
+                    }
+                ),
+            )
 
     def handle_client_push(self, link: RNS.Link, msg: dict) -> None:
         handler = self._handler

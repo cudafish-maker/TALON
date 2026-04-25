@@ -7,9 +7,11 @@ mode == "server").  This keeps talon.server.* out of client memory
 and allows Buildozer to exclude the package from field APKs.
 """
 import configparser
+import os
 import pathlib
 import typing
 
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.screenmanager import ScreenManager
@@ -260,6 +262,22 @@ class TalonApp(MDApp):
 
         _log.info("TalonApp started (mode=%s)", self.mode)
         return root
+
+    def on_start(self) -> None:
+        self._schedule_smoke_test_shutdown()
+
+    def _schedule_smoke_test_shutdown(self) -> None:
+        raw_value = os.environ.get("TALON_SMOKE_TEST_SECONDS", "").strip()
+        if not raw_value:
+            return
+        try:
+            delay = max(0.0, float(raw_value))
+        except ValueError:
+            _log.warning("Ignoring invalid TALON_SMOKE_TEST_SECONDS=%r", raw_value)
+            return
+
+        _log.info("Smoke test shutdown scheduled in %.2f second(s).", delay)
+        Clock.schedule_once(lambda _dt: self.stop(), delay)
 
     def apply_stored_theme(self) -> str:
         """Load the operator-selected UI theme from DB and apply it to KivyMD."""

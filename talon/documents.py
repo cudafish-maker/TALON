@@ -312,6 +312,8 @@ def download_document(
         DocumentIntegrityError — SHA-256 mismatch (corruption or tampering)
     """
     doc = get_document(conn, doc_id)
+    if not doc.file_path:
+        raise DocumentError(f"Document {doc.filename!r} is not cached locally.")
     file_path = _check_path_in_root(storage_root, doc.file_path)
 
     encrypted = file_path.read_bytes()
@@ -342,6 +344,106 @@ def download_document(
 
     _log.info("Document downloaded: id=%s filename=%r", doc_id, doc.filename)
     return doc, plaintext
+
+
+def cache_document_download(
+    conn: Connection,
+    key: bytes,
+    storage_root: pathlib.Path,
+    doc_id: int,
+    plaintext: bytes,
+) -> Document:
+    """Store a downloaded plaintext document in the local encrypted cache."""
+    doc = get_document(conn, doc_id)
+    actual_hash = hashlib.sha256(plaintext).hexdigest()
+    if actual_hash != doc.sha256_hash:
+        raise DocumentIntegrityError(
+            f"Document {doc.filename!r} failed integrity check. "
+            "The file may be corrupted or tampered with."
+        )
+
+    internal_name = f"{doc_id}_{actual_hash[:16]}.bin"
+    encrypted = encrypt_field(plaintext, key)
+
+    _ensure_storage_dir(storage_root)
+    cache_path = _check_path_in_root(storage_root, internal_name)
+    tmp_path = storage_root / (internal_name + ".tmp")
+    try:
+        tmp_path.write_bytes(encrypted)
+        os.replace(tmp_path, cache_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    old_internal_name = doc.file_path
+    if old_internal_name and old_internal_name != internal_name:
+        try:
+            old_path = _check_path_in_root(storage_root, old_internal_name)
+            old_path.unlink(missing_ok=True)
+        except Exception as exc:
+            _log.warning(
+                "Could not remove stale cached document id=%s path=%r: %s",
+                doc_id,
+                old_internal_name,
+                exc,
+            )
+
+    if doc.file_path != internal_name:
+        conn.execute(
+            "UPDATE documents SET file_path = ? WHERE id = ?",
+            (internal_name, doc_id),
+        )
+        conn.commit()
+        doc = get_document(conn, doc_id)
+
+    _log.info("Document cached locally: id=%s filename=%r", doc_id, doc.filename)
+    return doc
+
+
+def evict_document_cache(
+    conn: Connection,
+    storage_root: pathlib.Path,
+    doc_id: int,
+    *,
+    clear_db_path: bool = True,
+    commit: bool = True,
+) -> bool:
+    """Remove any locally cached document blob for *doc_id*.
+
+    Returns True when a cached file path was present, regardless of whether the
+    filesystem entry already existed.
+    """
+    row = conn.execute(
+        "SELECT file_path FROM documents WHERE id = ?",
+        (doc_id,),
+    ).fetchone()
+    if row is None:
+        return False
+
+    internal_name = row[0] or ""
+    if not internal_name:
+        return False
+
+    try:
+        cache_path = _check_path_in_root(storage_root, internal_name)
+        cache_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _log.warning(
+            "Could not remove cached document id=%s path=%r: %s",
+            doc_id,
+            internal_name,
+            exc,
+        )
+
+    if clear_db_path:
+        conn.execute(
+            "UPDATE documents SET file_path = '' WHERE id = ?",
+            (doc_id,),
+        )
+        if commit:
+            conn.commit()
+
+    return True
 
 
 def delete_document(

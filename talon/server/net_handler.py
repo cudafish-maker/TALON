@@ -254,6 +254,9 @@ class ServerNetHandler:
     def _handle_heartbeat(self, link: RNS.Link, msg: dict) -> None:
         self._message_handlers.handle_heartbeat(link, msg)
 
+    def _handle_document_request(self, link: RNS.Link, msg: dict) -> None:
+        self._message_handlers.handle_document_request(link, msg)
+
     def _handle_client_push(self, link: RNS.Link, msg: dict) -> None:
         self._message_handlers.handle_client_push(link, msg)
 

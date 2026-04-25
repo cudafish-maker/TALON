@@ -1,6 +1,7 @@
 name: Build Desktop
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -33,15 +34,52 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y libsqlcipher-dev libgl1-mesa-dev xclip
+          sudo apt-get install -y libsqlcipher-dev libgl1-mesa-dev libmagic1 xauth xclip xvfb
 
       - name: Install Python deps
         run: |
           pip install --upgrade pip
-          pip install -e ".[desktop]"
+          pip install "kivymd @ https://github.com/kivymd/KivyMD/archive/master.zip#sha256=c09db9f44a04e241b56c7cef8c961bb00ee036c5ae92d57df65f89592af5843f"
+          pip install -e ".[dev,desktop]"
 
-      - name: Build with PyInstaller
-        run: pyinstaller ${{ matrix.spec }}
+      - name: Run pytest
+        env:
+          KIVY_HOME: ${{ runner.temp }}/.kivy-pytest
+        run: pytest -q
+
+      - name: Build Linux with PyInstaller
+        if: runner.os == 'Linux'
+        env:
+          KIVY_HOME: ${{ runner.temp }}/.kivy-build
+          KIVY_NO_FILELOG: "1"
+          PYINSTALLER_CONFIG_DIR: ${{ runner.temp }}/.pyinstaller
+          SDL_AUDIODRIVER: dummy
+        run: xvfb-run -a pyinstaller --clean --noconfirm ${{ matrix.spec }}
+
+      - name: Build Windows with PyInstaller
+        if: runner.os == 'Windows'
+        env:
+          KIVY_HOME: ${{ runner.temp }}/.kivy-build
+          KIVY_NO_FILELOG: "1"
+          PYINSTALLER_CONFIG_DIR: ${{ runner.temp }}/.pyinstaller
+        run: pyinstaller --clean --noconfirm ${{ matrix.spec }}
+
+      - name: Verify Linux bundle contents
+        if: runner.os == 'Linux'
+        run: |
+          test -x dist/talon-linux/talon
+          test -f dist/talon-linux/_internal/base_library.zip
+          test -f dist/talon-linux/_internal/kivy/data/style.kv
+          test -f dist/talon-linux/_internal/kivymd/icon_definitions.py
+
+      - name: Smoke test Linux artifact
+        if: runner.os == 'Linux'
+        env:
+          KIVY_HOME: ${{ runner.temp }}/.kivy-smoke
+          SDL_AUDIODRIVER: dummy
+          TALON_CONFIG: build/talon-smoke-client.ini
+          TALON_SMOKE_TEST_SECONDS: "2"
+        run: timeout 30s xvfb-run -a dist/talon-linux/talon
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

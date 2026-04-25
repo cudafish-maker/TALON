@@ -3,18 +3,23 @@ Document screen — shared tactical document repository.
 
 Phase 1:  Server operators can upload, browse, download, and delete documents
           directly on the server machine.
-Phase 2:  Client upload / download over Reticulum sync (deferred).
+Phase 2:  Client download fetches on demand over the persistent sync link and
+          stores a local encrypted cache for offline re-open. Client upload
+          remains deferred.
 
 Mode guards
 -----------
 Upload    : server mode only in Phase 1; shows informational message on client.
 Delete    : server mode only; button hidden for clients.
-Download  : works in both modes (Phase 1: reads local disk; Phase 2: from sync cache).
+Download  : works in both modes (server: local disk; client: local cache or
+            on-demand fetch over the sync link).
 """
 import datetime
 import pathlib
+import threading
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.modalview import ModalView
@@ -160,8 +165,8 @@ class DocumentScreen(MDScreen):
         if app.mode != "server":
             self._show_info_dialog(
                 "Upload Unavailable",
-                "Document upload from client mode will be available in a future update "
-                "when Reticulum sync is wired.",
+                "Document upload from client mode is still deferred. "
+                "Client downloads now fetch on demand from the server.",
             )
             return
         self._open_file_chooser()
@@ -464,45 +469,100 @@ class DocumentScreen(MDScreen):
     # ------------------------------------------------------------------
 
     def _do_download(self, detail_modal: ModalView, doc) -> None:
-        """Prompt for a save path, then decrypt and write the file."""
+        """Load a document, then prompt for a save path."""
         app = App.get_running_app()
         if app.conn is None or app.db_key is None:
             return
 
-        from talon.config import get_document_storage_path
-        storage_root = get_document_storage_path(app.cfg)
+        threading.Thread(
+            target=self._download_document_worker,
+            args=(detail_modal, doc),
+            daemon=True,
+            name="talon-document-download",
+        ).start()
 
+    def _download_document_worker(self, detail_modal: ModalView, doc) -> None:
+        app = App.get_running_app()
+        from talon.config import get_document_storage_path
+
+        storage_root = get_document_storage_path(app.cfg)
         try:
-            operator_id = app.require_local_operator_id(
-                allow_server_sentinel=(app.mode == "server")
-            )
-            _, plaintext = download_document(
-                app.conn,
-                app.db_key,
-                storage_root,
-                doc.id,
-                downloader_id=operator_id,
-            )
+            if app.mode == "client":
+                if app.client_sync is None:
+                    raise DocumentError(
+                        "Document download requires an active client sync session."
+                    )
+                plaintext = app.client_sync.fetch_document(doc.id)
+            else:
+                operator_id = app.require_local_operator_id(allow_server_sentinel=True)
+                _, plaintext = download_document(
+                    app.conn,
+                    app.db_key,
+                    storage_root,
+                    doc.id,
+                    downloader_id=operator_id,
+                )
         except DocumentIntegrityError as exc:
-            detail_modal.dismiss()
-            self._show_error_dialog("Integrity Check Failed", str(exc))
+            Clock.schedule_once(
+                lambda _dt: self._finish_download_error(
+                    detail_modal,
+                    "Integrity Check Failed",
+                    str(exc),
+                ),
+                0,
+            )
             return
         except DocumentError as exc:
-            detail_modal.dismiss()
-            self._show_error_dialog("Download Failed", str(exc))
+            Clock.schedule_once(
+                lambda _dt: self._finish_download_error(
+                    detail_modal,
+                    "Download Failed",
+                    str(exc),
+                ),
+                0,
+            )
             return
         except Exception as exc:
-            detail_modal.dismiss()
-            self._show_error_dialog("Download Failed", str(exc))
+            Clock.schedule_once(
+                lambda _dt: self._finish_download_error(
+                    detail_modal,
+                    "Download Failed",
+                    str(exc),
+                ),
+                0,
+            )
             return
 
-        # Check for macro-capable extensions and warn before saving
-        suffix = pathlib.Path(doc.filename).suffix.lower()
+        Clock.schedule_once(
+            lambda _dt: self._finish_download_ready(
+                detail_modal,
+                doc.filename,
+                plaintext,
+            ),
+            0,
+        )
+
+    def _finish_download_ready(
+        self,
+        detail_modal: ModalView,
+        filename: str,
+        plaintext: bytes,
+    ) -> None:
+        suffix = pathlib.Path(filename).suffix.lower()
         if suffix in DOCUMENT_WARN_EXTENSIONS:
-            self._warn_macro_then_save(detail_modal, doc.filename, plaintext)
+            self._warn_macro_then_save(detail_modal, filename, plaintext)
         else:
             detail_modal.dismiss()
-            self._open_save_dialog(doc.filename, plaintext)
+            self._open_save_dialog(filename, plaintext)
+
+    def _finish_download_error(
+        self,
+        detail_modal: ModalView,
+        title: str,
+        message: str,
+    ) -> None:
+        detail_modal.dismiss()
+        self._show_error_dialog(title, message)
 
     def _warn_macro_then_save(
         self, detail_modal: ModalView, filename: str, plaintext: bytes
