@@ -12,6 +12,9 @@ datas = [
     (str(root / "talon" / "ui" / "kv"), "talon/ui/kv"),
 ]
 datas += collect_data_files("kivy", includes=["data/**"])
+logo_path = root / "Images" / "talonlogo.png"
+if logo_path.exists():
+    datas.append((str(logo_path), "Images"))
 if icon_definitions_spec is not None and icon_definitions_spec.origin:
     datas.append((icon_definitions_spec.origin, "kivymd"))
 

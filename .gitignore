@@ -49,6 +49,7 @@ cache/
 # Project-local docs not meant for GitHub repo history
 wiki/
 *.md
+.codex
 
 # OS
 .DS_Store

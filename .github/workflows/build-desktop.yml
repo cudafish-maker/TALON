@@ -72,6 +72,10 @@ jobs:
           test -f dist/talon-linux/_internal/kivy/data/style.kv
           test -f dist/talon-linux/_internal/kivymd/icon_definitions.py
 
+      - name: Validate Linux installer script
+        if: runner.os == 'Linux'
+        run: bash -n build/install-linux.sh
+
       - name: Smoke test Linux artifact
         if: runner.os == 'Linux'
         env:
@@ -81,8 +85,27 @@ jobs:
           TALON_SMOKE_TEST_SECONDS: "2"
         run: timeout 30s xvfb-run -a dist/talon-linux/talon
 
-      - name: Upload artifact
+      - name: Package Linux release tarball
+        if: runner.os == 'Linux'
+        run: |
+          cp build/install-linux.sh dist/install-talon-linux.sh
+          chmod +x dist/install-talon-linux.sh
+          tar -C dist -czf dist/talon-linux.tar.gz talon-linux
+          sha256sum dist/talon-linux.tar.gz > dist/talon-linux.tar.gz.sha256
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: talon-linux
+          path: |
+            dist/talon-linux.tar.gz
+            dist/talon-linux.tar.gz.sha256
+            dist/install-talon-linux.sh
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: talon-windows
           path: dist/${{ matrix.artifact }}/
