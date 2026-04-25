@@ -22,6 +22,10 @@ _log = get_logger("main")
 _DESKTOP_PLATFORMS = ("linux", "win32", "darwin", "cygwin")
 if sys.platform in _DESKTOP_PLATFORMS:
     from kivy.config import Config  # noqa: E402
+
+    # Some fresh Linux/VM GLX stacks cannot provide a multisampled framebuffer,
+    # which makes SDL/Kivy fail startup with "No matching FB config found".
+    Config.set("graphics", "multisamples", "0")
     Config.set("input", "mouse", "mouse,disable_multitouch")
 
 
