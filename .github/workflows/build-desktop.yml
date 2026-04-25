@@ -4,9 +4,12 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
+      - "*"
     branches:
       - main
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -74,7 +77,7 @@ jobs:
 
       - name: Validate Linux installer script
         if: runner.os == 'Linux'
-        run: bash -n build/install-linux.sh
+        run: bash -n build/install-talon.sh
 
       - name: Smoke test Linux artifact
         if: runner.os == 'Linux'
@@ -88,10 +91,28 @@ jobs:
       - name: Package Linux release tarball
         if: runner.os == 'Linux'
         run: |
-          cp build/install-linux.sh dist/install-talon-linux.sh
-          chmod +x dist/install-talon-linux.sh
+          cp build/install-talon.sh dist/install-talon.sh
+          chmod +x dist/install-talon.sh
           tar -C dist -czf dist/talon-linux.tar.gz talon-linux
           sha256sum dist/talon-linux.tar.gz > dist/talon-linux.tar.gz.sha256
+
+      - name: Smoke install Linux release artifact
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$RUNNER_TEMP/talon-artifact-wrapper"
+          cp dist/talon-linux.tar.gz "$RUNNER_TEMP/talon-artifact-wrapper/talon v0.1.0 linux.tar.gz"
+          cp dist/install-talon.sh "$RUNNER_TEMP/talon-artifact-wrapper/install-talon.sh"
+          chmod +x "$RUNNER_TEMP/talon-artifact-wrapper/install-talon.sh"
+          (
+            cd "$RUNNER_TEMP/talon-artifact-wrapper"
+            ./install-talon.sh --no-deps --no-bin --no-desktop \
+              --prefix "$RUNNER_TEMP/talon-install" \
+              --config "$RUNNER_TEMP/talon-config/talon.ini" \
+              --data-dir "$RUNNER_TEMP/talon-data"
+          )
+          test -x "$RUNNER_TEMP/talon-install/talon-linux/talon"
+          test -f "$RUNNER_TEMP/talon-install/talon-linux/_internal/kivy/data/style.kv"
+          test -f "$RUNNER_TEMP/talon-install/talon-linux/_internal/kivymd/icon_definitions.py"
 
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
@@ -101,7 +122,16 @@ jobs:
           path: |
             dist/talon-linux.tar.gz
             dist/talon-linux.tar.gz.sha256
-            dist/install-talon-linux.sh
+            dist/install-talon.sh
+
+      - name: Publish Linux release assets
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/talon-linux.tar.gz
+            dist/talon-linux.tar.gz.sha256
+            dist/install-talon.sh
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
