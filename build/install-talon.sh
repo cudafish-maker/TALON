@@ -99,6 +99,7 @@ runtime_dependency_gaps() {
     command -v xdg-open >/dev/null 2>&1 || missing+=("xdg-open")
     command -v xclip >/dev/null 2>&1 || missing+=("xclip")
     have_library "libGL.so.1" || missing+=("libGL.so.1")
+    have_library "libGLX.so.0" || missing+=("libGLX.so.0")
     have_library "libEGL.so.1" || missing+=("libEGL.so.1")
     have_library "libxkbcommon.so.0" || missing+=("libxkbcommon.so.0")
     have_library "libmagic.so.1" || missing+=("libmagic.so.1")
@@ -135,9 +136,13 @@ install_deps_apt() {
         xdg-utils
         xclip
         libgl1
+        libglx0
+        libglx-mesa0
         libegl1
+        libegl-mesa0
         libxkbcommon0
         libgl1-mesa-dri
+        mesa-utils
     )
 
     append_first_available_apt_package packages libmagic1t64 libmagic1 file || warn "No apt package found for libmagic."
@@ -158,6 +163,8 @@ install_deps_dnf() {
         xclip
         mesa-libGL
         mesa-libEGL
+        mesa-dri-drivers
+        glx-utils
         libxkbcommon
         file-libs
         sqlcipher
@@ -175,6 +182,8 @@ install_deps_yum() {
         xclip
         mesa-libGL
         mesa-libEGL
+        mesa-dri-drivers
+        glx-utils
         libxkbcommon
         file-libs
         sqlcipher
@@ -192,6 +201,7 @@ install_deps_zypper() {
         xclip
         Mesa-libGL1
         Mesa-libEGL1
+        Mesa-dri
         libxkbcommon0
         libmagic1
         sqlcipher
@@ -207,6 +217,7 @@ install_deps_pacman() {
         unzip
         xdg-utils
         xclip
+        mesa
         libglvnd
         libxkbcommon
         file
