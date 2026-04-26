@@ -407,12 +407,43 @@ has_window_provider_failure() {
   grep -Eiq "Couldn't find matching GLX visual|No matching FB config found|Could not get EGL display|Unable to find any valuable Window provider|No available video device|Wayland.*not available|Failed to connect to Wayland|Could not initialize Wayland" "\$1"
 }
 
+detect_x11_visual_id() {
+  command -v glxinfo >/dev/null 2>&1 || return 1
+  glxinfo 2>/dev/null | awk '
+    BEGIN { in_visuals = 0; candidate = ""; found = 0 }
+    /^GLX Visuals/ { in_visuals = 1; next }
+    /^GLXFBConfigs/ { in_visuals = 0 }
+    in_visuals && \$1 ~ /^0x[[:xdigit:]]+$/ && \$2 == "24" && \$3 == "tc" {
+      if (candidate == "") {
+        candidate = \$1
+      }
+      if (\$13 == "0") {
+        print \$1
+        found = 1
+        exit
+      }
+    }
+    END {
+      if (!found && candidate != "") {
+        print candidate
+      }
+    }
+  '
+}
+
+kivy_setup_supports() {
+  local option=\$1
+  local setup_file
+  setup_file=\$(dirname "\$app")/_internal/kivy/setupconfig.py
+  [ -f "\$setup_file" ] && grep -Eq "^\${option} = 1\\b" "\$setup_file"
+}
+
 run_logged() {
-  local log_file=\$1
+  local label=\$1
   shift
-  : > "\$log_file"
+  printf '\\n--- TALON launch attempt: %s ---\\n' "\$label" | tee -a "\$launch_log"
   set -o pipefail
-  "\$@" 2>&1 | tee "\$log_file"
+  "\$@" 2>&1 | tee -a "\$launch_log"
   return "\${PIPESTATUS[0]}"
 }
 
@@ -421,18 +452,48 @@ if [ "\${TALON_DISABLE_GRAPHICS_FALLBACK:-0}" = "1" ]; then
 fi
 
 mkdir -p "\$(dirname "\$launch_log")"
+: > "\$launch_log"
 
-run_logged "\$launch_log" "\$app" "\$@"
+run_logged "default" "\$app" "\$@"
 status=\$?
 if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
   exit "\$status"
 fi
 
-if [ -n "\${WAYLAND_DISPLAY:-}" ] && [ "\${SDL_VIDEODRIVER:-}" != "wayland" ]; then
+x11_visual_id=\$(detect_x11_visual_id || true)
+if [ -n "\$x11_visual_id" ] && [ -z "\${SDL_VIDEO_X11_VISUALID:-}" ] && [ -z "\${SDL_VIDEO_X11_WINDOW_VISUALID:-}" ]; then
+  printf '%s\n' "TALON: SDL/GLX startup failed; retrying X11 with GLX visual \$x11_visual_id." >&2
+  (
+    export SDL_VIDEODRIVER=x11
+    export SDL_VIDEO_X11_VISUALID=\$x11_visual_id
+    export SDL_VIDEO_X11_WINDOW_VISUALID=\$x11_visual_id
+    run_logged "x11-visual-\$x11_visual_id" "\$app" "\$@"
+  )
+  status=\$?
+  if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
+    exit "\$status"
+  fi
+fi
+
+if [ -z "\${SDL_VIDEO_X11_VISUALID+x}" ] && [ -z "\${SDL_VIDEO_X11_WINDOW_VISUALID+x}" ]; then
+  printf '%s\n' "TALON: SDL/GLX startup failed; retrying X11 with SDL visual auto-selection override." >&2
+  (
+    export SDL_VIDEODRIVER=x11
+    export SDL_VIDEO_X11_VISUALID=
+    export SDL_VIDEO_X11_WINDOW_VISUALID=
+    run_logged "x11-empty-visual" "\$app" "\$@"
+  )
+  status=\$?
+  if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
+    exit "\$status"
+  fi
+fi
+
+if [ -n "\${WAYLAND_DISPLAY:-}" ] && [ "\${SDL_VIDEODRIVER:-}" != "wayland" ] && kivy_setup_supports USE_WAYLAND; then
   printf '%s\n' "TALON: SDL/GLX startup failed; retrying with the Wayland video driver." >&2
   (
     export SDL_VIDEODRIVER=wayland
-    run_logged "\$launch_log" "\$app" "\$@"
+    run_logged "wayland" "\$app" "\$@"
   )
   status=\$?
   if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
@@ -444,7 +505,7 @@ if [ -z "\${SDL_VIDEO_X11_FORCE_EGL:-}" ]; then
   printf '%s\n' "TALON: SDL/GLX startup failed; retrying X11 with EGL." >&2
   (
     export SDL_VIDEO_X11_FORCE_EGL=1
-    run_logged "\$launch_log" "\$app" "\$@"
+    run_logged "x11-egl" "\$app" "\$@"
   )
   status=\$?
   if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
