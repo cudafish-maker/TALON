@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_ID="talon"
 BUNDLE_NAME="talon-linux"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)
 
@@ -23,10 +22,9 @@ usage() {
 TALON Linux installer
 
 Usage:
-  install-talon.sh [options] [release-archive|extracted-talon-linux-dir]
+  install.sh [options] [extracted-talon-linux-dir]
 
 Options:
-  --tarball PATH        Release archive to extract. Same as positional PATH.
   --prefix DIR         Install root. Default: $XDG_DATA_HOME/talon or ~/.local/share/talon
   --bin-dir DIR        Launcher directory. Default: ~/.local/bin
   --config PATH        Config file to create/use. Default: ~/.talon/talon.ini for client,
@@ -43,12 +41,11 @@ Options:
   -h, --help           Show this help.
 
 Examples:
-  ./install-talon.sh
-  ./install-talon.sh talon-linux.tar.gz
-  ./install-talon.sh "talon v0.1.0 linux.tar.gz"
-  ./install-talon.sh talon-v0.1.0-linux.zip
-  ./install-talon.sh --mode server --tarball "talon v0.1.0 linux.tar.gz"
-  ./install-talon.sh --no-deps ./talon-linux
+  tar -xzf talon-linux.tar.gz
+  cd talon-linux
+  bash ./install.sh --mode client --yes
+  bash ./install.sh --mode server --yes
+  bash ./install.sh --no-deps --no-desktop
 USAGE
 }
 
@@ -108,8 +105,6 @@ have_library() {
 runtime_dependency_gaps() {
     local missing=()
 
-    command -v tar >/dev/null 2>&1 || missing+=("tar")
-    command -v unzip >/dev/null 2>&1 || missing+=("unzip")
     command -v xdg-open >/dev/null 2>&1 || missing+=("xdg-open")
     command -v xclip >/dev/null 2>&1 || missing+=("xclip")
     have_library "libGL.so.1" || missing+=("libGL.so.1")
@@ -145,8 +140,6 @@ append_first_available_apt_package() {
 
 install_deps_apt() {
     local packages=(
-        tar
-        unzip
         xdg-utils
         xclip
         libgl1
@@ -171,8 +164,6 @@ install_deps_apt() {
 
 install_deps_dnf() {
     local packages=(
-        tar
-        unzip
         xdg-utils
         xclip
         mesa-libGL
@@ -190,8 +181,6 @@ install_deps_dnf() {
 
 install_deps_yum() {
     local packages=(
-        tar
-        unzip
         xdg-utils
         xclip
         mesa-libGL
@@ -209,8 +198,6 @@ install_deps_yum() {
 
 install_deps_zypper() {
     local packages=(
-        tar
-        unzip
         xdg-utils
         xclip
         Mesa-libGL1
@@ -227,8 +214,6 @@ install_deps_zypper() {
 
 install_deps_pacman() {
     local packages=(
-        tar
-        unzip
         xdg-utils
         xclip
         mesa
@@ -271,193 +256,10 @@ install_runtime_dependencies() {
     fi
 }
 
-is_unsafe_tar_entry() {
-    local entry=$1
-    local component
-    local components=()
-
-    [[ -z $entry || $entry == /* ]] && return 0
-    IFS='/' read -r -a components <<< "$entry"
-    for component in "${components[@]}"; do
-        [[ $component == ".." ]] && return 0
-    done
-    return 1
-}
-
-safe_extract_tarball() {
-    local tarball=$1
-    local destination=$2
-    local entry
-
-    [[ -f $tarball ]] || die "Tarball not found: $tarball"
-
-    tar -tf "$tarball" >/dev/null
-    while IFS= read -r entry; do
-        if is_unsafe_tar_entry "$entry"; then
-            die "Refusing to extract unsafe tar entry: $entry"
-        fi
-    done < <(tar -tf "$tarball")
-
-    tar -xf "$tarball" -C "$destination"
-}
-
-safe_extract_zip() {
-    local zipfile=$1
-    local destination=$2
-    local entry
-
-    [[ -f $zipfile ]] || die "Zip archive not found: $zipfile"
-    command -v unzip >/dev/null 2>&1 || die "Cannot extract zip archive; install unzip or pass the release tarball directly."
-
-    unzip -Z1 "$zipfile" >/dev/null
-    while IFS= read -r entry; do
-        if is_unsafe_tar_entry "$entry"; then
-            die "Refusing to extract unsafe zip entry: $entry"
-        fi
-    done < <(unzip -Z1 "$zipfile")
-
-    unzip -q "$zipfile" -d "$destination"
-}
-
-extract_archive() {
-    local archive=$1
-    local destination=$2
-    local archive_lc=${archive,,}
-
-    case "$archive_lc" in
-        *.zip)
-            safe_extract_zip "$archive" "$destination"
-            ;;
-        *)
-            safe_extract_tarball "$archive" "$destination"
-            ;;
-    esac
-}
-
-find_bundle_dir() {
-    local root=$1
-    local executable
-    local candidate_dir
-
-    while IFS= read -r -d '' executable; do
-        candidate_dir=$(dirname "$executable")
-        if [[ -d $candidate_dir/_internal && -f $candidate_dir/_internal/base_library.zip ]]; then
-            printf '%s\n' "$candidate_dir"
-            return 0
-        fi
-    done < <(find "$root" -maxdepth 5 -type f -name "$APP_ID" -print0)
-
-    return 1
-}
-
-archive_entries() {
-    local archive=$1
-    local archive_lc=${archive,,}
-
-    case "$archive_lc" in
-        *.zip)
-            unzip -Z1 "$archive"
-            ;;
-        *)
-            tar -tf "$archive"
-            ;;
-    esac
-}
-
-archive_has_candidate_payload() {
-    local archive=$1
-    local entry
-    local entry_lc
-
-    while IFS= read -r entry; do
-        entry_lc=${entry,,}
-        case "$entry_lc" in
-            */_internal/base_library.zip|_internal/base_library.zip)
-                return 0
-                ;;
-            *.tar.gz|*.tgz|*.zip)
-                return 0
-                ;;
-        esac
-    done < <(archive_entries "$archive" 2>/dev/null || true)
-
-    return 1
-}
-
-find_release_archives() {
-    local root=$1
-
-    find "$root" -maxdepth 4 -type f \
-        \( -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' \) \
-        -print0
-}
-
 canonical_dir() {
     local path=$1
 
     (cd "$path" && pwd -P)
-}
-
-ensure_work_dir() {
-    if [[ -z ${WORK_DIR:-} ]]; then
-        WORK_DIR=$(mktemp -d)
-    fi
-}
-
-resolve_bundle_dir() {
-    local root=$1
-    local depth=${2:-0}
-    local bundle_dir
-    local archive
-    local nested_dir
-
-    if bundle_dir=$(find_bundle_dir "$root"); then
-        printf '%s\n' "$bundle_dir"
-        return 0
-    fi
-
-    ((depth < 3)) || return 1
-
-    while IFS= read -r -d '' archive; do
-        archive_has_candidate_payload "$archive" || continue
-        ensure_work_dir
-        nested_dir=$(mktemp -d "$WORK_DIR/nested.XXXXXX")
-        printf 'Found nested release archive: %s\n' "$archive" >&2
-        extract_archive "$archive" "$nested_dir"
-        if bundle_dir=$(resolve_bundle_dir "$nested_dir" "$((depth + 1))"); then
-            printf '%s\n' "$bundle_dir"
-            return 0
-        fi
-    done < <(find_release_archives "$root")
-
-    return 1
-}
-
-discover_input_path() {
-    local search_dir
-    local archive
-    local searched_dirs=":"
-
-    for search_dir in "$SCRIPT_DIR" "$PWD"; do
-        [[ -d $search_dir ]] || continue
-        case "$searched_dirs" in
-            *":$search_dir:"*) continue ;;
-        esac
-        searched_dirs="${searched_dirs}${search_dir}:"
-
-        if [[ -x $search_dir/talon && -d $search_dir/_internal ]]; then
-            printf '%s\n' "$search_dir"
-            return 0
-        fi
-        while IFS= read -r -d '' archive; do
-            if archive_has_candidate_payload "$archive"; then
-                printf '%s\n' "$archive"
-                return 0
-            fi
-        done < <(find_release_archives "$search_dir")
-    done
-
-    return 1
 }
 
 validate_bundle() {
@@ -471,7 +273,7 @@ validate_bundle() {
     local path
 
     for path in "${required[@]}"; do
-        [[ -e $path ]] || die "Installed bundle is missing required runtime asset: $path"
+        [[ -e $path ]] || die "TALON bundle is missing required runtime asset: $path"
     done
     chmod +x "$bundle_dir/talon"
 }
@@ -493,7 +295,7 @@ install_bundle() {
         source_real=$(canonical_dir "$source_dir")
         target_real=$(canonical_dir "$target_dir")
         if [[ $source_real == "$target_real" ]]; then
-            die "Refusing to use the current install directory as the source bundle. Pass the downloaded release archive explicitly."
+            die "Refusing to use the current install directory as the source bundle. Extract the release tarball elsewhere and run install.sh from that extracted directory."
         fi
         if [[ ! -x $target_dir/talon || ! -d $target_dir/_internal ]]; then
             die "Refusing to replace non-TALON path: $target_dir"
@@ -656,12 +458,10 @@ positionals=()
 while (($#)); do
     case "$1" in
         --tarball)
-            shift || die "--tarball requires a path"
-            INPUT_PATH=${1:-}
-            [[ -n $INPUT_PATH ]] || die "--tarball requires a path"
+            die "--tarball is no longer supported. Extract talon-linux.tar.gz, cd into talon-linux, then run bash ./install.sh."
             ;;
         --tarball=*)
-            INPUT_PATH=${1#*=}
+            die "--tarball is no longer supported. Extract talon-linux.tar.gz, cd into talon-linux, then run bash ./install.sh."
             ;;
         --prefix)
             shift || die "--prefix requires a directory"
@@ -755,20 +555,20 @@ while (($#)); do
     shift || true
 done
 
-((${#positionals[@]} <= 1)) || die "Only one tarball or extracted bundle path may be provided."
+((${#positionals[@]} <= 1)) || die "Only one extracted bundle path may be provided."
 if [[ -n $INPUT_PATH && ${#positionals[@]} -eq 1 ]]; then
-    die "Use either --tarball or a positional path, not both."
+    die "Use either the default bundle directory or one positional bundle path, not both."
 fi
-[[ -n $INPUT_PATH || ${#positionals[@]} -eq 0 ]] || INPUT_PATH=${positionals[0]}
+if [[ ${#positionals[@]} -eq 1 ]]; then
+    INPUT_PATH=${positionals[0]}
+else
+    INPUT_PATH=$SCRIPT_DIR
+fi
 
 case "$MODE" in
     client|server) ;;
     *) die "--mode must be client or server" ;;
 esac
-
-if [[ -z $INPUT_PATH ]]; then
-    INPUT_PATH=$(discover_input_path) || die "No compatible TALON release archive or extracted bundle found next to the installer or in the current directory. Pass the archive path explicitly."
-fi
 
 INSTALL_ROOT=$(make_abs_path "$INSTALL_ROOT")
 BIN_DIR=$(make_abs_path "$BIN_DIR")
@@ -801,21 +601,11 @@ else
     log "Skipping system dependency installation."
 fi
 
-WORK_DIR=""
-cleanup() {
-    if [[ -n ${WORK_DIR:-} && -d $WORK_DIR ]]; then
-        rm -rf "$WORK_DIR"
-    fi
-}
-trap cleanup EXIT
-
 SOURCE_BUNDLE_DIR=""
 if [[ -d $INPUT_PATH ]]; then
-    SOURCE_BUNDLE_DIR=$(resolve_bundle_dir "$INPUT_PATH") || die "No TALON PyInstaller bundle found in: $INPUT_PATH"
+    SOURCE_BUNDLE_DIR=$INPUT_PATH
 elif [[ -f $INPUT_PATH ]]; then
-    WORK_DIR=$(mktemp -d)
-    extract_archive "$INPUT_PATH" "$WORK_DIR"
-    SOURCE_BUNDLE_DIR=$(resolve_bundle_dir "$WORK_DIR") || die "No TALON PyInstaller bundle found in archive: $INPUT_PATH"
+    die "Archive input is no longer supported by the installer. Extract talon-linux.tar.gz, cd into talon-linux, then run bash ./install.sh."
 else
     die "Input path does not exist: $INPUT_PATH"
 fi

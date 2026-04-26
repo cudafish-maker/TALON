@@ -91,21 +91,21 @@ jobs:
       - name: Package Linux release tarball
         if: runner.os == 'Linux'
         run: |
-          cp build/install-talon.sh dist/install-talon.sh
-          chmod +x dist/install-talon.sh
+          cp build/install-talon.sh dist/talon-linux/install.sh
+          chmod +x dist/talon-linux/install.sh
+          test -x dist/talon-linux/install.sh
           tar -C dist -czf dist/talon-linux.tar.gz talon-linux
           sha256sum dist/talon-linux.tar.gz > dist/talon-linux.tar.gz.sha256
 
       - name: Smoke install Linux release artifact
         if: runner.os == 'Linux'
         run: |
-          mkdir -p "$RUNNER_TEMP/talon-artifact-wrapper"
-          cp dist/talon-linux.tar.gz "$RUNNER_TEMP/talon-artifact-wrapper/talon v0.1.0 linux.tar.gz"
-          cp dist/install-talon.sh "$RUNNER_TEMP/talon-artifact-wrapper/install-talon.sh"
-          chmod +x "$RUNNER_TEMP/talon-artifact-wrapper/install-talon.sh"
+          mkdir -p "$RUNNER_TEMP/talon-release"
+          cp dist/talon-linux.tar.gz "$RUNNER_TEMP/talon-release/talon v0.1.0 linux.tar.gz"
+          tar -C "$RUNNER_TEMP/talon-release" -xzf "$RUNNER_TEMP/talon-release/talon v0.1.0 linux.tar.gz"
           (
-            cd "$RUNNER_TEMP/talon-artifact-wrapper"
-            ./install-talon.sh --no-deps --no-bin --no-desktop \
+            cd "$RUNNER_TEMP/talon-release/talon-linux"
+            ./install.sh --no-deps --no-bin --no-desktop \
               --prefix "$RUNNER_TEMP/talon-install" \
               --config "$RUNNER_TEMP/talon-config/talon.ini" \
               --data-dir "$RUNNER_TEMP/talon-data"
@@ -122,7 +122,6 @@ jobs:
           path: |
             dist/talon-linux.tar.gz
             dist/talon-linux.tar.gz.sha256
-            dist/install-talon.sh
 
       - name: Publish Linux release assets
         if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
@@ -131,7 +130,6 @@ jobs:
           files: |
             dist/talon-linux.tar.gz
             dist/talon-linux.tar.gz.sha256
-            dist/install-talon.sh
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
