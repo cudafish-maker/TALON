@@ -94,12 +94,28 @@ ldconfig_path() {
     fi
 }
 
+have_library_file() {
+    local library=$1
+    local dir
+
+    for dir in /lib /usr/lib /usr/local/lib /lib64 /usr/lib64 /lib/*-linux-gnu /usr/lib/*-linux-gnu; do
+        [[ -d $dir ]] || continue
+        compgen -G "$dir/$library" >/dev/null && return 0
+        compgen -G "$dir/$library.*" >/dev/null && return 0
+    done
+
+    return 1
+}
+
 have_library() {
     local library=$1
     local ldconfig_bin
 
-    ldconfig_bin=$(ldconfig_path) || return 1
-    "$ldconfig_bin" -p 2>/dev/null | grep -Eq "(^|[[:space:]])${library}([[:space:]]|$)"
+    if ldconfig_bin=$(ldconfig_path); then
+        "$ldconfig_bin" -p 2>/dev/null | grep -Eq "(^|[[:space:]])${library}([[:space:]]|$)" && return 0
+    fi
+
+    have_library_file "$library"
 }
 
 runtime_dependency_gaps() {
@@ -377,7 +393,10 @@ fi
 if [ -z "\${KIVY_HOME:-}" ]; then
   export KIVY_HOME=$kivy_home_q
 fi
+export KIVY_NO_ENV_CONFIG="\${KIVY_NO_ENV_CONFIG:-1}"
 export KIVY_NO_FILELOG="\${KIVY_NO_FILELOG:-1}"
+export KIVY_WINDOW="\${KIVY_WINDOW:-sdl2}"
+export SDL_VIDEO_X11_FORCE_EGL="\${SDL_VIDEO_X11_FORCE_EGL:-1}"
 exec $app_q "\$@"
 EOF
 
@@ -424,7 +443,10 @@ run_smoke_test() {
         env
         "TALON_CONFIG=$config_path"
         "KIVY_HOME=$state_dir/kivy-smoke"
+        "KIVY_NO_ENV_CONFIG=1"
         "KIVY_NO_FILELOG=1"
+        "KIVY_WINDOW=sdl2"
+        "SDL_VIDEO_X11_FORCE_EGL=1"
         "TALON_SMOKE_TEST_SECONDS=1"
     )
 

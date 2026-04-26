@@ -1,9 +1,13 @@
-# KIVY_NO_ENV_CONFIG must be set before any Kivy import.
 import os
+import sys
+
+# Kivy environment defaults must be set before any Kivy import.
 os.environ.setdefault("KIVY_NO_ENV_CONFIG", "1")
+os.environ.setdefault("KIVY_WINDOW", "sdl2")
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("SDL_VIDEO_X11_FORCE_EGL", "1")
 
 import logging
-import sys
 
 # Configure root logger before importing any talon module (which attaches a
 # NullHandler to the 'talon' logger and defers format/level to the entry point).
