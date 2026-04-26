@@ -5,7 +5,7 @@ import sys
 os.environ.setdefault("KIVY_NO_ENV_CONFIG", "1")
 os.environ.setdefault("KIVY_WINDOW", "sdl2")
 if sys.platform.startswith("linux"):
-    os.environ.setdefault("SDL_VIDEO_X11_FORCE_EGL", "1")
+    os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 
 import logging
 

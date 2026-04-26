@@ -85,7 +85,7 @@ jobs:
           KIVY_HOME: ${{ runner.temp }}/.kivy-smoke
           KIVY_NO_ENV_CONFIG: "1"
           KIVY_WINDOW: sdl2
-          SDL_VIDEO_X11_FORCE_EGL: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"
           SDL_AUDIODRIVER: dummy
           TALON_CONFIG: build/talon-smoke-client.ini
           TALON_SMOKE_TEST_SECONDS: "2"

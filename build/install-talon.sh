@@ -396,7 +396,7 @@ fi
 export KIVY_NO_ENV_CONFIG="\${KIVY_NO_ENV_CONFIG:-1}"
 export KIVY_NO_FILELOG="\${KIVY_NO_FILELOG:-1}"
 export KIVY_WINDOW="\${KIVY_WINDOW:-sdl2}"
-export SDL_VIDEO_X11_FORCE_EGL="\${SDL_VIDEO_X11_FORCE_EGL:-1}"
+export LIBGL_ALWAYS_SOFTWARE="\${LIBGL_ALWAYS_SOFTWARE:-1}"
 exec $app_q "\$@"
 EOF
 
@@ -446,7 +446,7 @@ run_smoke_test() {
         "KIVY_NO_ENV_CONFIG=1"
         "KIVY_NO_FILELOG=1"
         "KIVY_WINDOW=sdl2"
-        "SDL_VIDEO_X11_FORCE_EGL=1"
+        "LIBGL_ALWAYS_SOFTWARE=1"
         "TALON_SMOKE_TEST_SECONDS=1"
     )
 
