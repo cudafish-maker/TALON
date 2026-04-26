@@ -379,14 +379,16 @@ write_launcher_wrapper() {
     local app_q
     local config_q
     local kivy_home_q
+    local launch_log_q
 
     mkdir -p "$bin_dir" "$state_dir/kivy"
     app_q=$(shell_quote "$target_dir/talon")
     config_q=$(shell_quote "$config_path")
     kivy_home_q=$(shell_quote "$state_dir/kivy")
+    launch_log_q=$(shell_quote "$state_dir/launcher.log")
 
     cat > "$wrapper" <<EOF
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 if [ -z "\${TALON_CONFIG:-}" ]; then
   export TALON_CONFIG=$config_q
 fi
@@ -397,7 +399,70 @@ export KIVY_NO_ENV_CONFIG="\${KIVY_NO_ENV_CONFIG:-1}"
 export KIVY_NO_FILELOG="\${KIVY_NO_FILELOG:-1}"
 export KIVY_WINDOW="\${KIVY_WINDOW:-sdl2}"
 export LIBGL_ALWAYS_SOFTWARE="\${LIBGL_ALWAYS_SOFTWARE:-1}"
-exec $app_q "\$@"
+
+app=$app_q
+launch_log=$launch_log_q
+
+has_window_provider_failure() {
+  grep -Eiq "Couldn't find matching GLX visual|No matching FB config found|Could not get EGL display|Unable to find any valuable Window provider|No available video device|Wayland.*not available|Failed to connect to Wayland|Could not initialize Wayland" "\$1"
+}
+
+run_logged() {
+  local log_file=\$1
+  shift
+  : > "\$log_file"
+  set -o pipefail
+  "\$@" 2>&1 | tee "\$log_file"
+  return "\${PIPESTATUS[0]}"
+}
+
+if [ "\${TALON_DISABLE_GRAPHICS_FALLBACK:-0}" = "1" ]; then
+  exec "\$app" "\$@"
+fi
+
+mkdir -p "\$(dirname "\$launch_log")"
+
+run_logged "\$launch_log" "\$app" "\$@"
+status=\$?
+if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
+  exit "\$status"
+fi
+
+if [ -n "\${WAYLAND_DISPLAY:-}" ] && [ "\${SDL_VIDEODRIVER:-}" != "wayland" ]; then
+  printf '%s\n' "TALON: SDL/GLX startup failed; retrying with the Wayland video driver." >&2
+  (
+    export SDL_VIDEODRIVER=wayland
+    run_logged "\$launch_log" "\$app" "\$@"
+  )
+  status=\$?
+  if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
+    exit "\$status"
+  fi
+fi
+
+if [ -z "\${SDL_VIDEO_X11_FORCE_EGL:-}" ]; then
+  printf '%s\n' "TALON: SDL/GLX startup failed; retrying X11 with EGL." >&2
+  (
+    export SDL_VIDEO_X11_FORCE_EGL=1
+    run_logged "\$launch_log" "\$app" "\$@"
+  )
+  status=\$?
+  if [ "\$status" -eq 0 ] || ! has_window_provider_failure "\$launch_log"; then
+    exit "\$status"
+  fi
+fi
+
+cat >&2 <<MSG
+TALON could not create a Kivy window after SDL graphics fallbacks.
+The launcher log was written to: \$launch_log
+
+This usually means the current desktop, remote session, or X server cannot
+provide an OpenGL-capable visual. Verify the machine has a local graphical
+session or a GL-capable remote session, then check:
+  glxinfo -B
+  echo "\$XDG_SESSION_TYPE \$DISPLAY \$WAYLAND_DISPLAY"
+MSG
+exit "\$status"
 EOF
 
     chmod 755 "$wrapper"
