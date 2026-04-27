@@ -25,8 +25,9 @@ navigation, read-model pages, a core-event-to-Qt adapter, and a SITREP
 feed/composer with templates, opt-in audio state, and a non-modal dashboard
 alert overlay. The Assets page now has table/detail, create/edit,
 verification, deletion-request, and server-delete workflows. The
-Map page now renders local operational overlays for assets, zones, routes,
-waypoints, and asset-linked SITREPs. The Missions page now covers list/detail,
+Map page now renders selectable live OSM, TOPO, and Satellite raster base
+layers plus local operational overlays for assets, zones, routes, waypoints,
+and asset-linked SITREPs. The Missions page now covers list/detail,
 create, requested assets, AO/route input, and server lifecycle controls. The
 Chat page now covers channels, messages, composer, channel creation, DM
 creation, server-only delete controls, urgent rendering, and the Phase 2b DM

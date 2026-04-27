@@ -10,13 +10,28 @@ from talon_desktop.events import desktop_update_from_event
 class CoreEventBridge(QtCore.QObject):
     """Adapt core events into UI-thread friendly Qt signals."""
 
+    _coreEventQueued = QtCore.Signal(object)
     eventReceived = QtCore.Signal(object)
     refreshRequested = QtCore.Signal(str)
     recordMutated = QtCore.Signal(str, str, int)
     lockRequested = QtCore.Signal(str)
 
+    def __init__(self, parent: QtCore.QObject | None = None) -> None:
+        super().__init__(parent)
+        self._coreEventQueued.connect(
+            self._dispatch_core_event,
+            QtCore.Qt.QueuedConnection,
+        )
+
     @QtCore.Slot(object)
     def handle_core_event(self, event: DomainEvent) -> None:
+        if QtCore.QThread.currentThread() == self.thread():
+            self._dispatch_core_event(event)
+            return
+        self._coreEventQueued.emit(event)
+
+    @QtCore.Slot(object)
+    def _dispatch_core_event(self, event: DomainEvent) -> None:
         update = desktop_update_from_event(event)
         self.eventReceived.emit(event)
         for mutation in update.mutations:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtNetwork
 
 from talon_core import TalonCoreSession
 from talon_core.utils.logging import get_logger
@@ -15,6 +16,12 @@ from talon_desktop.map_data import (
     WaypointOverlay,
     ZoneOverlay,
     build_map_overlays,
+)
+from talon_desktop.map_tiles import (
+    TILE_LAYERS,
+    TILE_LAYERS_BY_KEY,
+    TileRequest,
+    build_tile_plan,
 )
 
 _log = get_logger("desktop.map")
@@ -40,6 +47,10 @@ class MapPage(QtWidgets.QWidget):
         self._bundle: MapOverlayBundle | None = None
         self._mission_ids: list[int | None] = [None]
         self._overlay_details: dict[str, str] = {}
+        self._tile_generation = 0
+        self._active_tile_layer_key = "osm"
+        self._network = QtNetwork.QNetworkAccessManager(self)
+        self._install_tile_cache()
 
         self.heading = QtWidgets.QLabel("Map")
         self.heading.setObjectName("pageHeading")
@@ -47,12 +58,28 @@ class MapPage(QtWidgets.QWidget):
         self.summary.setWordWrap(True)
         self.mission_filter = QtWidgets.QComboBox()
         self.mission_filter.currentIndexChanged.connect(lambda _index: self.refresh())
+        self.layer_group = QtWidgets.QButtonGroup(self)
+        self.layer_buttons: dict[str, QtWidgets.QRadioButton] = {}
+        layer_row = QtWidgets.QHBoxLayout()
+        layer_row.setSpacing(6)
+        for layer in TILE_LAYERS:
+            button = QtWidgets.QRadioButton(layer.label)
+            button.setChecked(layer.key == self._active_tile_layer_key)
+            self.layer_group.addButton(button)
+            self.layer_buttons[layer.key] = button
+            layer_row.addWidget(button)
+            button.toggled.connect(
+                lambda checked, key=layer.key: self._set_tile_layer(key)
+                if checked
+                else None
+            )
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
         top_row.addStretch(1)
+        top_row.addLayout(layer_row)
         top_row.addWidget(self.mission_filter)
         top_row.addWidget(self.refresh_button)
 
@@ -112,7 +139,9 @@ class MapPage(QtWidgets.QWidget):
     def _render_bundle(self, bundle: MapOverlayBundle) -> None:
         self._scene.clear()
         self._overlay_details.clear()
+        self._tile_generation += 1
         self._draw_background()
+        self._draw_tile_layer(bundle)
         for zone in bundle.zones:
             self._draw_zone(zone)
         for route in bundle.routes:
@@ -134,12 +163,75 @@ class MapPage(QtWidgets.QWidget):
             SCENE_HEIGHT,
             QtGui.QPen(QtGui.QColor("#2f3437")),
             QtGui.QBrush(QtGui.QColor("#111619")),
-        )
-        grid_pen = QtGui.QPen(QtGui.QColor("#273036"))
+        ).setZValue(-30)
+        grid_pen = QtGui.QPen(QtGui.QColor(236, 240, 241, 34))
         for x in range(100, int(SCENE_WIDTH), 100):
-            self._scene.addLine(x, 0, x, SCENE_HEIGHT, grid_pen)
+            item = self._scene.addLine(x, 0, x, SCENE_HEIGHT, grid_pen)
+            item.setZValue(-5)
         for y in range(100, int(SCENE_HEIGHT), 100):
-            self._scene.addLine(0, y, SCENE_WIDTH, y, grid_pen)
+            item = self._scene.addLine(0, y, SCENE_WIDTH, y, grid_pen)
+            item.setZValue(-5)
+
+    def _draw_tile_layer(self, bundle: MapOverlayBundle) -> None:
+        layer = TILE_LAYERS_BY_KEY.get(self._active_tile_layer_key, TILE_LAYERS[0])
+        plan = build_tile_plan(layer, bundle.bounds)
+        generation = self._tile_generation
+        for request in plan.requests:
+            self._request_tile(request, generation)
+        self._draw_attribution(layer.attribution)
+
+    def _request_tile(self, tile: TileRequest, generation: int) -> None:
+        request = QtNetwork.QNetworkRequest(QtCore.QUrl(tile.url))
+        request.setHeader(
+            QtNetwork.QNetworkRequest.UserAgentHeader,
+            "TALON Desktop/0.1 PySide6 map",
+        )
+        reply = self._network.get(request)
+        reply.finished.connect(
+            lambda reply=reply, tile=tile, generation=generation: self._tile_finished(
+                reply,
+                tile,
+                generation,
+            )
+        )
+
+    def _tile_finished(
+        self,
+        reply: QtNetwork.QNetworkReply,
+        tile: TileRequest,
+        generation: int,
+    ) -> None:
+        try:
+            if generation != self._tile_generation:
+                return
+            if reply.error() != QtNetwork.QNetworkReply.NoError:
+                _log.debug("Map tile request failed: %s", reply.errorString())
+                return
+            pixmap = QtGui.QPixmap()
+            if not pixmap.loadFromData(reply.readAll()):
+                return
+            item = self._scene.addPixmap(pixmap)
+            item.setTransformationMode(QtCore.Qt.SmoothTransformation)
+            item.setPos(tile.scene_x, tile.scene_y)
+            item.setTransform(
+                QtGui.QTransform().scale(
+                    tile.scene_width / pixmap.width(),
+                    tile.scene_height / pixmap.height(),
+                )
+            )
+            item.setZValue(-20)
+        finally:
+            reply.deleteLater()
+
+    def _draw_attribution(self, text: str) -> None:
+        item = self._scene.addText(text)
+        item.setDefaultTextColor(QtGui.QColor("#ecf0f1"))
+        item.setZValue(30)
+        bounds = item.boundingRect()
+        item.setPos(
+            SCENE_WIDTH - bounds.width() - 12,
+            SCENE_HEIGHT - bounds.height() - 8,
+        )
 
     def _draw_zone(self, zone: ZoneOverlay) -> None:
         polygon = QtGui.QPolygonF(
@@ -307,3 +399,22 @@ class MapPage(QtWidgets.QWidget):
         if selected_mission_id in ids:
             self.mission_filter.setCurrentIndex(ids.index(selected_mission_id))
         self.mission_filter.blockSignals(False)
+
+    def _set_tile_layer(self, key: str) -> None:
+        if key == self._active_tile_layer_key:
+            return
+        self._active_tile_layer_key = key
+        if self._bundle is not None:
+            self._render_bundle(self._bundle)
+        else:
+            self.refresh()
+
+    def _install_tile_cache(self) -> None:
+        cache = QtNetwork.QNetworkDiskCache(self)
+        try:
+            cache_dir = self._core.paths.data_dir / "cache" / "map_tiles"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache.setCacheDirectory(str(cache_dir))
+            self._network.setCache(cache)
+        except Exception as exc:
+            _log.debug("Map tile cache disabled: %s", exc)

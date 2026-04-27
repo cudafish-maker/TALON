@@ -192,8 +192,10 @@ upload, download/save, server delete, macro-risk warnings, and document error
 surfacing. Operators/server admin now covers operator list/detail,
 profile/skills editing, enrollment tokens, pending tokens, server hash, lease
 renewal, revocation, audit log viewing, and key/identity status. Feature parity
-refinements, tile layers/drawing tools, Linux packaging, and Windows validation
-remain open. Linux Breakpoint A development-shell validation passed locally:
+refinements, drawing tools, Linux packaging, and Windows validation remain open.
+The Map page now includes selectable live OSM, TOPO, and Satellite raster base
+layers; offline tile packaging/pre-cache remains deferred. Linux Breakpoint A
+development-shell validation passed locally:
 server and client unlock paths smoke-tested, and same-machine Reticulum TCP
 loopback completed enrollment plus server-to-client asset sync. Linux Breakpoint
 B has started with a PySide6 Linux PyInstaller spec, installer script, manual

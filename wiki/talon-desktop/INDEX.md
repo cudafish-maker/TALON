@@ -13,7 +13,8 @@ templates, asset/mission link selectors,
 server-only delete control, opt-in audio state, and a non-modal dashboard alert
 overlay for high-severity reports. The Assets page now has a Qt table, detail
 panel, create/edit dialog, verification controls, client deletion requests, and
-server hard-delete command wiring. The Map page now renders local operational
+server hard-delete command wiring. The Map page now renders live OSM, TOPO, and
+Satellite raster base layers with radio-button selection plus local operational
 overlays for assets, zones, mission routes/waypoints, and asset-linked SITREPs.
 The Missions page now has list/detail, create, requested asset, AO/route input,
 and server lifecycle controls. The Chat page now has channel/message navigation,

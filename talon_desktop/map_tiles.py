@@ -1,0 +1,206 @@
+"""Raster tile layer definitions and Web Mercator helpers for desktop maps."""
+from __future__ import annotations
+
+import dataclasses
+import math
+
+from talon_desktop.map_data import (
+    SCENE_HEIGHT,
+    SCENE_MARGIN,
+    SCENE_WIDTH,
+    MapBounds,
+)
+
+TILE_SIZE = 256
+MAX_TILE_REQUESTS = 72
+WEB_MERCATOR_MAX_LAT = 85.05112878
+
+
+@dataclasses.dataclass(frozen=True)
+class TileLayer:
+    key: str
+    label: str
+    url_template: str
+    attribution: str
+    min_zoom: int = 2
+    max_zoom: int = 18
+
+    def url(self, *, zoom: int, x: int, y: int) -> str:
+        return self.url_template.format(z=zoom, x=x, y=y)
+
+
+@dataclasses.dataclass(frozen=True)
+class TileRequest:
+    url: str
+    zoom: int
+    x: int
+    y: int
+    scene_x: float
+    scene_y: float
+    scene_width: float
+    scene_height: float
+
+
+@dataclasses.dataclass(frozen=True)
+class TilePlan:
+    layer: TileLayer
+    bounds: MapBounds
+    zoom: int
+    requests: tuple[TileRequest, ...]
+
+
+TILE_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        key="osm",
+        label="OSM",
+        url_template="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attribution="OpenStreetMap contributors",
+        max_zoom=19,
+    ),
+    TileLayer(
+        key="topo",
+        label="TOPO",
+        url_template="https://tile.openmaps.fr/opentopomap/{z}/{x}/{y}.png",
+        attribution="OpenStreetMap contributors, OpenTopoMap style",
+        max_zoom=17,
+    ),
+    TileLayer(
+        key="satellite",
+        label="Satellite",
+        url_template=(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        ),
+        attribution="Source: Esri World Imagery",
+        max_zoom=18,
+    ),
+)
+
+TILE_LAYERS_BY_KEY = {layer.key: layer for layer in TILE_LAYERS}
+
+
+def normalise_bounds(bounds: MapBounds) -> MapBounds:
+    min_lat = _clamp_lat(min(bounds.min_lat, bounds.max_lat))
+    max_lat = _clamp_lat(max(bounds.min_lat, bounds.max_lat))
+    min_lon = max(-180.0, min(bounds.min_lon, bounds.max_lon))
+    max_lon = min(180.0, max(bounds.min_lon, bounds.max_lon))
+    if min_lat == max_lat:
+        min_lat = _clamp_lat(min_lat - 0.01)
+        max_lat = _clamp_lat(max_lat + 0.01)
+    if min_lon == max_lon:
+        min_lon = max(-180.0, min_lon - 0.01)
+        max_lon = min(180.0, max_lon + 0.01)
+    return MapBounds(
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lon=min_lon,
+        max_lon=max_lon,
+    )
+
+
+def world_pixel(lat: float, lon: float, zoom: int) -> tuple[float, float]:
+    lat = _clamp_lat(lat)
+    lon = max(-180.0, min(180.0, lon))
+    scale = TILE_SIZE * (2**zoom)
+    x = (lon + 180.0) / 360.0 * scale
+    lat_rad = math.radians(lat)
+    y = (
+        1.0
+        - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi
+    ) / 2.0 * scale
+    return x, y
+
+
+def scene_point_for_lat_lon(
+    bounds: MapBounds,
+    lat: float,
+    lon: float,
+    *,
+    zoom: int | None = None,
+) -> tuple[float, float]:
+    bounds = normalise_bounds(bounds)
+    z = zoom if zoom is not None else choose_zoom(bounds)
+    left, top, span_x, span_y = _world_view(bounds, z)
+    point_x, point_y = world_pixel(lat, lon, z)
+    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
+    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
+    x = SCENE_MARGIN + ((point_x - left) / span_x) * usable_width
+    y = SCENE_MARGIN + ((point_y - top) / span_y) * usable_height
+    return x, y
+
+
+def build_tile_plan(layer: TileLayer, bounds: MapBounds) -> TilePlan:
+    bounds = normalise_bounds(bounds)
+    zoom = choose_zoom(bounds, min_zoom=layer.min_zoom, max_zoom=layer.max_zoom)
+    requests = _requests_for_zoom(layer, bounds, zoom)
+    while len(requests) > MAX_TILE_REQUESTS and zoom > layer.min_zoom:
+        zoom -= 1
+        requests = _requests_for_zoom(layer, bounds, zoom)
+    return TilePlan(layer=layer, bounds=bounds, zoom=zoom, requests=tuple(requests))
+
+
+def choose_zoom(
+    bounds: MapBounds,
+    *,
+    min_zoom: int = 2,
+    max_zoom: int = 18,
+) -> int:
+    bounds = normalise_bounds(bounds)
+    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
+    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
+    chosen = min_zoom
+    for zoom in range(min_zoom, max_zoom + 1):
+        _left, _top, span_x, span_y = _world_view(bounds, zoom)
+        chosen = zoom
+        if span_x >= usable_width or span_y >= usable_height:
+            break
+    return chosen
+
+
+def _requests_for_zoom(
+    layer: TileLayer,
+    bounds: MapBounds,
+    zoom: int,
+) -> list[TileRequest]:
+    left, top, span_x, span_y = _world_view(bounds, zoom)
+    right = left + span_x
+    bottom = top + span_y
+    tile_count = 2**zoom
+    min_x = max(0, int(math.floor(left / TILE_SIZE)))
+    max_x = min(tile_count - 1, int(math.floor((right - 0.001) / TILE_SIZE)))
+    min_y = max(0, int(math.floor(top / TILE_SIZE)))
+    max_y = min(tile_count - 1, int(math.floor((bottom - 0.001) / TILE_SIZE)))
+    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
+    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
+    requests: list[TileRequest] = []
+    for tile_y in range(min_y, max_y + 1):
+        for tile_x in range(min_x, max_x + 1):
+            tile_left = tile_x * TILE_SIZE
+            tile_top = tile_y * TILE_SIZE
+            scene_x = SCENE_MARGIN + ((tile_left - left) / span_x) * usable_width
+            scene_y = SCENE_MARGIN + ((tile_top - top) / span_y) * usable_height
+            scene_w = (TILE_SIZE / span_x) * usable_width
+            scene_h = (TILE_SIZE / span_y) * usable_height
+            requests.append(
+                TileRequest(
+                    url=layer.url(zoom=zoom, x=tile_x, y=tile_y),
+                    zoom=zoom,
+                    x=tile_x,
+                    y=tile_y,
+                    scene_x=scene_x,
+                    scene_y=scene_y,
+                    scene_width=scene_w,
+                    scene_height=scene_h,
+                )
+            )
+    return requests
+
+
+def _world_view(bounds: MapBounds, zoom: int) -> tuple[float, float, float, float]:
+    left, top = world_pixel(bounds.max_lat, bounds.min_lon, zoom)
+    right, bottom = world_pixel(bounds.min_lat, bounds.max_lon, zoom)
+    return left, top, max(1.0, right - left), max(1.0, bottom - top)
+
+
+def _clamp_lat(lat: float) -> float:
+    return max(-WEB_MERCATOR_MAX_LAT, min(WEB_MERCATOR_MAX_LAT, lat))

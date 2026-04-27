@@ -35,5 +35,7 @@ Desktop presents channel and message workflows backed by core chat services.
 ## Acceptance
 
 - Chat refreshes on server push and client push ack.
+- Network-applied message/channel updates reach the PySide6 event bridge without
+  requiring the legacy Kivy data-pushed callback.
 - Urgent/FLASH-related channel behavior remains visible.
 - Server-only delete controls are hidden from clients.

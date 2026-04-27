@@ -406,6 +406,47 @@ def test_core_session_client_chat_message_enters_outbox(
     session.close()
 
 
+def test_core_session_network_client_notify_publishes_refresh_event(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    received = []
+    session.subscribe(received.append)
+
+    session._notify_client_ui("assets", badge=False)
+
+    assert len(received) == 1
+    assert received[0].kind == "ui_refresh_requested"
+    assert received[0].ui_targets == frozenset({"assets", "main"})
+
+    session.close()
+
+
+def test_core_session_network_notify_keeps_legacy_callback_authoritative(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    callback_calls = []
+    session = TalonCoreSession(
+        config_path=config_path,
+        on_data_pushed=lambda table, *, badge=True: callback_calls.append(
+            (table, badge)
+        ),
+    ).start()
+    session.unlock_with_key(TEST_KEY)
+    received = []
+    session.subscribe(received.append)
+
+    session._notify_client_ui("assets", badge=False)
+
+    assert callback_calls == [("assets", False)]
+    assert received == []
+
+    session.close()
+
+
 def test_core_session_server_admin_boundary(tmp_path: pathlib.Path) -> None:
     config_path = _write_config(tmp_path, "server")
     session = TalonCoreSession(config_path=config_path).start()

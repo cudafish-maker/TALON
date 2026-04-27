@@ -19,6 +19,9 @@ platform split.
 - Core service command events feed sync side effects through
   `TalonCoreSession`: server mutations call `notify_change`/`notify_delete`,
   and client primary outbox records are marked pending and queued for push.
+- Network-applied records notify the core event stream with table refresh
+  events when a client uses event subscriptions instead of the legacy Kivy
+  `on_data_pushed` callback.
 - `ClientSyncManager.push_record_pending()` is the public client outbox entry
   point used by the facade for immediate chat/SITREP/asset push attempts.
 - Tombstone sync for deletes.

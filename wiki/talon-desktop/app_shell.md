@@ -57,7 +57,8 @@ The desktop target should keep the current operational density:
 - The Dashboard section renders the core `dashboard.summary` and `sync.status`
   read models instead of calculating counts in desktop code.
 - `talon_desktop.qt_events.CoreEventBridge` adapts core domain events into Qt
-  refresh, mutation, and lock signals.
+  refresh, mutation, and lock signals. Network-thread core callbacks are
+  marshalled onto the Qt object thread before refresh signals are emitted.
 - `talon_desktop.sitrep_page.SitrepPage` is the first non-placeholder feature
   page. It uses core read models and commands for the feed, composer, linked
   asset/mission selectors, server-only delete, composer templates, and audio
@@ -69,8 +70,9 @@ The desktop target should keep the current operational density:
   with a table, detail panel, create/edit dialog, verification controls, and
   deletion-request/server-delete command wiring.
 - `talon_desktop.map_page.MapPage` replaces the generic Map placeholder with a
-  Qt rendered operational overlay surface for assets, zones, routes, waypoints,
-  and asset-linked SITREPs.
+  Qt rendered map surface: OSM, TOPO, and Satellite raster base layers selectable
+  by radio button, with operational overlays for assets, zones, routes,
+  waypoints, and asset-linked SITREPs.
 - `talon_desktop.mission_page.MissionPage` replaces the generic Missions
   placeholder with a list/detail page, create workflow, AO/route input,
   requested asset selection, and server lifecycle command controls.
@@ -84,13 +86,16 @@ The desktop target should keep the current operational density:
   Clients, Audit, and Keys placeholders with operator profile/skills editing,
   enrollment token generation, pending token list, server hash display, lease
   renewal, revocation, audit log viewing, and key/identity status.
+- Server-to-client and client-to-server network-applied table changes refresh
+  the relevant PySide6 pages through core `ui_refresh_requested` events, so
+  operators should not need manual page refresh after sync traffic arrives.
 
 ## Open Gaps
 
 - Major function pages have initial command-backed workflows and offscreen smoke
   coverage; remaining gaps are parity refinements and packaging validation.
-- Map has a rendered operational overlay surface; OSM/Satellite/Topo tile
-  layers and drawing tools remain open.
+- Map drawing tools for AO polygons, waypoint routes, and asset placement remain
+  open.
 - Linux package validation and Windows package validation are still pending.
 
 ## Migration Rule

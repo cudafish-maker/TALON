@@ -9,6 +9,7 @@ DomainEventKind = typing.Literal[
     "record_changed",
     "record_deleted",
     "linked_records_changed",
+    "ui_refresh_requested",
     "lease_renewed",
     "operator_revoked",
 ]
@@ -99,6 +100,16 @@ def linked_records_changed(
     return DomainEvent(
         "linked_records_changed",
         records=tuple(changes),
+        ui_targets=frozenset(ui_targets),
+    )
+
+
+def ui_refresh_requested(
+    *,
+    ui_targets: typing.Iterable[str] = (),
+) -> DomainEvent:
+    return DomainEvent(
+        "ui_refresh_requested",
         ui_targets=frozenset(ui_targets),
     )
 

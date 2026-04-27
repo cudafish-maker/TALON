@@ -10,12 +10,35 @@ _Severity: CRITICAL > HIGH > MEDIUM > LOW > NOTE._
 
 | Status | Count |
 |--------|-------|
-| FIXED  | 107   |
+| FIXED  | 108   |
 | CLOSED (non-issue) | 1 |
 
 ---
 
 ## Fixed Issues
+
+### [BUG-090] PySide6 desktop misses network-applied refresh events
+- **File:** `talon_core/session.py`, `talon_core/services/events.py`, `talon_desktop/qt_events.py`
+- **Severity:** HIGH
+- **Category:** Bug / Sync / UI Refresh
+- **Status:** FIXED 2026-04-27
+- **Description:** Network-applied records could update the local database
+  without refreshing the PySide6 desktop. The client and server sync managers
+  notified `TalonCoreSession._notify_client_ui()` /
+  `_notify_server_ui()`, but the PySide6 runtime does not install the legacy
+  `on_data_pushed` callback used by Kivy. As a result, server-to-client changes
+  and server UI refreshes after client pushes could require manual refresh even
+  though sync traffic arrived.
+- **Fix:** Core now emits a `ui_refresh_requested` event for network table
+  notifications when no legacy callback is installed, preserving the Kivy badge
+  callback path when it is present. Operator sync notifications now map to
+  operator/client/chat refresh targets. The Qt event bridge now queues
+  cross-thread core callbacks onto the Qt object thread before emitting refresh
+  signals. Regression tests cover core network refresh event publication,
+  legacy callback precedence, desktop event mapping, and sync notification
+  behavior.
+
+---
 
 ### [BUG-089] Linux installer archive auto-discovery can select unrelated downloads
 - **File:** `build/install-talon.sh`, `.github/workflows/build-desktop.yml`

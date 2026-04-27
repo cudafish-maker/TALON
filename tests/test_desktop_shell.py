@@ -40,6 +40,12 @@ from talon_desktop.documents import (
 from talon_desktop.events import desktop_update_from_event, refresh_sections_for_events
 from talon_desktop.logs import DesktopLogBuffer
 from talon_desktop.map_data import build_map_overlays, project_lat_lon
+from talon_desktop.map_tiles import (
+    MAX_TILE_REQUESTS,
+    TILE_LAYERS_BY_KEY,
+    build_tile_plan,
+    scene_point_for_lat_lon,
+)
 from talon_desktop.missions import (
     build_create_payload as build_mission_create_payload,
     item_from_mission,
@@ -531,6 +537,61 @@ def test_refresh_sections_for_events_combines_updates() -> None:
     )
 
     assert sections == frozenset({"documents", "chat"})
+
+
+def test_refresh_sections_for_network_table_refresh_events() -> None:
+    from talon_core.services.events import ui_refresh_requested
+
+    sections = refresh_sections_for_events(
+        (ui_refresh_requested(ui_targets=("assets", "main")),)
+    )
+
+    assert sections == frozenset({"assets", "dashboard", "map"})
+
+
+def test_map_tile_plan_builds_visible_osm_tiles() -> None:
+    from talon_desktop.map_data import MapBounds
+
+    bounds = MapBounds(min_lat=42.9, max_lat=43.2, min_lon=-71.3, max_lon=-71.0)
+    plan = build_tile_plan(TILE_LAYERS_BY_KEY["osm"], bounds)
+
+    assert plan.zoom >= 10
+    assert 1 <= len(plan.requests) <= MAX_TILE_REQUESTS
+    assert all(
+        request.url.startswith("https://tile.openstreetmap.org/")
+        for request in plan.requests
+    )
+    assert all(
+        request.scene_width > 0 and request.scene_height > 0
+        for request in plan.requests
+    )
+
+
+def test_map_tile_layers_expose_required_base_maps() -> None:
+    assert {"osm", "topo", "satellite"}.issubset(TILE_LAYERS_BY_KEY)
+    assert "openmaps.fr/opentopomap" in TILE_LAYERS_BY_KEY["topo"].url(
+        zoom=4,
+        x=1,
+        y=2,
+    )
+    assert (
+        "World_Imagery/MapServer/tile/4/2/1"
+        in TILE_LAYERS_BY_KEY["satellite"].url(
+            zoom=4,
+            x=1,
+            y=2,
+        )
+    )
+
+
+def test_map_scene_projection_uses_web_mercator_bounds() -> None:
+    from talon_desktop.map_data import MapBounds
+
+    bounds = MapBounds(min_lat=40.0, max_lat=45.0, min_lon=-75.0, max_lon=-70.0)
+    x, y = scene_point_for_lat_lon(bounds, 42.5, -72.5)
+
+    assert 48.0 < x < 952.0
+    assert 48.0 < y < 652.0
 
 
 def test_legacy_target_mapping_can_refresh_main_desktop_surfaces() -> None:

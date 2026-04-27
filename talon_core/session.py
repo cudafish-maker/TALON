@@ -437,10 +437,23 @@ class TalonCoreSession:
     def _notify_server_ui(self, table: str) -> None:
         if self._on_data_pushed is not None:
             self._on_data_pushed(table)
+            return
+        self._publish_table_refresh(table)
 
     def _notify_client_ui(self, table: str, *, badge: bool = True) -> None:
         if self._on_data_pushed is not None:
             self._on_data_pushed(table, badge=badge)
+            return
+        self._publish_table_refresh(table)
+
+    def _publish_table_refresh(self, table: str) -> None:
+        from talon_core.network.registry import ui_refresh_targets
+        from talon_core.services.events import ui_refresh_requested
+
+        targets = ui_refresh_targets(table)
+        if not targets:
+            return
+        self.publish_events((ui_refresh_requested(ui_targets=targets),))
 
     def _trigger_client_lock_check(self, operator_id: int) -> None:
         if self._on_client_lock_check is not None:

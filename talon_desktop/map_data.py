@@ -79,6 +79,12 @@ class MapOverlayBundle:
 SCENE_WIDTH = 1000.0
 SCENE_HEIGHT = 700.0
 SCENE_MARGIN = 48.0
+DEFAULT_MAP_BOUNDS = MapBounds(
+    min_lat=-60.0,
+    max_lat=75.0,
+    min_lon=-170.0,
+    max_lon=170.0,
+)
 
 
 def build_map_overlays(
@@ -195,7 +201,7 @@ def bounds_for_context(
         coords.append((float(_field(waypoint, "lat")), float(_field(waypoint, "lon"))))
 
     if not coords:
-        return MapBounds(min_lat=-0.01, max_lat=0.01, min_lon=-0.01, max_lon=0.01)
+        return DEFAULT_MAP_BOUNDS
 
     lats = [lat for lat, _lon in coords]
     lons = [lon for _lat, lon in coords]
@@ -218,12 +224,9 @@ def bounds_for_context(
 
 
 def project_lat_lon(bounds: MapBounds, lat: float, lon: float) -> ProjectedPoint:
-    x_span = bounds.max_lon - bounds.min_lon
-    y_span = bounds.max_lat - bounds.min_lat
-    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
-    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
-    x = SCENE_MARGIN + ((lon - bounds.min_lon) / x_span) * usable_width
-    y = SCENE_MARGIN + ((bounds.max_lat - lat) / y_span) * usable_height
+    from talon_desktop.map_tiles import scene_point_for_lat_lon
+
+    x, y = scene_point_for_lat_lon(bounds, lat, lon)
     return ProjectedPoint(lat=lat, lon=lon, x=x, y=y)
 
 

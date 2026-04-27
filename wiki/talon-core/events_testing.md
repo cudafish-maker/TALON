@@ -14,6 +14,8 @@ Core emits events for:
 - Sync status and pending outbox count.
 - UI refresh and unread badge routing.
 - SITREP alert overlays and opt-in audio eligibility.
+- Network-applied table refreshes for clients and servers that subscribe to the
+  core event stream directly.
 
 Desktop should adapt events to Qt signals. Mobile should adapt events to
 Android/Chaquopy callbacks. Neither client should reimplement event policy.
@@ -61,3 +63,10 @@ Android/Chaquopy callbacks. Neither client should reimplement event policy.
   loopback completion:
   `pytest -q`
   passed with 255 tests.
+- 2026-04-27: Added `ui_refresh_requested` events for network-applied table
+  notifications in PySide6 runtimes, while preserving the legacy Kivy
+  `on_data_pushed` badge path. Focused verification
+  `pytest -q tests/test_core_session.py tests/test_app_events.py
+  tests/test_desktop_shell.py tests/test_registry.py tests/test_sync.py`
+  passed, 112 tests and 1 skipped. Full `pytest -q` passed, 269 tests and
+  1 skipped.

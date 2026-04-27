@@ -12,6 +12,17 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-27: `python -m py_compile talon_desktop/map_tiles.py
+  talon_desktop/map_data.py talon_desktop/map_page.py tests/test_desktop_shell.py`
+  passed after adding OSM, TOPO, and Satellite live tile layers.
+- 2026-04-27: `pytest -q tests/test_desktop_shell.py -k "map or qt"` passed,
+  17 tests, covering tile layer definitions, Web Mercator tile planning, and
+  offscreen Qt map construction.
+- 2026-04-27: `pytest -q` passed, 272 tests and 1 skipped after live map tile
+  layer wiring.
+- 2026-04-27: `pytest -q` passed, 269 tests and 1 skipped after fixing
+  PySide6 network-applied refresh events for server-to-client and
+  client-to-server sync notifications.
 - 2026-04-27: `pytest -q` passed, 262 passed and 1 skipped after replacing the
   last active `talon.app`/Kivy event test with PySide6 core event bridge
   coverage. The skipped test is PySide6-gated for non-desktop local Python
