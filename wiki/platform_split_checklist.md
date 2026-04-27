@@ -135,7 +135,7 @@ server/client release, then validate Windows.
 - [x] Add `python -m talon_desktop` launcher.
 - [x] Add `talon-desktop` console script.
 - [x] Split desktop dependencies away from legacy Kivy/KivyMD.
-- [x] Keep legacy Kivy dependencies under a separate `legacy-kivy` extra.
+- [x] Remove legacy Kivy dependency extras from active project metadata.
 - [x] Add PySide6 login/unlock window.
 - [x] Add client enrollment prompt.
 - [x] Add lease/revocation lock dialog.
@@ -449,19 +449,20 @@ Goal: build a field-first Android client using the proven embedded Python core.
 
 ## Phase 5: Kivy Retirement
 
-Goal: remove Kivy from release paths after replacement clients are accepted.
+Goal: remove Kivy from active release paths. The user accepted abandoning Kivy
+desktop work on 2026-04-27 so CI and dependency metadata should stay PySide6
+only, while archived Kivy source can remain as reference until a cleanup branch.
 
 - [ ] Confirm PySide6 desktop has reached feature parity.
 - [ ] Confirm Android client has reached accepted field-client baseline.
-- [ ] Stop publishing Kivy Linux artifacts.
-- [ ] Stop publishing Kivy Windows artifacts, if any remain.
-- [ ] Remove Kivy from active desktop packaging.
-- [ ] Remove KivyMD from active desktop packaging.
+- [x] Stop publishing Kivy Linux artifacts.
+- [x] Stop publishing Kivy Windows artifacts, if any remain.
+- [x] Remove Kivy from active desktop packaging.
+- [x] Remove KivyMD from active desktop packaging.
 - [ ] Archive Kivy UI code or move it to a legacy branch.
 - [ ] Keep rollback notes until at least one desktop and one mobile release are
   proven.
-- [ ] Update root wiki to identify active release artifacts as PySide6 desktop
-  and Android/Chaquopy mobile.
+- [x] Update root wiki to identify active desktop release artifacts as PySide6.
 
 ## Ongoing Cross-Project Work
 

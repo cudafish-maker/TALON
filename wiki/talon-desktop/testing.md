@@ -12,6 +12,14 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-27: `pytest -q tests/test_attribution_flows.py` passed, 3 tests after
+  retiring Kivy screen imports from active attribution coverage.
+- 2026-04-27: `pytest -q tests/test_desktop_shell.py -k pyproject` passed,
+  confirming active project dependency extras no longer expose
+  Kivy/KivyMD/mapview.
+- 2026-04-27: `pytest -q` passed, 267 tests after removing the legacy Kivy
+  build workflow and replacing active Kivy attribution tests with core command
+  attribution tests.
 - 2026-04-27: `bash -n build/install-talon-desktop.sh` passed after
   role-specific Linux artifact installer wiring.
 - 2026-04-27: `pytest -q tests/test_linux_installer.py` passed, 11 tests after

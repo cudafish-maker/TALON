@@ -9,13 +9,14 @@ a polished Linux server/client release candidate before Windows work starts.
 - Windows packaging follows after the Linux server/client release candidate is
   accepted.
 - Desktop imports `talon-core` directly.
-- `pip install -e ".[desktop]"` installs the PySide6 desktop path without
-  resolving legacy Kivy/KivyMD. Kivy now lives under the `legacy-kivy` extra.
+- `pip install -e ".[desktop]"` installs the PySide6 desktop path only. There
+  is no active Kivy/KivyMD optional extra.
 
-## Current Legacy Kivy State
+## Retired Legacy Kivy State
 
-The current Linux package is PyInstaller-based and includes Kivy/KivyMD runtime
-assets. Recent work added:
+The former legacy Linux package was PyInstaller-based and included Kivy/KivyMD
+runtime assets. That release path is abandoned for active CI and publishing as
+of 2026-04-27. Historical work included:
 
 - `talon-linux.tar.gz` artifact plus SHA-256 checksum.
 - Embedded installer at `talon-linux/install.sh`.
@@ -32,12 +33,12 @@ fallbacks. This reinforces the move to PySide6.
 - Base dependencies are shared core/runtime packages: Reticulum, crypto,
   SQLCipher binding, and document security packages.
 - `desktop` adds PySide6 and PyInstaller only.
-- `legacy-kivy` contains Kivy, the KivyMD Git dependency, and mapview for the
-  temporary compatibility client.
+- Kivy, KivyMD, and mapview are not exposed through active project dependency
+  extras.
 
 ## PySide6 Linux Package Path
 
-The PySide6 package path is separate from the legacy Kivy package path:
+The PySide6 package path is the active Linux desktop release path:
 
 - PyInstaller spec: `build/pyinstaller-linux-desktop.spec`
 - Installer script embedded as `install.sh`: `build/install-talon-desktop.sh`

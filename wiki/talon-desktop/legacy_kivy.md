@@ -1,14 +1,14 @@
 # Legacy Kivy State
 
-Kivy/KivyMD is the current implementation but no longer the target desktop or
-mobile architecture.
+Kivy/KivyMD is retired from active TALON desktop work as of 2026-04-27. The
+PySide6 desktop is the active Linux release path; do not add Kivy dependencies,
+CI jobs, or tests back to active workflows.
 
 ## What Remains Useful
 
-- Existing workflows and behavior.
-- Existing tests around core-like behavior.
-- Current screen behavior as acceptance reference.
-- Emergency release patches if a Kivy build must ship before PySide6 parity.
+- Historical behavior as an acceptance reference when useful.
+- Archived source context until the Kivy UI is deleted or moved to a legacy
+  branch.
 
 ## Known Problems
 
@@ -20,6 +20,8 @@ mobile architecture.
 
 ## Freeze Policy
 
-- Do not build new strategic UI features in Kivy.
-- Patch only emergency release blockers or migration helpers.
-- Retire Kivy release artifacts after PySide6 desktop reaches feature parity.
+- Do not build new UI features in Kivy.
+- Do not publish Kivy desktop artifacts.
+- Do not add Kivy/KivyMD/mapview to active project extras or CI installs.
+- Move or delete the archived Kivy UI code in a later cleanup branch when it is
+  no longer useful as reference material.

@@ -1,155 +1,183 @@
-"""Regression tests for screen flows that delegate attribution to core."""
+"""Regression tests for core-owned attribution flows.
 
-from types import SimpleNamespace
+Kivy screen tests used to cover these paths indirectly. Active desktop work now
+targets PySide6, so attribution belongs at the ``talon-core`` command boundary.
+"""
 
-from talon.ui.screens import asset_screen, mission_create_screen, sitrep_screen
+import pathlib
+import time
 
+import pytest
 
-class _FakeCoreSession:
-    is_unlocked = True
+from talon_core import TalonCoreSession
+from talon_core.operators import LocalOperatorResolutionError
 
-    def __init__(self) -> None:
-        self.commands: list[tuple[str, dict]] = []
-
-    def command(self, command_name: str, payload=None, **kwargs):
-        data = dict(payload or {})
-        data.update(kwargs)
-        self.commands.append((command_name, data))
-        if command_name == "assets.create":
-            return SimpleNamespace(asset_id=81, events=("asset-created",))
-        if command_name == "missions.create":
-            return SimpleNamespace(mission=SimpleNamespace(id=82), events=("mission-created",))
-        if command_name == "sitreps.create":
-            return SimpleNamespace(record_id=91, events=("sitrep-created",))
-        return SimpleNamespace(events=())
+TEST_KEY = bytes(range(32))
 
 
-class _FakeApp:
-    def __init__(self) -> None:
-        self.conn = object()
-        self.db_key = bytes(range(32))
-        self.mode = "client"
-        self.core_session = _FakeCoreSession()
-        self.require_calls: list[bool] = []
-        self.dispatched: list[tuple] = []
-        self.net_notifications: list[tuple[str, int]] = []
-
-    def require_local_operator_id(self, *, allow_server_sentinel: bool = False) -> int:
-        self.require_calls.append(allow_server_sentinel)
-        return 77
-
-    def dispatch_domain_events(self, events) -> None:
-        self.dispatched.append(tuple(events))
-
-    def net_notify_change(self, table: str, record_id: int) -> None:
-        self.net_notifications.append((table, record_id))
-
-
-class _FakeModal:
-    def __init__(self) -> None:
-        self.dismissed = False
-
-    def dismiss(self) -> None:
-        self.dismissed = True
+def _write_config(tmp_path: pathlib.Path, mode: str) -> pathlib.Path:
+    data_dir = tmp_path / f"{mode}-data"
+    rns_dir = tmp_path / f"{mode}-rns"
+    documents_dir = tmp_path / f"{mode}-documents"
+    config_path = tmp_path / f"{mode}.ini"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[talon]",
+                f"mode = {mode}",
+                "",
+                "[paths]",
+                f"data_dir = {data_dir}",
+                f"rns_config_dir = {rns_dir}",
+                "",
+                "[documents]",
+                f"storage_path = {documents_dir}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return config_path
 
 
-def test_asset_screen_create_delegates_to_core(monkeypatch):
-    fake_app = _FakeApp()
-    screen = asset_screen.AssetScreen.__new__(asset_screen.AssetScreen)
-    modal = _FakeModal()
-    status_label = SimpleNamespace(text="")
-    load_calls = []
-    refresh_calls = []
-    screen._load_assets = lambda: load_calls.append(True)
-    screen._refresh_map = lambda: refresh_calls.append(True)
+def _seed_client_operator(session: TalonCoreSession, operator_id: int = 2) -> None:
+    now = int(time.time())
+    session.conn.execute(
+        "INSERT OR REPLACE INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+        "VALUES (?, ?, ?, '[]', '{}', ?, ?, 0)",
+        (
+            operator_id,
+            f"ALPHA-{operator_id}",
+            f"client-rns-hash-{operator_id}",
+            now,
+            now + 3600,
+        ),
+    )
+    session.conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('my_operator_id', ?)",
+        (str(operator_id),),
+    )
+    session.conn.commit()
 
-    monkeypatch.setattr(
-        asset_screen,
-        "App",
-        type("FakeAssetApp", (), {"get_running_app": staticmethod(lambda: fake_app)}),
+
+def test_client_asset_sitrep_and_mission_commands_use_local_operator(
+    tmp_path: pathlib.Path,
+) -> None:
+    session = TalonCoreSession(config_path=_write_config(tmp_path, "client")).start()
+    session.unlock_with_key(TEST_KEY)
+    _seed_client_operator(session, operator_id=2)
+
+    asset = session.command(
+        "assets.create",
+        category="cache",
+        label="Client Cache",
+        description="",
+    )
+    sitrep = session.command(
+        "sitreps.create",
+        level="ROUTINE",
+        body="client-authored sitrep",
+        asset_id=asset.asset_id,
+    )
+    mission = session.command(
+        "missions.create",
+        title="Client Mission",
+        description="client-authored mission",
+        asset_ids=[asset.asset_id],
     )
 
-    screen._do_create(modal, status_label, "cache", "CACHE-77", "", "", "")
+    asset_row = session.conn.execute(
+        "SELECT created_by FROM assets WHERE id = ?",
+        (asset.asset_id,),
+    ).fetchone()
+    sitrep_row = session.conn.execute(
+        "SELECT author_id FROM sitreps WHERE id = ?",
+        (sitrep.record_id,),
+    ).fetchone()
+    mission_row = session.conn.execute(
+        "SELECT created_by FROM missions WHERE id = ?",
+        (mission.mission.id,),
+    ).fetchone()
 
-    assert fake_app.core_session.commands == [
-        (
+    assert asset_row == (2,)
+    assert sitrep_row == (2,)
+    assert mission_row == (2,)
+
+    session.close()
+
+
+def test_server_asset_sitrep_and_mission_commands_use_server_sentinel(
+    tmp_path: pathlib.Path,
+) -> None:
+    session = TalonCoreSession(config_path=_write_config(tmp_path, "server")).start()
+    session.unlock_with_key(TEST_KEY)
+
+    asset = session.command(
+        "assets.create",
+        category="cache",
+        label="Server Cache",
+        description="",
+    )
+    sitrep = session.command(
+        "sitreps.create",
+        level="ROUTINE",
+        body="server-authored sitrep",
+        asset_id=asset.asset_id,
+    )
+    mission = session.command(
+        "missions.create",
+        title="Server Mission",
+        description="server-authored mission",
+        asset_ids=[asset.asset_id],
+    )
+
+    asset_row = session.conn.execute(
+        "SELECT created_by FROM assets WHERE id = ?",
+        (asset.asset_id,),
+    ).fetchone()
+    sitrep_row = session.conn.execute(
+        "SELECT author_id FROM sitreps WHERE id = ?",
+        (sitrep.record_id,),
+    ).fetchone()
+    mission_row = session.conn.execute(
+        "SELECT created_by FROM missions WHERE id = ?",
+        (mission.mission.id,),
+    ).fetchone()
+
+    assert asset_row == (1,)
+    assert sitrep_row == (1,)
+    assert mission_row == (1,)
+
+    session.close()
+
+
+def test_client_commands_require_enrolled_local_operator(
+    tmp_path: pathlib.Path,
+) -> None:
+    session = TalonCoreSession(config_path=_write_config(tmp_path, "client")).start()
+    session.unlock_with_key(TEST_KEY)
+
+    with pytest.raises(LocalOperatorResolutionError):
+        session.command(
             "assets.create",
-            {
-                "category": "cache",
-                "label": "CACHE-77",
-                "description": "",
-                "lat": None,
-                "lon": None,
-            },
+            category="cache",
+            label="Unattributed Cache",
+            description="",
         )
-    ]
-    assert fake_app.require_calls == []
-    assert fake_app.dispatched == []
-    assert modal.dismissed is True
-    assert load_calls == [True]
-    assert refresh_calls == [True]
 
-
-def test_mission_create_submit_delegates_to_core(monkeypatch):
-    fake_app = _FakeApp()
-    screen = mission_create_screen.MissionCreateScreen.__new__(
-        mission_create_screen.MissionCreateScreen
-    )
-    screen._data = {"title": "Mission 77", "description": "client-created"}
-    screen._selected_asset_ids = {8, 9}
-    screen._ao_polygon = None
-    screen._route = None
-    screen.manager = SimpleNamespace(current="mission_create")
-    screen._collect_all_steps = lambda: None
-    screen._show_error = lambda _message: None
-
-    monkeypatch.setattr(
-        mission_create_screen,
-        "App",
-        type("FakeMissionApp", (), {"get_running_app": staticmethod(lambda: fake_app)}),
-    )
-
-    screen._do_submit()
-
-    assert fake_app.core_session.commands[0][0] == "missions.create"
-    assert set(fake_app.core_session.commands[0][1]["asset_ids"]) == {8, 9}
-    assert "created_by" not in fake_app.core_session.commands[0][1]
-    assert fake_app.require_calls == []
-    assert fake_app.dispatched == []
-    assert screen.manager.current == "mission"
-
-
-def test_sitrep_submit_delegates_to_core(monkeypatch):
-    fake_app = _FakeApp()
-    screen = sitrep_screen.SitrepScreen.__new__(sitrep_screen.SitrepScreen)
-    screen._compose_level = "ROUTINE"
-    screen._linked_asset_id = None
-    screen._linked_asset_label = ""
-    screen._linked_mission_id = None
-    screen._linked_mission_title = ""
-    screen._body_field = SimpleNamespace(text="existing")
-    screen._update_link_status = lambda: None
-    screen._load_feed = lambda: None
-    screen._set_status = lambda _text, **_kwargs: None
-
-    monkeypatch.setattr(
-        sitrep_screen,
-        "App",
-        type("FakeSitrepApp", (), {"get_running_app": staticmethod(lambda: fake_app)}),
-    )
-
-    screen.on_submit_pressed(" client-authored sitrep ")
-
-    assert fake_app.core_session.commands == [
-        (
+    with pytest.raises(LocalOperatorResolutionError):
+        session.command(
             "sitreps.create",
-            {
-                "level": "ROUTINE",
-                "body": "client-authored sitrep",
-                "asset_id": None,
-                "mission_id": None,
-            },
+            level="ROUTINE",
+            body="unattributed sitrep",
         )
-    ]
-    assert fake_app.require_calls == []
-    assert fake_app.net_notifications == []
+
+    with pytest.raises(LocalOperatorResolutionError):
+        session.command(
+            "missions.create",
+            title="Unattributed Mission",
+            description="",
+        )
+
+    session.close()

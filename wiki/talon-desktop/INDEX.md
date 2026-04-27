@@ -5,11 +5,11 @@ plus PySide6/Qt importing `talon-core` directly.
 
 ## Current Status
 
-The active release path still uses Kivy/KivyMD, but Phase 2 has started. The
-repo now contains an initial `talon_desktop` PySide6 shell with login/unlock,
-client enrollment prompt, lease/revocation lock dialog, main navigation,
-read-model pages, and a Qt event adapter around `talon-core`. The SITREP page
-now has a Qt feed, composer templates, asset/mission link selectors,
+The active desktop release path is now PySide6. The repo contains a
+`talon_desktop` PySide6 shell with login/unlock, client enrollment prompt,
+lease/revocation lock dialog, main navigation, read-model pages, and a Qt event
+adapter around `talon-core`. The SITREP page now has a Qt feed, composer
+templates, asset/mission link selectors,
 server-only delete control, opt-in audio state, and a non-modal dashboard alert
 overlay for high-severity reports. The Assets page now has a Qt table, detail
 panel, create/edit dialog, verification controls, client deletion requests, and
@@ -24,9 +24,9 @@ warning, and document error surfacing. Operators/server admin pages now cover
 operator list/detail, profile/skills editing, enrollment token generation,
 pending tokens, server hash, lease renewal, revocation, audit log viewing, and
 key/identity status. After physical split hardening, desktop code imports
-`talon_core` directly instead of legacy `talon/` backend shims. Kivy remains
-legacy migration state and should only receive emergency release fixes. The new
-desktop client now has a centralized PySide6 dark operational theme for the
+`talon_core` directly instead of legacy `talon/` backend shims. Kivy is retired
+from active desktop CI, dependency extras, and publishing. The new desktop
+client now has a centralized PySide6 dark operational theme for the
 main shell, navigation rail, dialogs, forms, tables, text panels, and status
 surfaces, plus durable local desktop settings for window geometry, splitter
 positions, table layouts, and the last selected section. A session log buffer,
@@ -54,7 +54,8 @@ release candidate before Windows packaging starts.
 4. Package Linux desktop and validate on the target Linux Mint environment. Complete.
 5. Polish and accept the Linux server/client release candidate.
 6. Validate Windows packaging after the accepted Linux release.
-7. Retire Kivy release artifacts after feature parity.
+7. Move or delete archived Kivy UI code after it is no longer useful as a
+   reference.
 
 ## Function Docs
 
@@ -69,7 +70,7 @@ release candidate before Windows packaging starts.
 - [server_admin.md](server_admin.md) - clients, enroll, audit, keys.
 - [packaging.md](packaging.md) - Linux/Windows packaging.
 - [linux_role_artifact_split_checklist.md](linux_role_artifact_split_checklist.md) - Linux client/server artifact split and destructive role-switch checklist.
-- [legacy_kivy.md](legacy_kivy.md) - current Kivy state and retirement.
+- [legacy_kivy.md](legacy_kivy.md) - retired Kivy state.
 - [testing.md](testing.md) - desktop acceptance matrix.
 
 ## Active Desktop Blockers
@@ -79,6 +80,6 @@ release candidate before Windows packaging starts.
   tests, and development-shell Reticulum loopback validation; remaining UI gaps
   are parity refinements and packaging validation.
 - Linux package validation passed; release polish and operator acceptance remain
-  before the Linux PySide6 path replaces Kivy for supported desktop releases.
+  before the Linux PySide6 server/client release candidate.
 - Windows packaging follows after the Linux server/client release candidate is
   accepted.

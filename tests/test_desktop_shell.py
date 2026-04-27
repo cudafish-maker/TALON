@@ -483,19 +483,24 @@ def test_legacy_target_mapping_can_refresh_main_desktop_surfaces() -> None:
     assert section_for_key("documents").label == "Documents"
 
 
-def test_desktop_pyproject_extra_does_not_pull_legacy_kivy() -> None:
+def test_pyproject_does_not_expose_active_kivy_dependencies() -> None:
     tomllib = pytest.importorskip("tomllib")
     project = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
 
     base_deps = set(project["project"]["dependencies"])
-    desktop_deps = set(project["project"]["optional-dependencies"]["desktop"])
-    legacy_deps = set(project["project"]["optional-dependencies"]["legacy-kivy"])
+    optional_deps = project["project"]["optional-dependencies"]
+    desktop_deps = set(optional_deps["desktop"])
+    all_optional_deps = {
+        dep
+        for deps in optional_deps.values()
+        for dep in deps
+    }
 
-    assert not any(dep.startswith("kivy") for dep in base_deps | desktop_deps)
-    assert not any(dep.startswith("kivymd") for dep in base_deps | desktop_deps)
+    assert "legacy-kivy" not in optional_deps
+    assert not any(dep.startswith("kivy") for dep in base_deps | all_optional_deps)
+    assert not any(dep.startswith("kivymd") for dep in base_deps | all_optional_deps)
+    assert not any("mapview" in dep.lower() for dep in base_deps | all_optional_deps)
     assert "PySide6>=6.7" in desktop_deps
-    assert any(dep.startswith("kivy[base]") for dep in legacy_deps)
-    assert any(dep.startswith("kivymd @ git+") for dep in legacy_deps)
 
 
 def test_sitrep_create_payload_strips_body_and_keeps_links() -> None:

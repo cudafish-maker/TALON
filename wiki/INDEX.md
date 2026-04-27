@@ -34,8 +34,9 @@ security notice. The Documents page now covers list/detail, server upload,
 download/save, server delete, macro-risk warnings, and document error surfacing.
 Operators/server admin pages now cover operator list/detail, profile/skills
 editing, enrollment tokens, pending tokens, server hash, lease renewal,
-revocation, audit log viewing, and key/identity status. The `desktop` Python
-extra no longer pulls legacy Kivy/KivyMD. Desktop smoke tests now construct the
+revocation, audit log viewing, and key/identity status. Kivy/KivyMD is retired
+from active desktop CI, dependency extras, and publishing. The `desktop` Python
+extra installs the PySide6 path only. Desktop smoke tests now construct the
 main window offscreen, navigate every section, and cover client/server unlock
 paths. Linux Breakpoint A development-shell validation passed locally, including
 same-machine Reticulum TCP loopback for enrollment and server-to-client asset
@@ -56,7 +57,7 @@ the Android/Chaquopy Reticulum spike.
 | Project | State | Next Work |
 |---------|-------|-----------|
 | `talon-core` | Phase 1 facade, dashboard/sync read models, physical split hardening, and Reticulum loopback verification complete for current source tree | Keep package boundary clean during desktop packaging and mobile spike work |
-| `talon-desktop` | PySide6 shell plus SITREP, Assets, Map, Missions, Chat, Documents, Operators/server admin workflows, offscreen Qt smoke tests, Linux Breakpoint A dev-shell validation, Linux Breakpoint B package validation, and role-specific Linux client/server artifacts exist; current release path is still legacy Kivy/KivyMD | Polish Linux server/client release candidate before Windows packaging |
+| `talon-desktop` | PySide6 shell plus SITREP, Assets, Map, Missions, Chat, Documents, Operators/server admin workflows, offscreen Qt smoke tests, Linux Breakpoint A dev-shell validation, Linux Breakpoint B package validation, and role-specific Linux client/server artifacts exist; Kivy is retired from active desktop release paths | Polish Linux server/client release candidate before Windows packaging |
 | `talon-mobile` | Planned only | Run Android/Chaquopy/Reticulum feasibility spike before full UI work |
 
 ## Current Cross-Project Blockers
@@ -66,7 +67,8 @@ the Android/Chaquopy Reticulum spike.
   [talon-desktop/documents.md](talon-desktop/documents.md).
 - DM end-to-end encryption remains Phase 2b and belongs in `talon-core`, not in
   client-specific UI code.
-- PySide6 desktop must reach feature parity and replace the Kivy release path before Kivy retirement.
+- Archived Kivy UI code still exists as reference material and should be moved
+  or deleted in a cleanup branch.
 - Android work is blocked on proving `RNS`, SQLCipher, PyNaCl/cryptography, and
   document cache dependencies under Chaquopy.
 
@@ -93,8 +95,8 @@ the Android/Chaquopy Reticulum spike.
   relevant project `INDEX.md`.
 - Keep Reticulum, RNS identity, sync, enrollment, lease, revocation, document
   transfer, and chat traffic inside `talon-core`.
-- Treat Kivy/KivyMD as legacy migration state. Only patch it for emergency
-  release fixes while PySide6 desktop is being built.
+- Do not add Kivy/KivyMD/mapview dependencies, tests, CI jobs, or release
+  artifacts back to active desktop work.
 - Update the project-specific function doc when changing behavior, and update
   this index only for cross-project status changes.
 
