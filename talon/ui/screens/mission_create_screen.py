@@ -28,8 +28,6 @@ from kivy.uix.widget import Widget
 from kivymd.uix.button import MDIconButton
 from kivymd.uix.screen import MDScreen
 
-from talon.assets import load_assets
-from talon.services.missions import create_mission_command
 from talon.ui.font_scale import get_font_scale
 from talon.ui.theme import (
     CHAT_AMBER, CHAT_AMBER2, CHAT_BG0, CHAT_BG1, CHAT_BG2, CHAT_BG3, CHAT_BG4,
@@ -1045,11 +1043,11 @@ class MissionCreateScreen(MDScreen):
 
         self._asset_checks = {}
 
-        if not (hasattr(app, 'conn') and app.conn is not None):
+        if not app.core_session.is_unlocked:
             c.add_widget(_lbl('Database not available.', CHAT_G2, 10,
                                size_hint_y=None, height=dp(32)))
         else:
-            all_assets = load_assets(app.conn)
+            all_assets = app.core_session.read_model("assets.list")
             groups: dict[str, list] = {cat: [] for cat in ASSET_GROUP_ORDER}
             for a in all_assets:
                 cat = a.category if a.category in groups else 'custom'
@@ -1479,7 +1477,7 @@ class MissionCreateScreen(MDScreen):
     def _do_submit(self) -> None:
         self._collect_all_steps()
         app = App.get_running_app()
-        if not (hasattr(app, 'conn') and app.conn is not None):
+        if not app.core_session.is_unlocked:
             self._show_error('Database not available.')
             return
 
@@ -1489,14 +1487,10 @@ class MissionCreateScreen(MDScreen):
             return
 
         try:
-            operator_id = app.require_local_operator_id(
-                allow_server_sentinel=(app.mode == "server")
-            )
-            result = create_mission_command(
-                app.conn,
+            app.core_session.command(
+                "missions.create",
                 title=title,
                 description=self._data.get('description', ''),
-                created_by=operator_id,
                 asset_ids=list(self._selected_asset_ids),
                 ao_polygon=self._ao_polygon,
                 route=self._route,
@@ -1523,9 +1517,6 @@ class MissionCreateScreen(MDScreen):
         except ValueError as exc:
             self._show_error(str(exc))
             return
-
-        if hasattr(app, 'dispatch_domain_events'):
-            app.dispatch_domain_events(result.events)
 
         self.manager.current = 'mission'
 

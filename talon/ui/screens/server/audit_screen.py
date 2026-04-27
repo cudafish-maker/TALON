@@ -72,15 +72,15 @@ class AuditScreen(MDScreen):
 
     def _load(self, event_filter: str | None) -> None:
         app = App.get_running_app()
-        if app.conn is None or app.db_key is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.server.audit import query_entries
-            entries = query_entries(
-                app.conn,
-                app.db_key,
-                event_filter=event_filter,
-                limit=200,
+            entries = app.core_session.read_model(
+                "audit.list",
+                {
+                    "event_filter": event_filter,
+                    "limit": 200,
+                },
             )
             log_list = self.ids.log_list
             log_list.clear_widgets()

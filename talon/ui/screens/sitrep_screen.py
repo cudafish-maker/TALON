@@ -388,20 +388,21 @@ class SitrepScreen(MDScreen):
     def on_audio_toggle_pressed(self) -> None:
         """Toggle the audio alert opt-in and persist the choice."""
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
-        from talon.audio_alerts import set_audio_enabled
         self._audio_enabled = not self._audio_enabled
-        set_audio_enabled(app.conn, self._audio_enabled)
+        app.core_session.command(
+            "settings.set_audio_enabled",
+            enabled=self._audio_enabled,
+        )
         self._update_audio_toggle()
 
     def _sync_audio_toggle(self) -> None:
         """Read audio setting from DB and sync the toggle button state."""
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
-        from talon.audio_alerts import is_audio_enabled
-        self._audio_enabled = is_audio_enabled(app.conn)
+        self._audio_enabled = app.core_session.read_model("settings.audio_enabled")
         self._update_audio_toggle()
 
     def _update_audio_toggle(self) -> None:
@@ -462,24 +463,17 @@ class SitrepScreen(MDScreen):
             self._set_status("Body is required.", error=True)
             return
         app = App.get_running_app()
-        if app.conn is None or app.db_key is None:
+        if not app.core_session.is_unlocked:
             self._set_status("No database connection.", error=True)
             return
         try:
-            from talon.sitrep import create_sitrep
-            author_id = app.require_local_operator_id(
-                allow_server_sentinel=(app.mode == "server")
-            )
-            sitrep_id = create_sitrep(
-                app.conn,
-                app.db_key,
-                author_id=author_id,
+            app.core_session.command(
+                "sitreps.create",
                 level=self._compose_level,
                 body=body,
                 asset_id=self._linked_asset_id,
                 mission_id=self._linked_mission_id,
             )
-            app.net_notify_change("sitreps", sitrep_id)
             self._body_field.text = ""
             self._linked_asset_id = None
             self._linked_asset_label = ""
@@ -511,11 +505,10 @@ class SitrepScreen(MDScreen):
     def on_asset_link_pressed(self) -> None:
         """Build and open an asset picker dropdown."""
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.assets import load_assets
-            assets = load_assets(app.conn)
+            assets = app.core_session.read_model("assets.list")
         except Exception as exc:
             _log.error("Failed to load assets for picker: %s", exc)
             return
@@ -549,11 +542,13 @@ class SitrepScreen(MDScreen):
     def on_mission_link_pressed(self) -> None:
         """Build and open a mission picker dropdown."""
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.missions import load_missions
-            missions = load_missions(app.conn, status_filter=None)
+            missions = app.core_session.read_model(
+                "missions.list",
+                {"status_filter": None},
+            )
             missions = [m for m in missions if m.status in ("pending_approval", "active")]
         except Exception as exc:
             _log.error("Failed to load missions for picker: %s", exc)
@@ -686,12 +681,10 @@ class SitrepScreen(MDScreen):
 
     def _do_delete_sitrep(self, confirm_modal: ModalView, sitrep_id: int) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.sitrep import delete_sitrep
-            delete_sitrep(app.conn, sitrep_id)
-            app.net_notify_delete("sitreps", sitrep_id)
+            app.core_session.command("sitreps.delete", sitrep_id=sitrep_id)
             confirm_modal.dismiss()
             self._load_feed()
         except Exception as exc:
@@ -703,11 +696,10 @@ class SitrepScreen(MDScreen):
 
     def _load_feed(self) -> None:
         app = App.get_running_app()
-        if app.conn is None or app.db_key is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.sitrep import load_sitreps
-            entries = load_sitreps(app.conn, app.db_key)
+            entries = app.core_session.read_model("sitreps.list")
             self._entries = entries
             feed = self._sitrep_list
             feed.clear_widgets()

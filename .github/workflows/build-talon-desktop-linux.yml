@@ -1,0 +1,116 @@
+name: Build TALON Desktop Linux
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libsqlcipher-dev \
+            libmagic1 \
+            libgl1 \
+            libegl1 \
+            libxkbcommon0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-xinerama0 \
+            libx11-xcb1 \
+            xauth \
+            xvfb
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,desktop]"
+
+      - name: Verify desktop dependency split
+        run: |
+          python - <<'PY'
+          import importlib.util
+          assert importlib.util.find_spec("PySide6") is not None
+          assert importlib.util.find_spec("kivy") is None
+          assert importlib.util.find_spec("kivymd") is None
+          PY
+
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+      - name: Build PySide6 Linux package
+        env:
+          PYINSTALLER_CONFIG_DIR: ${{ runner.temp }}/.pyinstaller
+        run: pyinstaller --clean --noconfirm build/pyinstaller-linux-desktop.spec
+
+      - name: Verify PySide6 bundle contents
+        run: |
+          test -x dist/talon-desktop-linux/talon-desktop
+          test -f dist/talon-desktop-linux/_internal/base_library.zip
+          test ! -d dist/talon-desktop-linux/_internal/kivy
+          test ! -d dist/talon-desktop-linux/_internal/kivymd
+
+      - name: Smoke test PySide6 artifact
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          dist/talon-desktop-linux/talon-desktop --smoke --mode server
+          dist/talon-desktop-linux/talon-desktop --smoke --mode client
+
+      - name: Reticulum loopback smoke PySide6 artifact
+        run: dist/talon-desktop-linux/talon-desktop --loopback-smoke
+
+      - name: Validate installer script
+        run: bash -n build/install-talon-desktop.sh
+
+      - name: Package Linux release tarball
+        run: |
+          cp build/install-talon-desktop.sh dist/talon-desktop-linux/install.sh
+          chmod +x dist/talon-desktop-linux/install.sh
+          tar -C dist -czf dist/talon-desktop-linux.tar.gz talon-desktop-linux
+          sha256sum dist/talon-desktop-linux.tar.gz > dist/talon-desktop-linux.tar.gz.sha256
+
+      - name: Smoke install Linux release artifact
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          mkdir -p "$RUNNER_TEMP/talon-desktop-release"
+          cp dist/talon-desktop-linux.tar.gz "$RUNNER_TEMP/talon-desktop-release/talon-desktop-linux.tar.gz"
+          tar -C "$RUNNER_TEMP/talon-desktop-release" -xzf "$RUNNER_TEMP/talon-desktop-release/talon-desktop-linux.tar.gz"
+          (
+            cd "$RUNNER_TEMP/talon-desktop-release/talon-desktop-linux"
+            ./install.sh --no-deps --no-bin --no-desktop --smoke-test \
+              --prefix "$RUNNER_TEMP/talon-desktop-install" \
+              --config "$RUNNER_TEMP/talon-desktop-config/talon.ini" \
+              --data-dir "$RUNNER_TEMP/talon-desktop-data" \
+              --mode server
+          )
+          test -x "$RUNNER_TEMP/talon-desktop-install/talon-desktop-linux/talon-desktop"
+          test ! -d "$RUNNER_TEMP/talon-desktop-install/talon-desktop-linux/_internal/kivy"
+          test ! -d "$RUNNER_TEMP/talon-desktop-install/talon-desktop-linux/_internal/kivymd"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: talon-desktop-linux
+          path: |
+            dist/talon-desktop-linux.tar.gz
+            dist/talon-desktop-linux.tar.gz.sha256

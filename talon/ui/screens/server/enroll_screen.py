@@ -29,24 +29,12 @@ class EnrollScreen(MDScreen):
 
     def on_generate_pressed(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.server.enrollment import generate_enrollment_token
-            token = generate_enrollment_token(app.conn)
-
-            # Retrieve the server's RNS destination hash so the client only
-            # needs to paste one combined string (TOKEN:SERVER_HASH).
-            row = app.conn.execute(
-                "SELECT value FROM meta WHERE key = 'server_rns_hash'"
-            ).fetchone()
-            server_hash = (row[0] or "").strip() if row else ""
-
-            if server_hash:
-                combined = f"{token}:{server_hash}"
-            else:
-                # net_handler not started yet — show token alone with a note.
-                combined = token
+            result = app.core_session.command("enrollment.generate_token")
+            combined = result.combined
+            if not result.server_hash:
                 _log.warning(
                     "server_rns_hash not set in meta — net_handler may not have started"
                 )
@@ -77,11 +65,10 @@ class EnrollScreen(MDScreen):
 
     def _refresh_pending(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.server.enrollment import list_pending_tokens
-            tokens = list_pending_tokens(app.conn)
+            tokens = app.core_session.read_model("enrollment.pending_tokens")
             token_list = self.ids.pending_list
             token_list.clear_widgets()
             if not tokens:

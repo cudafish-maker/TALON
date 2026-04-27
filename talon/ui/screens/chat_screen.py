@@ -757,21 +757,11 @@ class _InputArea(BoxLayout):
         app = App.get_running_app()
         callsign = "—"
         role = ""
-        if app.conn:
+        if app.core_session.is_unlocked:
             try:
-                my_id = app.resolve_local_operator_id(
-                    allow_server_sentinel=(app.mode == "server")
-                )
-                if my_id is not None:
-                    row = app.conn.execute(
-                        "SELECT callsign, profile FROM operators WHERE id=?",
-                        (my_id,)
-                    ).fetchone()
-                    if row:
-                        import json
-                        callsign = row[0]
-                        profile = json.loads(row[1]) if row[1] else {}
-                        role = profile.get("role", "")
+                current = app.core_session.read_model("chat.current_operator")
+                callsign = current["callsign"]
+                role = current.get("role", "")
             except Exception:
                 pass
         ts = datetime.datetime.now().strftime("%H:%M")
@@ -1095,11 +1085,10 @@ class ChatScreen(MDScreen):
     def on_pre_enter(self) -> None:
         app = App.get_running_app()
         app.clear_badge("chat")
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.chat import ensure_default_channels
-            ensure_default_channels(app.conn)
+            app.core_session.command("chat.ensure_defaults")
         except Exception as exc:
             _log.error("ensure_default_channels failed: %s", exc)
         self._load_channels()
@@ -1116,11 +1105,10 @@ class ChatScreen(MDScreen):
 
     def _load_channels(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.chat import load_channels
-            channels = load_channels(app.conn)
+            channels = app.core_session.read_model("chat.channels")
         except Exception as exc:
             _log.error("Failed to load channels: %s", exc)
             return
@@ -1152,11 +1140,13 @@ class ChatScreen(MDScreen):
 
     def _load_messages(self) -> None:
         app = App.get_running_app()
-        if app.conn is None or self._active_channel is None:
+        if not app.core_session.is_unlocked or self._active_channel is None:
             return
         try:
-            from talon.chat import load_messages
-            entries = load_messages(app.conn, self._active_channel.id)
+            entries = app.core_session.read_model(
+                "chat.messages",
+                {"channel_id": self._active_channel.id},
+            )
         except Exception as exc:
             _log.error("Failed to load messages: %s", exc)
             return
@@ -1172,22 +1162,21 @@ class ChatScreen(MDScreen):
         if not body:
             return
         app = App.get_running_app()
-        if app.conn is None or self._active_channel is None:
+        if not app.core_session.is_unlocked or self._active_channel is None:
             return
         try:
-            from talon.chat import send_message
-            my_id = self._get_my_operator_id(app)
             grid = chat_area.grid_ref_text if chat_area.grid_active else None
-            msg = send_message(
-                app.conn, self._active_channel.id, my_id, body,
+            result = app.core_session.command(
+                "chat.send_message",
+                channel_id=self._active_channel.id,
+                body=body,
                 is_urgent=chat_area.urgent_active,
                 grid_ref=grid,
             )
-            app.net_notify_change("messages", msg.id)
             chat_area.clear_input()
 
             callsign = self._get_my_callsign(app)
-            chat_area.append_message(msg, callsign)
+            chat_area.append_message(result.message, callsign)
             self._refresh_alerts()
         except Exception as exc:
             _log.error("Failed to send message: %s", exc)
@@ -1199,12 +1188,7 @@ class ChatScreen(MDScreen):
 
     def _get_my_callsign(self, app) -> str:
         try:
-            my_id = self._get_my_operator_id(app)
-            row = app.conn.execute(
-                "SELECT callsign FROM operators WHERE id=?", (my_id,)
-            ).fetchone()
-            if row:
-                return row[0]
+            return app.core_session.read_model("chat.current_operator")["callsign"]
         except Exception:
             pass
         return "UNKNOWN"
@@ -1215,21 +1199,13 @@ class ChatScreen(MDScreen):
 
     def _refresh_operators(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            import json
-            rows = app.conn.execute(
-                "SELECT callsign, profile FROM operators WHERE revoked=0 ORDER BY callsign ASC"
-            ).fetchall()
-            online_peers = getattr(app, '_online_peers', set())
-            operators = []
-            for callsign, profile_json in rows:
-                profile = json.loads(profile_json) if profile_json else {}
-                role = profile.get("role", "")
-                # Server: all enrolled operators shown; online = in peer set or server mode
-                online = (app.mode == "server") or (callsign in online_peers)
-                operators.append({'callsign': callsign, 'role': role, 'online': online})
+            operators = app.core_session.read_model(
+                "chat.operators",
+                {"online_peers": getattr(app, "_online_peers", set())},
+            )
             self._right_panel.populate_operators(operators)
         except Exception as exc:
             _log.error("Failed to load operators: %s", exc)
@@ -1240,26 +1216,16 @@ class ChatScreen(MDScreen):
 
     def _refresh_alerts(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            rows = app.conn.execute(
-                "SELECT m.body, m.sent_at, m.grid_ref, COALESCE(o.callsign,'UNKNOWN'), m.channel_id "
-                "FROM messages m "
-                "LEFT JOIN operators o ON m.sender_id = o.id "
-                "WHERE m.is_urgent = 1 "
-                "ORDER BY m.sent_at DESC LIMIT 10"
-            ).fetchall()
-            alerts = []
-            for body, sent_at, grid_ref, callsign, channel_id in rows:
-                body_text = (bytes(body).decode('utf-8', errors='replace')
-                             if body else "")
-                alerts.append({
-                    'type': 'contact',
-                    'label': 'URGENT',
-                    'time': _ts_to_local(sent_at),
-                    'text': f"{callsign}: {body_text}",
-                })
+            alerts = [
+                {
+                    **alert,
+                    "time": _ts_to_local(alert["sent_at"]),
+                }
+                for alert in app.core_session.read_model("chat.alerts")
+            ]
             self._right_panel.populate_alerts(alerts)
         except Exception as exc:
             _log.error("Failed to load alerts: %s", exc)
@@ -1272,17 +1238,11 @@ class ChatScreen(MDScreen):
         app = App.get_running_app()
         callsign = "—"
         role = ""
-        if app.conn:
+        if app.core_session.is_unlocked:
             try:
-                import json
-                my_id = self._get_my_operator_id(app)
-                row = app.conn.execute(
-                    "SELECT callsign, profile FROM operators WHERE id=?", (my_id,)
-                ).fetchone()
-                if row:
-                    callsign = row[0]
-                    profile = json.loads(row[1]) if row[1] else {}
-                    role = profile.get("role", "")
+                current = app.core_session.read_model("chat.current_operator")
+                callsign = current["callsign"]
+                role = current.get("role", "")
             except Exception:
                 pass
         self._channel_panel.update_footer(callsign, role)
@@ -1319,12 +1279,10 @@ class ChatScreen(MDScreen):
         if not name:
             return
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.chat import create_channel
-            channel = create_channel(app.conn, name)
-            app.net_notify_change("channels", channel.id)
+            app.core_session.command("chat.create_channel", name=name)
             modal.dismiss()
             self._load_channels()
         except Exception as exc:
@@ -1355,12 +1313,10 @@ class ChatScreen(MDScreen):
 
     def _do_delete_message(self, modal: ModalView, message_id: int) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.chat import delete_message
-            delete_message(app.conn, message_id)
-            app.net_notify_delete("messages", message_id)
+            app.core_session.command("chat.delete_message", message_id=message_id)
             modal.dismiss()
             self._load_messages()
         except Exception as exc:

@@ -82,13 +82,10 @@ class KeysScreen(MDScreen):
     def _do_revoke(self, dialog: MDDialog, operator_id: int, callsign: str) -> None:
         dialog.dismiss()
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.services.operators import revoke_operator_command
-
-            result = revoke_operator_command(app.conn, operator_id)
-            app.dispatch_domain_events(result.events)
+            app.core_session.command("operators.revoke", operator_id=operator_id)
             _log.warning("Identity revoked via Keys screen: %s (id=%s)", callsign, operator_id)
             self._refresh_operator_list()
         except Exception as exc:
@@ -96,29 +93,22 @@ class KeysScreen(MDScreen):
 
     def _refresh_operator_list(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            rows = app.conn.execute(
-                "SELECT id, callsign, revoked FROM operators ORDER BY enrolled_at DESC"
-            ).fetchall()
+            operators = app.core_session.read_model("operators.list")
             op_list = self.ids.operator_list
             op_list.clear_widgets()
-            if not rows:
+            if not operators:
                 op_list.add_widget(
                     MDLabel(text="No operators.", theme_text_color="Secondary")
                 )
                 return
-            for row in rows:
-                op_id, callsign, revoked = row
-                if op_id == 1:
-                    # Skip the SERVER sentinel — revoking it would destroy all
-                    # history authored by id=1 and is never a valid operation.
-                    continue
+            for operator in operators:
                 op_list.add_widget(_KeyOperatorRow(
-                    operator_id=op_id,
-                    callsign=callsign,
-                    is_revoked=bool(revoked),
+                    operator_id=operator.id,
+                    callsign=operator.callsign,
+                    is_revoked=operator.revoked,
                     screen=self,
                 ))
         except Exception as exc:

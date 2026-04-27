@@ -120,13 +120,13 @@ class FontScalePopup(BoxLayout):
     def _apply(self, scale: float) -> None:
         self._set_scale(scale)
         app = App.get_running_app()
-        if app.conn:
+        if app.core_session.is_unlocked:
             try:
-                app.conn.execute(
-                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                    (self._meta_key, str(scale)),
+                app.core_session.command(
+                    "settings.set_meta",
+                    key=self._meta_key,
+                    value=scale,
                 )
-                app.conn.commit()
             except Exception:
                 pass
         for i, btn in enumerate(self._btns):

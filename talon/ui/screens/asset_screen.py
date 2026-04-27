@@ -18,13 +18,6 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from talon.constants import ASSET_CATEGORIES
-from talon.services.assets import (
-    create_asset_command,
-    hard_delete_asset_command,
-    request_asset_deletion_command,
-    update_asset_command,
-    verify_asset_command,
-)
 from talon.ui.widgets.map_draw import PointPickerModal
 from talon.utils.logging import get_logger
 
@@ -109,11 +102,13 @@ class AssetScreen(MDScreen):
 
     def _load_assets(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.assets import load_assets
-            assets = load_assets(app.conn, category=self._category_filter)
+            assets = app.core_session.read_model(
+                "assets.list",
+                {"category": self._category_filter},
+            )
             lst = self.ids.asset_list
             lst.clear_widgets()
             if not assets:
@@ -265,24 +260,19 @@ class AssetScreen(MDScreen):
             return
 
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             status_label.text = "No database connection."
             return
 
         try:
-            author_id = app.require_local_operator_id(
-                allow_server_sentinel=(app.mode == "server")
-            )
-            result = create_asset_command(
-                app.conn,
-                author_id=author_id,
+            app.core_session.command(
+                "assets.create",
                 category=category,
                 label=label,
                 description=description,
                 lat=lat,
                 lon=lon,
             )
-            app.dispatch_domain_events(result.events)
             modal.dismiss()
             self._load_assets()
             self._refresh_map()
@@ -428,18 +418,17 @@ class AssetScreen(MDScreen):
             return
 
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            result = update_asset_command(
-                app.conn,
-                asset_id,
+            app.core_session.command(
+                "assets.update",
+                asset_id=asset_id,
                 label=label,
                 description=description,
                 lat=lat,
                 lon=lon,
             )
-            app.dispatch_domain_events(result.events)
             modal.dismiss()
             self._load_assets()
             self._refresh_map()
@@ -449,18 +438,9 @@ class AssetScreen(MDScreen):
 
     def _do_verify(self, modal: ModalView, asset_id: int, verified: bool) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         is_server = app.mode == "server"
-        local_operator_id = app.resolve_local_operator_id(
-            allow_server_sentinel=is_server
-        )
-        if not is_server:
-            from talon.assets import get_asset
-            existing = get_asset(app.conn, asset_id)
-            if existing and local_operator_id is not None and existing.created_by == local_operator_id:
-                _log.warning("Client attempted to verify own asset id=%s — blocked", asset_id)
-                return
         try:
             if verified:
                 confirmer = app.require_local_operator_id(
@@ -468,13 +448,12 @@ class AssetScreen(MDScreen):
                 )
             else:
                 confirmer = None
-            result = verify_asset_command(
-                app.conn,
-                asset_id,
+            app.core_session.command(
+                "assets.verify",
+                asset_id=asset_id,
                 verified=verified,
                 confirmer_id=confirmer,
             )
-            app.dispatch_domain_events(result.events)
             modal.dismiss()
             self._load_assets()
             self._refresh_map()
@@ -488,11 +467,10 @@ class AssetScreen(MDScreen):
     def _do_request_deletion(self, edit_modal: ModalView, asset_id: int) -> None:
         """Client-mode: flag asset for deletion; server operator reviews and hard-deletes."""
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            result = request_asset_deletion_command(app.conn, asset_id)
-            app.dispatch_domain_events(result.events)
+            app.core_session.command("assets.request_delete", asset_id=asset_id)
             edit_modal.dismiss()
             self._load_assets()
             self._refresh_map()
@@ -526,11 +504,10 @@ class AssetScreen(MDScreen):
         self, confirm_modal: ModalView, edit_modal: ModalView, asset_id: int
     ) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            result = hard_delete_asset_command(app.conn, asset_id)
-            app.dispatch_domain_events(result.events)
+            app.core_session.command("assets.hard_delete", asset_id=asset_id)
             confirm_modal.dismiss()
             edit_modal.dismiss()
             self._load_assets()
@@ -546,13 +523,14 @@ class AssetScreen(MDScreen):
         """Push updated asset list to the map widget if it's on screen."""
         try:
             app = App.get_running_app()
-            if app.conn is None:
+            if not app.core_session.is_unlocked:
                 return
             main = app.root.get_screen("main")
             if not hasattr(main, "map_widget"):
                 return
-            from talon.assets import load_assets
-            main.map_widget.refresh_asset_markers(load_assets(app.conn))
+            main.map_widget.refresh_asset_markers(
+                app.core_session.read_model("assets.list")
+            )
         except Exception:
             pass  # non-critical
 

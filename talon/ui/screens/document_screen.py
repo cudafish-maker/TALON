@@ -42,10 +42,6 @@ from talon.documents import (
     DocumentFilenameInvalid,
     DocumentIntegrityError,
     DocumentSizeExceeded,
-    delete_document,
-    download_document,
-    list_documents,
-    upload_document,
 )
 from talon.ui.theme import COLOR_ACCENT, COLOR_DANGER, COLOR_PRIMARY, COLOR_TEXT_SECONDARY
 from talon.utils.logging import get_logger
@@ -139,7 +135,7 @@ class _DocumentRow(MDBoxLayout):
         # Open button
         open_btn = MDButton(MDButtonText(text="OPEN"), style="text",
                             size_hint=(None, None), size=(dp(72), dp(36)))
-        open_btn.bind(on_release=lambda _: screen._open_detail_dialog(doc))
+        open_btn.bind(on_release=lambda _: screen._open_detail_dialog(doc, callsign))
         self.add_widget(open_btn)
 
 
@@ -177,9 +173,10 @@ class DocumentScreen(MDScreen):
 
     def _load_documents(self) -> None:
         app = App.get_running_app()
+        core_session = getattr(app, "core_session", None)
         lst = self.ids.document_list
         lst.clear_widgets()
-        if app.conn is None:
+        if core_session is None or not core_session.is_unlocked:
             lst.add_widget(MDLabel(
                 text="Database not available.",
                 theme_text_color="Secondary",
@@ -189,8 +186,8 @@ class DocumentScreen(MDScreen):
             ))
             return
         try:
-            docs = list_documents(app.conn)
-            if not docs:
+            items = core_session.read_model("documents.list")
+            if not items:
                 lst.add_widget(MDLabel(
                     text="No documents uploaded yet.",
                     theme_text_color="Secondary",
@@ -199,11 +196,12 @@ class DocumentScreen(MDScreen):
                     halign="center",
                 ))
                 return
-            # Build a callsign lookup to avoid one query per row
-            callsigns = _load_callsigns(app.conn)
-            for doc in docs:
-                callsign = callsigns.get(doc.uploaded_by, f"id={doc.uploaded_by}")
-                lst.add_widget(_DocumentRow(doc=doc, callsign=callsign, screen=self))
+            for item in items:
+                lst.add_widget(_DocumentRow(
+                    doc=item.document,
+                    callsign=item.uploader_callsign,
+                    screen=self,
+                ))
         except Exception as exc:
             _log.error("Failed to load documents: %s", exc)
 
@@ -328,7 +326,8 @@ class DocumentScreen(MDScreen):
         description: str,
     ) -> None:
         app = App.get_running_app()
-        if app.conn is None or app.db_key is None:
+        core_session = getattr(app, "core_session", None)
+        if core_session is None or not core_session.is_unlocked:
             status_lbl.text = "Database not available."
             return
         from talon.constants import MAX_DOCUMENT_SIZE_BYTES
@@ -342,24 +341,14 @@ class DocumentScreen(MDScreen):
             status_lbl.text = f"Cannot read file: {exc}"
             return
 
-        from talon.config import get_document_storage_path
-        storage_root = get_document_storage_path(app.cfg)
-
         try:
             import os
-            operator_id = app.require_local_operator_id(
-                allow_server_sentinel=(app.mode == "server")
-            )
-            doc = upload_document(
-                app.conn,
-                app.db_key,
-                storage_root,
+            core_session.command(
+                "documents.upload",
                 raw_filename=os.path.basename(file_path),
                 file_data=file_data,
-                uploaded_by=operator_id,
                 description=description,
             )
-            app.net_notify_change("documents", doc.id)
         except DocumentSizeExceeded:
             from talon.constants import MAX_DOCUMENT_SIZE_BYTES
             status_lbl.text = f"File too large (max {MAX_DOCUMENT_SIZE_BYTES // 1024 // 1024} MB)."
@@ -385,10 +374,8 @@ class DocumentScreen(MDScreen):
     # Detail dialog (OPEN button)
     # ------------------------------------------------------------------
 
-    def _open_detail_dialog(self, doc) -> None:
+    def _open_detail_dialog(self, doc, callsign: str) -> None:
         app = App.get_running_app()
-        callsigns = _load_callsigns(app.conn) if app.conn else {}
-        callsign = callsigns.get(doc.uploaded_by, f"id={doc.uploaded_by}")
         ts = datetime.datetime.fromtimestamp(doc.uploaded_at).strftime("%Y-%m-%d %H:%M")
 
         modal = ModalView(size_hint=(0.65, None), height=dp(360), auto_dismiss=False)
@@ -471,7 +458,8 @@ class DocumentScreen(MDScreen):
     def _do_download(self, detail_modal: ModalView, doc) -> None:
         """Load a document, then prompt for a save path."""
         app = App.get_running_app()
-        if app.conn is None or app.db_key is None:
+        core_session = getattr(app, "core_session", None)
+        if core_session is None or not core_session.is_unlocked:
             return
 
         threading.Thread(
@@ -483,25 +471,12 @@ class DocumentScreen(MDScreen):
 
     def _download_document_worker(self, detail_modal: ModalView, doc) -> None:
         app = App.get_running_app()
-        from talon.config import get_document_storage_path
-
-        storage_root = get_document_storage_path(app.cfg)
+        core_session = getattr(app, "core_session", None)
         try:
-            if app.mode == "client":
-                if app.client_sync is None:
-                    raise DocumentError(
-                        "Document download requires an active client sync session."
-                    )
-                plaintext = app.client_sync.fetch_document(doc.id)
-            else:
-                operator_id = app.require_local_operator_id(allow_server_sentinel=True)
-                _, plaintext = download_document(
-                    app.conn,
-                    app.db_key,
-                    storage_root,
-                    doc.id,
-                    downloader_id=operator_id,
-                )
+            if core_session is None:
+                raise DocumentError("Core session is not available.")
+            result = core_session.command("documents.download", document_id=doc.id)
+            plaintext = result.plaintext
         except DocumentIntegrityError as exc:
             Clock.schedule_once(
                 lambda _dt: self._finish_download_error(
@@ -693,13 +668,11 @@ class DocumentScreen(MDScreen):
     def _do_delete(self, modal: ModalView, doc) -> None:
         modal.dismiss()
         app = App.get_running_app()
-        if app.conn is None:
+        core_session = getattr(app, "core_session", None)
+        if core_session is None or not core_session.is_unlocked:
             return
-        from talon.config import get_document_storage_path
-        storage_root = get_document_storage_path(app.cfg)
         try:
-            delete_document(app.conn, storage_root, doc.id)
-            app.net_notify_delete("documents", doc.id)
+            core_session.command("documents.delete", document_id=doc.id)
             self._load_documents()
         except Exception as exc:
             _log.error("Delete failed: %s", exc)
@@ -730,16 +703,3 @@ class DocumentScreen(MDScreen):
             ),
         )
         dialog.open()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _load_callsigns(conn) -> dict[int, str]:
-    """Return {operator_id: callsign} for all operators."""
-    try:
-        rows = conn.execute("SELECT id, callsign FROM operators").fetchall()
-        return {r[0]: r[1] for r in rows}
-    except Exception:
-        return {}

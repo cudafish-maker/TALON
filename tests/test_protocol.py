@@ -6,6 +6,8 @@ import pytest
 
 from talon.network import protocol as proto
 from talon.network.client_sync import ClientSyncManager
+from talon.server.enrollment import generate_enrollment_token
+from talon.server.net_components import rns_hash_hex_length
 from talon.server import net_handler
 
 
@@ -163,6 +165,39 @@ def test_server_rejects_invalid_payload_before_handler_dispatch(tmp_db, test_key
     assert not called.is_set()
     assert errors
     assert teardowns == [link]
+
+
+def test_server_accepts_installed_reticulum_hash_length_for_enrollment(tmp_db, test_key):
+    conn, _ = tmp_db
+    token = generate_enrollment_token(conn)
+    handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+    sent = []
+    teardowns = []
+    link = object()
+    client_hash = "a" * rns_hash_hex_length()
+
+    handler._message_handlers._smart_send = (
+        lambda _link, data: sent.append(proto.decode(data))
+    )
+    handler._teardown_link = lambda _link: teardowns.append(_link)
+
+    handler._handle_enroll(
+        link,
+        {
+            "token": token,
+            "callsign": "SMOKE",
+            "rns_hash": client_hash,
+        },
+    )
+
+    assert sent[-1]["ok"] is True
+    assert sent[-1]["callsign"] == "SMOKE"
+    assert teardowns == [link]
+    stored = conn.execute(
+        "SELECT callsign, rns_hash FROM operators WHERE id = ?",
+        (sent[-1]["operator_id"],),
+    ).fetchone()
+    assert stored == ("SMOKE", client_hash)
 
 
 def test_client_rejects_invalid_payload_before_handler_dispatch(tmp_db, test_key, monkeypatch):

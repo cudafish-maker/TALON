@@ -28,7 +28,7 @@ from kivy.uix.widget import Widget
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.selectioncontrol import MDCheckbox
 
-from talon.ui.font_scale import get_font_scale, load_font_scale_from_db
+from talon.ui.font_scale import get_font_scale, set_font_scale
 from talon.ui.theme import (
     CHAT_AMBER, CHAT_AMBER2, CHAT_BG0, CHAT_BG1, CHAT_BG2, CHAT_BG3, CHAT_BG4,
     CHAT_BORDER, CHAT_G1, CHAT_G2, CHAT_G3, CHAT_G4, CHAT_G5, CHAT_G6,
@@ -826,7 +826,8 @@ class MainScreen(MDScreen):
         app = App.get_running_app()
         if hasattr(app, 'clear_badge'):
             app.clear_badge('main')
-        load_font_scale_from_db(app.conn)
+        if app.core_session.is_unlocked:
+            set_font_scale(app.core_session.read_model("settings.font_scale"))
         if not getattr(self, '_clock_handle', None):
             self._clock_handle = Clock.schedule_interval(self._tick_clock, 1.0)
         self._tick_clock(0)
@@ -864,16 +865,13 @@ class MainScreen(MDScreen):
     def _refresh_all(self) -> None:
         self._rescale_headers()
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.sitrep import load_sitreps
-            from talon.ui.widgets.map_data import load_map_context
-
-            map_context = load_map_context(app.conn)
+            map_context = app.core_session.read_model("map.context")
             assets = map_context.assets
             missions = map_context.missions
-            sitreps_raw = load_sitreps(app.conn, app.db_key) if app.db_key else []
+            sitreps_raw = app.core_session.read_model("sitreps.list")
         except Exception:
             return
 
@@ -1184,11 +1182,13 @@ class MainScreen(MDScreen):
     def _on_asset_tap(self, _map_widget, asset) -> None:
         app = App.get_running_app()
         linked: list = []
-        if app.conn is not None and app.db_key is not None:
+        if app.core_session.is_unlocked:
             try:
-                from talon.sitrep import load_sitreps
                 linked = [(s, cs) for s, cs, _ in
-                          load_sitreps(app.conn, app.db_key, asset_id=asset.id)]
+                          app.core_session.read_model(
+                              "sitreps.list",
+                              {"asset_id": asset.id},
+                          )]
             except Exception:
                 pass
         self._show_asset_dialog(asset, linked)

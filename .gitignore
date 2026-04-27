@@ -46,9 +46,13 @@ cache/
 .mypy_cache/
 .ruff_cache/
 
-# Project-local docs not meant for GitHub repo history
-wiki/
+# Project docs
 *.md
+!AGENTS.md
+!CLAUDE.md
+!wiki/
+!wiki/**/
+!wiki/**/*.md
 .codex
 
 # OS

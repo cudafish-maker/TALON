@@ -61,6 +61,29 @@ def _make_app(current: str, *screen_names: str) -> tuple[TalonApp, dict[str, _Fa
     return app, screens, net_handler, nav_rail
 
 
+class _FakeCoreSession:
+    conn = object()
+    db_key = b"core-key"
+    operator_id = 12
+    sync_engine = object()
+    net_handler = object()
+    client_sync = object()
+
+
+def test_app_mirrors_core_runtime_refs_for_legacy_screens() -> None:
+    app = TalonApp.__new__(TalonApp)
+    app.core_session = _FakeCoreSession()
+
+    app._sync_core_runtime_refs()
+
+    assert app.conn is app.core_session.conn
+    assert app.db_key == b"core-key"
+    assert app.operator_id == 12
+    assert app.sync_engine is app.core_session.sync_engine
+    assert app.net_handler is app.core_session.net_handler
+    assert app.client_sync is app.core_session.client_sync
+
+
 def test_dispatch_domain_events_expands_linked_record_notifications() -> None:
     app, screens, net_handler, nav_rail = _make_app(
         "audit",

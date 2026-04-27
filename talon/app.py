@@ -31,13 +31,14 @@ from talon.services.events import (
     record_deleted,
 )
 from talon.ui.theme import (
+    DEFAULT_THEME_KEY,
+    THEME_META_KEY,
     apply_theme,
     get_ui_theme_key,
-    load_ui_theme_from_db,
-    save_ui_theme_to_db,
     set_ui_theme,
 )
 from talon.utils.logging import get_logger
+from talon_core import TalonCoreSession
 
 _log = get_logger("app")
 
@@ -59,6 +60,15 @@ class TalonApp(MDApp):
         self.title = f"T.A.L.O.N.  [{mode.upper()}]"
         # Config — fall back to empty config if not supplied
         self.cfg: configparser.ConfigParser = cfg or configparser.ConfigParser()
+        self.core_session = TalonCoreSession(
+            cfg=self.cfg,
+            mode=mode,
+            on_lease_expired=self._on_core_lease_expired,
+            on_lease_renewed=self._on_core_lease_renewed,
+            on_data_pushed=self._on_core_data_pushed,
+            on_client_lock_check=self._on_core_client_lock_check,
+        ).start()
+        self.core_session.subscribe(lambda event: self.dispatch_domain_events((event,)))
         # Post-login state — set by LoginScreen after successful auth
         self.conn = None       # open sqlcipher Connection
         self.db_key: typing.Optional[bytes] = None  # 32-byte derived key
@@ -71,6 +81,52 @@ class TalonApp(MDApp):
         # screen_name → unseen update count.  Cleared when the user navigates to that screen.
         self._unread_badges: dict = {}
         self.ui_theme_key = get_ui_theme_key()
+
+    def _sync_core_runtime_refs(self) -> None:
+        """Mirror core-owned runtime refs for legacy Kivy screens."""
+        self.conn = self.core_session.conn
+        self.db_key = self.core_session.db_key
+        self.operator_id = self.core_session.operator_id
+        self.sync_engine = self.core_session.sync_engine
+        self.net_handler = self.core_session.net_handler
+        self.client_sync = self.core_session.client_sync
+
+    def _on_core_lease_expired(self) -> None:
+        def _lock(_dt: float) -> None:
+            if self.root:
+                self.root.current = "lock"
+
+        Clock.schedule_once(_lock)
+
+    def _on_core_lease_renewed(self) -> None:
+        def _unlock(_dt: float) -> None:
+            if not self.root:
+                return
+            try:
+                lock_screen = self.root.get_screen("lock")
+                lock_screen.on_lease_renewed()
+            except Exception as exc:
+                _log.warning("Could not notify lock screen of renewal: %s", exc)
+
+        Clock.schedule_once(_unlock)
+
+    def _on_core_data_pushed(self, table: str, *, badge: bool = True) -> None:
+        Clock.schedule_once(
+            lambda _dt: self.on_data_pushed(table, badge=badge),
+            0,
+        )
+
+    def _on_core_client_lock_check(self, operator_id: int) -> None:
+        def _dispatch(_dt: float) -> None:
+            engine = (
+                self.core_session.sync_engine
+                if getattr(self, "core_session", None) is not None
+                else None
+            )
+            if engine is not None:
+                engine.set_operator_id(operator_id)
+
+        Clock.schedule_once(_dispatch, 0)
 
     # ------------------------------------------------------------------
     # Push notification helpers — called by server screens after DB writes
@@ -209,16 +265,14 @@ class TalonApp(MDApp):
         allow_server_sentinel: bool = False,
     ) -> typing.Optional[int]:
         """Return the current local operator id, or None if it cannot be resolved."""
-        if self.conn is None:
+        if self.core_session is None or not self.core_session.is_unlocked:
             return None
-        from talon.operators import resolve_local_operator_id
-
-        return resolve_local_operator_id(
-            self.conn,
-            mode=self.mode,
-            current_operator_id=self.operator_id,
-            allow_server_sentinel=allow_server_sentinel,
-        )
+        try:
+            return self.core_session.require_local_operator_id(
+                allow_server_sentinel=allow_server_sentinel
+            )
+        except Exception:
+            return None
 
     def require_local_operator_id(
         self,
@@ -226,15 +280,10 @@ class TalonApp(MDApp):
         allow_server_sentinel: bool = False,
     ) -> int:
         """Return the current local operator id or raise if unavailable."""
-        if self.conn is None:
+        if self.core_session is None or not self.core_session.is_unlocked:
             raise RuntimeError("No database connection.")
-        from talon.operators import require_local_operator_id
-
-        return require_local_operator_id(
-            self.conn,
-            mode=self.mode,
-            current_operator_id=self.operator_id,
-            allow_server_sentinel=allow_server_sentinel,
+        return self.core_session.require_local_operator_id(
+            allow_server_sentinel=allow_server_sentinel
         )
 
     # ------------------------------------------------------------------
@@ -282,7 +331,15 @@ class TalonApp(MDApp):
     def apply_stored_theme(self) -> str:
         """Load the operator-selected UI theme from DB and apply it to KivyMD."""
         previous = self.ui_theme_key
-        self.ui_theme_key = load_ui_theme_from_db(self.conn)
+        if self.core_session.is_unlocked:
+            self.ui_theme_key = set_ui_theme(
+                self.core_session.read_model(
+                    "settings.meta",
+                    {"key": THEME_META_KEY, "default": DEFAULT_THEME_KEY},
+                )
+            )
+        else:
+            self.ui_theme_key = set_ui_theme(DEFAULT_THEME_KEY)
         apply_theme(self)
         if self.ui_theme_key != previous:
             self._notify_theme_changed()
@@ -290,11 +347,13 @@ class TalonApp(MDApp):
 
     def set_global_theme(self, theme_key: str) -> str:
         """Persist a global UI theme and notify already-built screens."""
-        self.ui_theme_key = (
-            save_ui_theme_to_db(self.conn, theme_key)
-            if self.conn is not None
-            else set_ui_theme(theme_key)
-        )
+        self.ui_theme_key = set_ui_theme(theme_key)
+        if self.core_session.is_unlocked:
+            self.core_session.command(
+                "settings.set_meta",
+                key=THEME_META_KEY,
+                value=self.ui_theme_key,
+            )
         apply_theme(self)
         self._notify_theme_changed()
         return self.ui_theme_key
@@ -326,37 +385,15 @@ class TalonApp(MDApp):
             self._nav_rail.set_active(screen_name)
 
     def on_stop(self) -> None:
-        if self.sync_engine is not None:
-            self.sync_engine.stop()
-            self.sync_engine = None
-        if self.net_handler is not None:
-            try:
-                self.net_handler.stop()
-            except Exception as exc:
-                _log.warning("Error stopping net_handler: %s", exc)
-            self.net_handler = None
-        if self.client_sync is not None:
-            try:
-                self.client_sync.stop()
-            except Exception as exc:
-                _log.warning("Error stopping client_sync: %s", exc)
-            self.client_sync = None
-        # Stop the propagation node first (server mode), then the transport stack.
-        # Both helpers are no-ops if the respective component was never started.
+        core_session = getattr(self, "core_session", None)
         try:
-            from talon.server.propagation import stop_propagation_node
-            stop_propagation_node()
+            if core_session is not None:
+                core_session.close()
         except Exception as exc:
-            _log.warning("Error stopping propagation node: %s", exc)
-        try:
-            from talon.network.node import shutdown_reticulum
-            shutdown_reticulum()
-        except Exception as exc:
-            _log.warning("Error stopping Reticulum: %s", exc)
-        if self.conn is not None:
-            from talon.db.connection import close_db
-            close_db(self.conn)
-            self.conn = None
+            _log.warning("Error closing core session: %s", exc)
+        if core_session is not None:
+            self._sync_core_runtime_refs()
+        if self.conn is None:
             _log.info("Database closed.")
         _log.info("TalonApp stopping.")
 

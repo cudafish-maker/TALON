@@ -50,17 +50,14 @@ class ClientsScreen(MDScreen):
 
     def on_renew_pressed(self, operator_id: int, callsign: str) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.services.operators import renew_operator_lease_command
-
-            result = renew_operator_lease_command(
-                app.conn,
-                operator_id,
-                LEASE_DURATION_S,
+            app.core_session.command(
+                "operators.renew_lease",
+                operator_id=operator_id,
+                duration_s=LEASE_DURATION_S,
             )
-            app.dispatch_domain_events(result.events)
             _log.info("Lease renewed via UI: operator_id=%s", operator_id)
             self._refresh()
         except Exception as exc:
@@ -69,11 +66,13 @@ class ClientsScreen(MDScreen):
     def on_edit_pressed(self, operator_id: int) -> None:
         """Open the profile / skills editor for the given operator."""
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.operators import get_operator
-            operator = get_operator(app.conn, operator_id)
+            operator = app.core_session.read_model(
+                "operators.detail",
+                {"operator_id": operator_id},
+            )
             if operator is None:
                 _log.warning("on_edit_pressed: operator %s not found", operator_id)
                 return
@@ -90,18 +89,15 @@ class ClientsScreen(MDScreen):
         self, operator_id: int, skills: list, profile: dict
     ) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.services.operators import update_operator_command
-
-            result = update_operator_command(
-                app.conn,
-                operator_id,
+            app.core_session.command(
+                "operators.update",
+                operator_id=operator_id,
                 skills=skills,
                 profile=profile,
             )
-            app.dispatch_domain_events(result.events)
             _log.info("Profile saved: operator_id=%s", operator_id)
             self._refresh()
         except Exception as exc:
@@ -135,13 +131,10 @@ class ClientsScreen(MDScreen):
     def _do_revoke(self, dialog: MDDialog, operator_id: int, callsign: str) -> None:
         dialog.dismiss()
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            from talon.services.operators import revoke_operator_command
-
-            result = revoke_operator_command(app.conn, operator_id)
-            app.dispatch_domain_events(result.events)
+            app.core_session.command("operators.revoke", operator_id=operator_id)
             _log.warning("Operator revoked via UI: %s (id=%s)", callsign, operator_id)
             self._refresh()
         except Exception as exc:
@@ -149,35 +142,28 @@ class ClientsScreen(MDScreen):
 
     def _refresh(self) -> None:
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            rows = app.conn.execute(
-                "SELECT id, callsign, rns_hash, lease_expires_at, revoked "
-                "FROM operators ORDER BY enrolled_at DESC"
-            ).fetchall()
+            operators = app.core_session.read_model("operators.list")
             op_list = self.ids.operator_list
             op_list.clear_widgets()
             now = int(time.time())
             added = 0
-            for row in rows:
-                op_id, callsign, rns_hash, lease_expires, revoked = row
-                # Skip the internal SERVER sentinel — not a real enrolled client.
-                if op_id == 1:
-                    continue
-                if revoked:
+            for operator in operators:
+                if operator.revoked:
                     status = "REVOKED"
-                elif lease_expires < now:
+                elif operator.lease_expires_at < now:
                     status = "LOCKED"
                 else:
-                    remaining = math.ceil((lease_expires - now) / 3600)
+                    remaining = math.ceil((operator.lease_expires_at - now) / 3600)
                     status = f"OK ({remaining}h)"
                 op_list.add_widget(_OperatorRow(
-                    operator_id=op_id,
-                    callsign=callsign,
-                    rns_hash=rns_hash[:16] + "\u2026",
+                    operator_id=operator.id,
+                    callsign=operator.callsign,
+                    rns_hash=operator.rns_hash[:16] + "\u2026",
                     status=status,
-                    is_revoked=bool(revoked),
+                    is_revoked=operator.revoked,
                     screen=self,
                 ))
                 added += 1

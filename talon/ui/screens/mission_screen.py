@@ -20,16 +20,6 @@ from kivymd.uix.button import MDIconButton
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.selectioncontrol import MDCheckbox
 
-from talon.assets import load_assets
-from talon.missions import MISSION_STATUSES, get_channel_for_mission, get_mission_assets, load_missions
-from talon.services.missions import (
-    abort_mission_command,
-    approve_mission_command,
-    complete_mission_command,
-    delete_mission_command,
-    reject_mission_command,
-)
-from talon.sitrep import load_sitreps
 from talon.ui.font_scale import get_font_scale
 from talon.ui.theme import (
     CHAT_AMBER, CHAT_AMBER2, CHAT_BG0, CHAT_BG1, CHAT_BG2, CHAT_BG3, CHAT_BG4,
@@ -37,8 +27,6 @@ from talon.ui.theme import (
     CHAT_RED, CHAT_RED2,
 )
 from talon.ui.widgets.map_draw import CATEGORY_ABBR as _CATEGORY_ABBR
-from talon.waypoints import load_waypoints
-from talon.zones import load_zones
 
 def _fs(base: float) -> float:
     return dp(base * get_font_scale())
@@ -374,10 +362,13 @@ class MissionScreen(MDScreen):
 
     def _load_missions(self) -> None:
         app = App.get_running_app()
-        if not hasattr(app, 'conn') or app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         _, status_filter = _FILTER_OPTIONS[self._filter_index]
-        missions = load_missions(app.conn, status_filter=status_filter)
+        missions = app.core_session.read_model(
+            "missions.list",
+            {"status_filter": status_filter},
+        )
         is_server = getattr(app, 'mode', 'client') == 'server'
 
         self._mission_list.clear_widgets()
@@ -419,17 +410,17 @@ class MissionScreen(MDScreen):
 
     def _show_approve_dialog(self, mission) -> None:
         app = App.get_running_app()
-        if not hasattr(app, 'conn') or app.conn is None:
+        if not app.core_session.is_unlocked:
             return
 
-        requested_assets = get_mission_assets(app.conn, mission.id)
-        requested_ids = {a.id for a in requested_assets}
-        all_assets = load_assets(app.conn)
-
-        row = app.conn.execute(
-            'SELECT callsign FROM operators WHERE id = ?', (mission.created_by,)
-        ).fetchone()
-        creator = row[0] if row else f'#{mission.created_by}'
+        context = app.core_session.read_model(
+            "missions.approval_context",
+            {"mission_id": mission.id},
+        )
+        requested_assets = context["requested_assets"]
+        requested_ids = context["requested_ids"]
+        all_assets = context["all_assets"]
+        creator = context["creator_callsign"]
 
         modal = ModalView(
             size_hint=(None, None), size=(dp(480), dp(560)),
@@ -526,22 +517,24 @@ class MissionScreen(MDScreen):
         app = App.get_running_app()
         approved_ids = [aid for aid, chk in asset_checks.items() if chk.active]
         try:
-            result = approve_mission_command(app.conn, mission_id, asset_ids=approved_ids)
+            app.core_session.command(
+                "missions.approve",
+                mission_id=mission_id,
+                asset_ids=approved_ids,
+            )
         except ValueError as exc:
             self._show_error_dialog(str(exc))
             return
-        app.dispatch_domain_events(result.events)
         modal.dismiss()
         self._load_missions()
 
     def _do_reject_mission(self, modal, mission_id):
         app = App.get_running_app()
         try:
-            result = reject_mission_command(app.conn, mission_id)
+            app.core_session.command("missions.reject", mission_id=mission_id)
         except ValueError as exc:
             self._show_error_dialog(str(exc))
             return
-        app.dispatch_domain_events(result.events)
         modal.dismiss()
         self._load_missions()
 
@@ -551,22 +544,20 @@ class MissionScreen(MDScreen):
 
     def _show_detail_dialog(self, mission) -> None:
         app = App.get_running_app()
-        if not hasattr(app, 'conn') or app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         is_server = getattr(app, 'mode', 'client') == 'server'
 
-        row = app.conn.execute(
-            'SELECT callsign FROM operators WHERE id = ?', (mission.created_by,)
-        ).fetchone()
-        creator = row[0] if row else f'#{mission.created_by}'
-
-        mission_assets  = get_mission_assets(app.conn, mission.id)
-        channel_name    = get_channel_for_mission(app.conn, mission.id) or ''
-        mission_zones   = load_zones(app.conn, mission_id=mission.id)
-        ao_zones        = [z for z in mission_zones if z.zone_type == 'AO']
-        mission_wps     = load_waypoints(app.conn, mission.id)
-        db_key          = getattr(app, 'db_key', None)
-        mission_sitreps = load_sitreps(app.conn, db_key, mission_id=mission.id) if db_key else []
+        detail = app.core_session.read_model(
+            "missions.detail",
+            {"mission_id": mission.id},
+        )
+        creator         = detail["creator_callsign"]
+        mission_assets  = detail["assets"]
+        channel_name    = detail["channel_name"]
+        ao_zones        = detail["ao_zones"]
+        mission_wps     = detail["waypoints"]
+        mission_sitreps = detail["sitreps"]
 
         color        = _STATUS_COLOR.get(mission.status, CHAT_G2)
         status_label = _STATUS_LABEL.get(mission.status, mission.status.upper())
@@ -754,11 +745,10 @@ class MissionScreen(MDScreen):
     def _do_complete_mission(self, detail_modal, mission_id):
         app = App.get_running_app()
         try:
-            result = complete_mission_command(app.conn, mission_id)
+            app.core_session.command("missions.complete", mission_id=mission_id)
         except ValueError as exc:
             self._show_error_dialog(str(exc))
             return
-        app.dispatch_domain_events(result.events)
         detail_modal.dismiss()
         self._load_missions()
 
@@ -772,11 +762,10 @@ class MissionScreen(MDScreen):
     def _do_abort_mission(self, detail_modal, mission_id):
         app = App.get_running_app()
         try:
-            result = abort_mission_command(app.conn, mission_id)
+            app.core_session.command("missions.abort", mission_id=mission_id)
         except ValueError as exc:
             self._show_error_dialog(str(exc))
             return
-        app.dispatch_domain_events(result.events)
         detail_modal.dismiss()
         self._load_missions()
 
@@ -789,15 +778,14 @@ class MissionScreen(MDScreen):
 
     def _do_delete_mission(self, detail_modal, mission_id):
         app = App.get_running_app()
-        if app.conn is None:
+        if not app.core_session.is_unlocked:
             return
         try:
-            result = delete_mission_command(app.conn, mission_id)
+            app.core_session.command("missions.delete", mission_id=mission_id)
         except ValueError as exc:
             self._show_error_dialog(str(exc))
             return
 
-        app.dispatch_domain_events(result.events)
         detail_modal.dismiss()
         self._load_missions()
 
