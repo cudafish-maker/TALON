@@ -450,7 +450,9 @@ class TalonCoreSession:
         from talon_core.network.registry import ui_refresh_targets
         from talon_core.services.events import ui_refresh_requested
 
-        targets = ui_refresh_targets(table)
+        targets = set(ui_refresh_targets(table))
+        if table == "operators":
+            targets.add("chat")
         if not targets:
             return
         self.publish_events((ui_refresh_requested(ui_targets=targets),))

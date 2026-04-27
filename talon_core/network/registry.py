@@ -31,7 +31,7 @@ TABLES: dict[str, SyncedTable] = {
         name="operators",
         sync_order=0,
         tombstone_order=8,
-        ui_refresh_targets=_fields("operators", "clients", "chat"),
+        ui_refresh_targets=_fields("operators", "clients"),
     ),
     "assets": SyncedTable(
         name="assets",

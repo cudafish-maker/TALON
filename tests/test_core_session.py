@@ -424,6 +424,24 @@ def test_core_session_network_client_notify_publishes_refresh_event(
     session.close()
 
 
+def test_core_session_network_operator_notify_refreshes_chat(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    received = []
+    session.subscribe(received.append)
+
+    session._notify_client_ui("operators", badge=False)
+
+    assert len(received) == 1
+    assert received[0].kind == "ui_refresh_requested"
+    assert received[0].ui_targets == frozenset({"operators", "clients", "chat"})
+
+    session.close()
+
+
 def test_core_session_network_notify_keeps_legacy_callback_authoritative(
     tmp_path: pathlib.Path,
 ) -> None:

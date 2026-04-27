@@ -12,6 +12,9 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-27: `pytest -q` passed, 273 tests and 1 skipped after narrowing
+  operator-domain refresh routing while preserving network-applied operator
+  refreshes for Chat.
 - 2026-04-27: `python -m py_compile talon_desktop/map_tiles.py
   talon_desktop/map_data.py talon_desktop/map_page.py tests/test_desktop_shell.py`
   passed after adding OSM, TOPO, and Satellite live tile layers.
