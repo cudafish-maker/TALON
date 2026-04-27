@@ -2,9 +2,14 @@ name: Build TALON Desktop Linux
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-linux:
@@ -124,6 +129,16 @@ jobs:
         with:
           name: talon-desktop-linux
           path: |
+            dist/talon-desktop-client-linux.tar.gz
+            dist/talon-desktop-client-linux.tar.gz.sha256
+            dist/talon-desktop-server-linux.tar.gz
+            dist/talon-desktop-server-linux.tar.gz.sha256
+
+      - name: Publish Linux release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
             dist/talon-desktop-client-linux.tar.gz
             dist/talon-desktop-client-linux.tar.gz.sha256
             dist/talon-desktop-server-linux.tar.gz

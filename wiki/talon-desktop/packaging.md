@@ -48,6 +48,10 @@ The PySide6 package path is the active Linux desktop release path:
 - Server release tarball: `dist/talon-desktop-server-linux.tar.gz`
 - SHA-256 files: matching `.sha256` files for both role-specific tarballs.
 
+The Linux desktop workflow runs manually, on `main` pushes, and on `v*` tag
+pushes. Tag builds publish the role-specific client/server tarballs and their
+SHA-256 files as release assets.
+
 The package entry point is `talon-desktop`, not legacy `talon`. The package
 smoke command is:
 
