@@ -204,6 +204,10 @@ class TalonCoreSession:
     def is_unlocked(self) -> bool:
         return self._conn is not None
 
+    @property
+    def reticulum_started(self) -> bool:
+        return self._reticulum_started
+
     def start(self) -> "TalonCoreSession":
         """Load config, resolve mode, and calculate runtime paths."""
         if self._cfg is None:
@@ -455,6 +459,7 @@ class TalonCoreSession:
         result = self._execute_command(command_name, data)
         events = tuple(getattr(result, "events", ()) or ())
         if events:
+            self._apply_sync_side_effects(events, result=result)
             self.publish_events(events)
         return result
 
@@ -796,6 +801,71 @@ class TalonCoreSession:
             return dict(self._net_handler.status())
         active_links = getattr(self._net_handler, "_active_links", {})
         return {"started": True, "active_client_count": len(active_links)}
+
+    def _apply_sync_side_effects(
+        self,
+        events: typing.Iterable[DomainEvent],
+        *,
+        result: object,
+    ) -> None:
+        """Bridge local service mutations into the core-owned sync runtime."""
+        from talon_core.network.registry import is_offline_creatable, is_syncable
+
+        client_primary_records = self._client_primary_records(result)
+        for event in events:
+            for mutation in event.iter_records():
+                table = mutation.table
+                record_id = int(mutation.record_id)
+                if not is_syncable(table):
+                    continue
+
+                if self.mode == "server":
+                    if self._net_handler is None:
+                        continue
+                    if mutation.action == "changed":
+                        self._net_handler.notify_change(table, record_id)
+                    elif mutation.action == "deleted":
+                        self._net_handler.notify_delete(table, record_id)
+                    continue
+
+                if mutation.action != "changed" or not is_offline_creatable(table):
+                    continue
+                if (table, record_id) not in client_primary_records:
+                    continue
+                self._mark_client_record_pending(table, record_id)
+                if self._client_sync is not None:
+                    self._client_sync.push_record_pending(table, record_id)
+
+    @staticmethod
+    def _client_primary_records(result: object) -> set[tuple[str, int]]:
+        records: set[tuple[str, int]] = set()
+        table = getattr(result, "table", None)
+        record_id = getattr(result, "record_id", None)
+        if isinstance(table, str) and record_id is not None:
+            records.add((table, int(record_id)))
+
+        asset_id = getattr(result, "asset_id", None)
+        if asset_id is not None:
+            records.add(("assets", int(asset_id)))
+
+        mission = getattr(result, "mission", None)
+        mission_id = getattr(result, "mission_id", None)
+        if mission is not None and getattr(mission, "id", None) is not None:
+            records.add(("missions", int(mission.id)))
+        elif mission_id is not None:
+            records.add(("missions", int(mission_id)))
+
+        return records
+
+    def _mark_client_record_pending(self, table: str, record_id: int) -> None:
+        from talon_core.network.registry import validated_sync_table
+
+        table_name = validated_sync_table(table)
+        self._conn.execute(
+            f"UPDATE {table_name} SET sync_status = 'pending' WHERE id = ?",  # noqa: S608
+            (record_id,),
+        )
+        self._conn.commit()
 
     def _pending_outbox_counts(self) -> dict[str, int]:
         from talon_core.network.registry import OFFLINE_TABLES, validated_sync_table

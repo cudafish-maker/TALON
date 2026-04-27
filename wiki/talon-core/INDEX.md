@@ -57,6 +57,10 @@ package boundary clean and avoiding new UI-to-backend bypasses.
 
 ## Latest Verification
 
+- 2026-04-27: Fixed core command-boundary sync propagation for chat/network
+  flows: server-side chat sends now notify the server push dispatcher, and
+  client-side sends are marked pending and queued through the outbox. `pytest -q`
+  passed, 265 passed and 1 skipped.
 - 2026-04-26: Physical split hardening moved backend implementations for config,
   DB, crypto, Reticulum/protocol/sync/server handlers, services, domain models,
   documents, chat, assets, missions, SITREPs, map helpers, and settings into

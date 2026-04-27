@@ -171,6 +171,49 @@ sys.stderr.flush()
 os._exit(0)
 """
 
+_QT_RETICULUM_FAILURE_SCRIPT = r"""
+import os
+import sys
+import time
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_desktop.app import DesktopRuntime, LoginWindow
+
+config_path = sys.argv[1]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+runtime = DesktopRuntime(core, start_sync=True)
+try:
+    def _fail_reticulum():
+        raise RuntimeError("rns unavailable")
+    core.start_reticulum = _fail_reticulum
+    runtime.login_window = LoginWindow(core.mode)
+    runtime.unlock("desktop-smoke-passphrase")
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        app.processEvents()
+        message = runtime.login_window.status_label.text()
+        if "Reticulum failed to start: rns unavailable" in message:
+            print("reticulum-error-visible")
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(runtime.login_window.status_label.text())
+finally:
+    if runtime.login_window is not None:
+        runtime.login_window.close()
+    runtime.shutdown()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
 _QT_SETTINGS_SMOKE_SCRIPT = r"""
 import os
 import sys
@@ -322,6 +365,20 @@ def test_qt_smoke_unlocks_desktop_runtime_paths(
     )
 
     assert expected in result.stdout
+
+
+def test_qt_client_unlock_surfaces_reticulum_start_failure(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_RETICULUM_FAILURE_SCRIPT,
+        tmp_path,
+        mode="client",
+        extra_arg="reticulum-failure",
+        timeout=30,
+    )
+
+    assert "reticulum-error-visible" in result.stdout
 
 
 def test_qt_smoke_persists_desktop_window_and_view_settings(

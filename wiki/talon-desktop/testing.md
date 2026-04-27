@@ -161,6 +161,11 @@ acceptance workflows.
   adding the desktop session log buffer and status-bar Logs affordance.
 - 2026-04-27: `pytest -q` passed, 257 tests after desktop log-view affordance
   wiring.
+- 2026-04-27: `pytest -q tests/test_core_session.py tests/test_desktop_shell.py`
+  passed, 58 tests after surfacing client Reticulum startup failures during
+  desktop unlock and covering chat command sync propagation.
+- 2026-04-27: `pytest -q` passed, 265 passed and 1 skipped after client
+  Reticulum startup failure surfacing and chat command sync propagation.
 
 ## PySide6 Acceptance
 

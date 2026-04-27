@@ -46,8 +46,12 @@ The desktop target should keep the current operational density:
   and a copyable log dialog for desktop/core runtime diagnostics.
 - Unlock uses `TalonCoreSession.unlock()` and starts Reticulum/sync by default;
   `--no-sync` is available for local UI smoke tests.
+- Client unlock now treats Reticulum startup as required when sync is enabled:
+  startup failures remain on the login/enrollment surface with the underlying
+  error instead of opening the main UI with `reticulum_started: false`.
 - Offscreen desktop runtime smoke tests cover server unlock to the main window
-  and client unlock to the enrollment prompt.
+  and client unlock to the enrollment prompt, including visible client
+  Reticulum startup failure surfacing.
 - The main window exposes Dashboard, Map, SITREPs, Assets, Missions, Chat,
   Documents, Operators, and server-only Enrollment/Clients/Audit/Keys sections.
 - The Dashboard section renders the core `dashboard.summary` and `sync.status`

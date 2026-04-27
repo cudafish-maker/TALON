@@ -16,6 +16,9 @@ platform split.
 - LoRa polling fallback at 120 seconds.
 - Server-to-client delta sync by table/version.
 - Client-to-server outbox push for offline-created records.
+- Core service command events feed sync side effects through
+  `TalonCoreSession`: server mutations call `notify_change`/`notify_delete`,
+  and client primary outbox records are marked pending and queued for push.
 - Tombstone sync for deletes.
 - Client document fetch via `document_request` and resource-backed response.
 

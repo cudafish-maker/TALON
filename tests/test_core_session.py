@@ -326,6 +326,86 @@ def test_core_session_phase1_domain_boundary(tmp_path: pathlib.Path) -> None:
     session.close()
 
 
+def test_core_session_server_chat_message_notifies_sync_push(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    changed: list[tuple[str, int]] = []
+
+    class _NetHandler:
+        def notify_change(self, table: str, record_id: int) -> None:
+            changed.append((table, record_id))
+
+        def notify_delete(self, table: str, record_id: int) -> None:
+            raise AssertionError("delete notification was not expected")
+
+        def stop(self) -> None:
+            return None
+
+    session._net_handler = _NetHandler()
+    session.command("chat.ensure_defaults")
+    channel_result = session.command("chat.create_channel", name="ops")
+
+    message_result = session.command(
+        "chat.send_message",
+        channel_id=channel_result.channel.id,
+        body="Server relay check",
+    )
+
+    assert ("channels", channel_result.channel.id) in changed
+    assert ("messages", message_result.message.id) in changed
+
+    session.close()
+
+
+def test_core_session_client_chat_message_enters_outbox(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+        "VALUES (8, 'CHATTER', ?, '[]', '{}', 1000, 9999999999, 0)",
+        ("c" * 64,),
+    )
+    session.conn.execute(
+        "INSERT INTO channels (id, name, mission_id, is_dm, version, group_type) "
+        "VALUES (10, '#general', NULL, 0, 1, 'allhands')"
+    )
+    session.conn.commit()
+    session._operator_id = 8
+    pushed: list[tuple[str, int]] = []
+
+    class _ClientSync:
+        def push_record_pending(self, table: str, record_id: int) -> None:
+            pushed.append((table, record_id))
+
+        def stop(self) -> None:
+            return None
+
+    session._client_sync = _ClientSync()
+
+    result = session.command(
+        "chat.send_message",
+        channel_id=10,
+        body="Client relay check",
+    )
+
+    row = session.conn.execute(
+        "SELECT sender_id, sync_status FROM messages WHERE id = ?",
+        (result.message.id,),
+    ).fetchone()
+    assert row == (8, "pending")
+    assert pushed == [("messages", result.message.id)]
+
+    session.close()
+
+
 def test_core_session_server_admin_boundary(tmp_path: pathlib.Path) -> None:
     config_path = _write_config(tmp_path, "server")
     session = TalonCoreSession(config_path=config_path).start()

@@ -628,10 +628,17 @@ class DesktopRuntime(QtCore.QObject):
     def unlock(self, passphrase: str) -> None:
         assert self.login_window is not None
         self.login_window.set_busy(True, "Unlocking database...")
+        reticulum_warning = ""
         try:
             self.core.start_reticulum()
         except Exception as exc:
+            reticulum_warning = str(exc)
             _log.warning("Reticulum init warning: %s", exc)
+            if self.start_sync and self.core.mode == "client":
+                self.login_window.show_error(
+                    f"Reticulum failed to start: {reticulum_warning}"
+                )
+                return
 
         signals = _WorkerSignals()
         self._workers.append(signals)
@@ -647,6 +654,11 @@ class DesktopRuntime(QtCore.QObject):
                 )
                 sync_warning = ""
                 if self.start_sync:
+                    if self.core.mode == "client" and not self.core.reticulum_started:
+                        raise RuntimeError(
+                            reticulum_warning
+                            or "Reticulum did not start; sync cannot run."
+                        )
                     try:
                         self.core.start_sync(init_reticulum=False)
                     except Exception as exc:
