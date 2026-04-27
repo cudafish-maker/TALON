@@ -727,6 +727,23 @@ class TestServerClientPush:
 
 
 class TestClientServerPushIntegration:
+    def test_public_push_record_pending_delegates_to_outbox(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_public_push.db", test_key)
+        try:
+            manager = _make_client_manager(client_conn, test_key, operator_id=1)
+            calls = []
+            manager._outbox.push_record_pending = (
+                lambda table, record_id: calls.append((table, record_id))
+            )
+
+            manager.push_record_pending("messages", 42)
+
+            assert calls == [("messages", 42)]
+        finally:
+            close_db(client_conn)
+
     def test_startup_sync_refreshes_without_unread_badges(
         self, tmp_path, test_key
     ):

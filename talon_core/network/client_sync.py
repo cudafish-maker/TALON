@@ -293,6 +293,9 @@ class ClientSyncManager:
     def push_pending_to_server(self, table: str, record_id: int) -> None:
         self._outbox.push_pending_to_server(table, record_id)
 
+    def push_record_pending(self, table: str, record_id: int) -> None:
+        self._outbox.push_record_pending(table, record_id)
+
     def _push_record_pending(self, table: str, record_id: int) -> None:
         self._outbox.push_record_pending(table, record_id)
 

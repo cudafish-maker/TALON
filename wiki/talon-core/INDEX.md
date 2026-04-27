@@ -57,6 +57,12 @@ package boundary clean and avoiding new UI-to-backend bypasses.
 
 ## Latest Verification
 
+- 2026-04-27: Added the missing public
+  `ClientSyncManager.push_record_pending()` wrapper used by
+  `TalonCoreSession` client outbox sync side effects, fixing client chat sends
+  after Reticulum startup. Focused verification
+  `pytest -q tests/test_sync.py tests/test_core_session.py` passed, 56 tests;
+  full `pytest -q` passed, 266 passed and 1 skipped.
 - 2026-04-27: Fixed core command-boundary sync propagation for chat/network
   flows: server-side chat sends now notify the server push dispatcher, and
   client-side sends are marked pending and queued through the outbox. `pytest -q`
