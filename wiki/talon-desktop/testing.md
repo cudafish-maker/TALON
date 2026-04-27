@@ -12,6 +12,12 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-27: `pytest -q` passed, 262 passed and 1 skipped after replacing the
+  last active `talon.app`/Kivy event test with PySide6 core event bridge
+  coverage. The skipped test is PySide6-gated for non-desktop local Python
+  environments; desktop CI installs `.[dev,desktop]` and runs it.
+- 2026-04-27: `.venv/bin/python -c "from PySide6 import QtCore; ..."` verified
+  `CoreEventBridge` emits a documents refresh signal in the PySide6 venv.
 - 2026-04-27: `pytest -q tests/test_attribution_flows.py` passed, 3 tests after
   retiring Kivy screen imports from active attribution coverage.
 - 2026-04-27: `pytest -q tests/test_desktop_shell.py -k pyproject` passed,
