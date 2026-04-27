@@ -12,6 +12,16 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-27: `bash -n build/install-talon-desktop.sh` passed after
+  role-specific Linux artifact installer wiring.
+- 2026-04-27: `pytest -q tests/test_linux_installer.py` passed, 11 tests after
+  adding PySide6 client/server artifact installer coverage.
+- 2026-04-27: local role split packaging from existing
+  `dist/talon-desktop-linux/` produced `talon-desktop-client-linux.tar.gz` and
+  `talon-desktop-server-linux.tar.gz`; no-bin/no-desktop install smoke passed
+  for both artifacts.
+- 2026-04-27: `pytest -q` passed, 267 tests after Linux role artifact split
+  installer and workflow updates.
 - 2026-04-27: `python -m py_compile talon_desktop/sitreps.py
   talon_desktop/sitrep_page.py talon_desktop/app.py talon_desktop/theme.py
   tests/test_desktop_shell.py` passed after SITREP template and dashboard

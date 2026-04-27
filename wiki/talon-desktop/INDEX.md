@@ -40,7 +40,9 @@ the PySide6 Linux PyInstaller spec, installer, and manual GitHub Actions
 workflow exist, and a local tarball package smoke passed for server and client.
 Target Linux Mint package install/launch validation passed without the old
 Kivy/SDL/GLX startup failure. Package-level Reticulum loopback sync passed from
-the packaged artifact and an extracted installed package. The Linux package
+the packaged artifact and an extracted installed package. Linux packaging now
+produces separate client and server artifacts with role-specific launchers and
+a destructive confirmation gate before switching local roles. The Linux package
 breakpoint is complete. The current priority is a polished Linux server/client
 release candidate before Windows packaging starts.
 
@@ -66,6 +68,7 @@ release candidate before Windows packaging starts.
 - [documents.md](documents.md) - document repository UI and BUG-085.
 - [server_admin.md](server_admin.md) - clients, enroll, audit, keys.
 - [packaging.md](packaging.md) - Linux/Windows packaging.
+- [linux_role_artifact_split_checklist.md](linux_role_artifact_split_checklist.md) - Linux client/server artifact split and destructive role-switch checklist.
 - [legacy_kivy.md](legacy_kivy.md) - current Kivy state and retirement.
 - [testing.md](testing.md) - desktop acceptance matrix.
 

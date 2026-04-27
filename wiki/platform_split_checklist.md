@@ -295,7 +295,7 @@ server/client release, then validate Windows.
 ### Linux Breakpoint B: Linux Package
 
 - [x] Create PySide6 Linux packaging config.
-- [x] Build Linux package artifact.
+- [x] Build role-specific Linux package artifacts.
 - [x] Install Linux package on target Linux Mint environment.
 - [x] Launch package on target Linux Mint environment.
 - [x] Confirm no SDL/GLX/Kivy startup dependency remains in PySide6 package.
@@ -314,8 +314,8 @@ server/client release, then validate Windows.
 - [ ] Run manual client acceptance pass from the packaged Linux artifact.
 - [ ] Complete paired server/client enrollment and sync acceptance on target
   Linux systems.
-- [ ] Verify package install, upgrade/reinstall, launcher, and uninstall or
-  removal notes.
+- [ ] Verify role-specific package install, upgrade/reinstall, launcher,
+  destructive role-switch, and uninstall or removal notes.
 - [ ] Write Linux release notes with known limitations and troubleshooting.
 - [ ] Mark Linux PySide6 server/client release candidate accepted.
 

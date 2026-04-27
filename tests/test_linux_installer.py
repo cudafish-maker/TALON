@@ -17,6 +17,8 @@ pytestmark = pytest.mark.skipif(
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = REPO_ROOT / "build" / "install-talon.sh"
+DESKTOP_INSTALLER = REPO_ROOT / "build" / "install-talon-desktop.sh"
+DELETE_PHRASE = "DELETE TALON DATA"
 
 
 def _fake_bundle(tmp_path: Path, talon_script: str) -> Path:
@@ -151,3 +153,216 @@ exit 1
     attempts = attempts_log.read_text(encoding="utf-8").splitlines()
     assert attempts[0] == "attempt:0"
     assert attempts[-1] == "attempt:1"
+
+
+def _fake_desktop_bundle(tmp_path: Path, role: str) -> Path:
+    bundle = tmp_path / f"talon-desktop-{role}-linux-source"
+    internal = bundle / "_internal"
+    internal.mkdir(parents=True)
+    (internal / "base_library.zip").write_bytes(b"")
+    (bundle / ".talon-artifact-role").write_text(f"{role}\n", encoding="utf-8")
+
+    app = bundle / "talon-desktop"
+    app.write_text(
+        """#!/usr/bin/env sh
+printf 'desktop:%s:%s\\n' "$TALON_CONFIG" "$*"
+exit 0
+""",
+        encoding="utf-8",
+    )
+    app.chmod(app.stat().st_mode | stat.S_IXUSR)
+    return bundle
+
+
+def _desktop_env(tmp_path: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path / "home")
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg-data")
+    env["XDG_STATE_HOME"] = str(tmp_path / "xdg-state")
+    return env
+
+
+def _run_desktop_install(
+    tmp_path: Path,
+    bundle: Path,
+    *extra_args: str,
+    env: dict[str, str] | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    install_env = env or _desktop_env(tmp_path)
+    return subprocess.run(
+        [
+            "bash",
+            str(DESKTOP_INSTALLER),
+            "--no-deps",
+            "--prefix",
+            str(tmp_path / "install"),
+            "--bin-dir",
+            str(tmp_path / "bin"),
+            str(bundle),
+            *extra_args,
+        ],
+        check=check,
+        env=install_env,
+        text=True,
+        capture_output=True,
+    )
+
+
+def test_desktop_client_artifact_installs_only_client_launcher_and_entry(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "client"), env=env)
+
+    assert (tmp_path / "bin" / "talon-desktop-client").is_file()
+    assert not (tmp_path / "bin" / "talon-desktop").exists()
+    assert not (tmp_path / "bin" / "talon-desktop-server").exists()
+    entry = tmp_path / "xdg-data" / "applications" / "talon-desktop-client.desktop"
+    assert entry.is_file()
+    text = entry.read_text(encoding="utf-8")
+    assert "Name=T.A.L.O.N. Client" in text
+    assert f"Exec={tmp_path / 'bin' / 'talon-desktop-client'}" in text
+    assert not (tmp_path / "xdg-data" / "applications" / "talon-desktop.desktop").exists()
+    assert not (tmp_path / "xdg-data" / "applications" / "talon-desktop-server.desktop").exists()
+    assert (tmp_path / "home" / ".talon" / "talon.ini").is_file()
+    assert "mode = client" in (tmp_path / "home" / ".talon" / "talon.ini").read_text(encoding="utf-8")
+    launcher = (tmp_path / "bin" / "talon-desktop-client").read_text(encoding="utf-8")
+    assert f"export TALON_CONFIG='{tmp_path / 'home' / '.talon' / 'talon.ini'}'" in launcher
+
+
+def test_desktop_server_artifact_installs_only_server_launcher_and_entry(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "server"), env=env)
+
+    assert (tmp_path / "bin" / "talon-desktop-server").is_file()
+    assert not (tmp_path / "bin" / "talon-desktop").exists()
+    assert not (tmp_path / "bin" / "talon-desktop-client").exists()
+    entry = tmp_path / "xdg-data" / "applications" / "talon-desktop-server.desktop"
+    assert entry.is_file()
+    text = entry.read_text(encoding="utf-8")
+    assert "Name=T.A.L.O.N. Server" in text
+    assert f"Exec={tmp_path / 'bin' / 'talon-desktop-server'}" in text
+    assert (tmp_path / "home" / ".talon-server" / "talon.ini").is_file()
+    assert "mode = server" in (tmp_path / "home" / ".talon-server" / "talon.ini").read_text(encoding="utf-8")
+
+
+def test_desktop_installer_rejects_mode_option(tmp_path):
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "client"),
+        "--mode",
+        "server",
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "--mode is not supported" in result.stderr
+
+
+def test_desktop_same_role_reinstall_preserves_config_without_confirmation(tmp_path):
+    env = _desktop_env(tmp_path)
+    bundle = _fake_desktop_bundle(tmp_path, "client")
+    _run_desktop_install(tmp_path, bundle, env=env)
+    config = tmp_path / "home" / ".talon" / "talon.ini"
+    config.write_text("custom-client-config\n", encoding="utf-8")
+
+    _run_desktop_install(tmp_path, bundle, env=env)
+
+    assert config.read_text(encoding="utf-8") == "custom-client-config\n"
+
+
+def test_desktop_opposite_role_install_fails_without_confirmation(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "client"), env=env)
+
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "server"),
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Destructive role switch requires" in result.stderr
+    assert (tmp_path / "home" / ".talon" / "talon.ini").exists()
+
+
+def test_desktop_opposite_role_install_rejects_invalid_confirmation(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "client"), env=env)
+
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "server"),
+        "--confirm-delete",
+        "yes",
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Invalid destructive confirmation phrase" in result.stderr
+    assert (tmp_path / "home" / ".talon" / "talon.ini").exists()
+
+
+def test_desktop_yes_does_not_authorize_role_switch_deletion(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "client"), env=env)
+
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "server"),
+        "--yes",
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Destructive role switch requires" in result.stderr
+    assert (tmp_path / "home" / ".talon" / "talon.ini").exists()
+
+
+def test_desktop_confirmed_role_switch_deletes_previous_talon_footprint(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "client"), env=env)
+    home = tmp_path / "home"
+    state = tmp_path / "xdg-state" / "talon"
+    legacy_bundle = tmp_path / "install" / "talon-desktop-linux"
+    legacy_bundle.mkdir()
+    legacy_launcher = tmp_path / "bin" / "talon-desktop"
+    legacy_launcher.write_text("legacy\n", encoding="utf-8")
+    legacy_entry = tmp_path / "xdg-data" / "applications" / "talon-desktop.desktop"
+    legacy_entry.write_text("legacy\n", encoding="utf-8")
+    (home / ".talon" / "talon.db").write_text("client-db\n", encoding="utf-8")
+    (home / ".talon" / "reticulum" / "identity").write_text("rns\n", encoding="utf-8")
+    (home / ".talon" / "documents" / "doc.txt").write_text("doc\n", encoding="utf-8")
+    (state / "old.log").write_text("log\n", encoding="utf-8")
+
+    _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "server"),
+        "--confirm-delete",
+        DELETE_PHRASE,
+        env=env,
+    )
+
+    assert not (home / ".talon").exists()
+    assert not legacy_bundle.exists()
+    assert not legacy_launcher.exists()
+    assert not legacy_entry.exists()
+    assert not (tmp_path / "bin" / "talon-desktop-client").exists()
+    assert not (tmp_path / "xdg-data" / "applications" / "talon-desktop-client.desktop").exists()
+    assert (tmp_path / "bin" / "talon-desktop-server").exists()
+    assert (home / ".talon-server" / "talon.ini").exists()
+    assert not (state / "old.log").exists()
+
+
+def test_desktop_profile_and_config_permissions_are_restricted(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "server"), env=env)
+
+    profile = tmp_path / "home" / ".talon-server"
+    config = profile / "talon.ini"
+    assert stat.S_IMODE(profile.stat().st_mode) == 0o700
+    assert stat.S_IMODE((profile / "reticulum").stat().st_mode) == 0o700
+    assert stat.S_IMODE((profile / "documents").stat().st_mode) == 0o700
+    assert stat.S_IMODE(config.stat().st_mode) == 0o600

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-BUNDLE_NAME="talon-desktop-linux"
 APP_NAME="talon-desktop"
+ROLE_MARKER=".talon-artifact-role"
+DELETE_CONFIRMATION="DELETE TALON DATA"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)
 
 log() {
@@ -23,28 +24,30 @@ usage() {
 TALON PySide6 Linux desktop installer
 
 Usage:
-  install.sh [options] [extracted-talon-desktop-linux-dir]
+  install.sh [options] [extracted-talon-desktop-client-linux-dir|extracted-talon-desktop-server-linux-dir]
 
 Options:
   --prefix DIR         Install root. Default: $XDG_DATA_HOME/talon or ~/.local/share/talon
   --bin-dir DIR        Launcher directory. Default: ~/.local/bin
-  --config PATH        Config file to create/use. Default follows --mode.
-  --data-dir DIR       TALON data directory. Default follows --mode.
+  --config PATH        Config file to create/use. Default follows artifact role.
+  --data-dir DIR       TALON data directory. Default follows artifact role.
   --rns-dir DIR        Reticulum config/key directory. Default: <data-dir>/reticulum
   --documents-dir DIR  Document storage/cache directory. Default: <data-dir>/documents
-  --mode MODE          Initial config mode: client or server. Default: client
+  --confirm-delete TXT Required exact phrase for destructive role switches.
   --yes                Assume yes for supported system package managers.
   --no-deps            Do not install system runtime dependencies.
   --no-desktop         Do not create a desktop launcher entry.
-  --no-bin             Do not create the ~/.local/bin/talon-desktop wrapper.
+  --no-bin             Do not create the role-specific launcher wrapper.
   --smoke-test         Run the installed PySide6 package smoke test.
   -h, --help           Show this help.
 
 Examples:
-  tar -xzf talon-desktop-linux.tar.gz
-  cd talon-desktop-linux
-  bash ./install.sh --mode client --yes
-  bash ./install.sh --mode server --yes
+  tar -xzf talon-desktop-client-linux.tar.gz
+  cd talon-desktop-client-linux
+  bash ./install.sh --yes
+  tar -xzf talon-desktop-server-linux.tar.gz
+  cd talon-desktop-server-linux
+  bash ./install.sh --yes
   bash ./install.sh --no-deps --no-desktop --smoke-test
 USAGE
 }
@@ -253,17 +256,32 @@ canonical_dir() {
     (cd "$path" && pwd -P)
 }
 
+read_artifact_role() {
+    local bundle_dir=$1
+    local role_file=$bundle_dir/$ROLE_MARKER
+    local role
+
+    [[ -f $role_file ]] || die "TALON desktop bundle is missing role marker: $role_file"
+    role=$(tr -d '[:space:]' < "$role_file")
+    case "$role" in
+        client|server) printf '%s\n' "$role" ;;
+        *) die "Invalid TALON desktop artifact role: $role" ;;
+    esac
+}
+
 validate_bundle() {
     local bundle_dir=$1
     local required=(
         "$bundle_dir/$APP_NAME"
         "$bundle_dir/_internal/base_library.zip"
+        "$bundle_dir/$ROLE_MARKER"
     )
     local path
 
     for path in "${required[@]}"; do
         [[ -e $path ]] || die "TALON desktop bundle is missing required runtime asset: $path"
     done
+    read_artifact_role "$bundle_dir" >/dev/null
     [[ ! -d $bundle_dir/_internal/kivy ]] || die "PySide6 bundle unexpectedly contains Kivy."
     [[ ! -d $bundle_dir/_internal/kivymd ]] || die "PySide6 bundle unexpectedly contains KivyMD."
     chmod +x "$bundle_dir/$APP_NAME"
@@ -317,9 +335,11 @@ write_default_config() {
     local documents_dir=$5
 
     mkdir -p "$(dirname "$config_path")" "$data_dir" "$rns_dir" "$documents_dir"
+    chmod 700 "$(dirname "$config_path")" "$data_dir" "$rns_dir" "$documents_dir"
 
     if [[ -f $config_path ]]; then
         log "Keeping existing config: $config_path"
+        chmod 600 "$config_path"
         return 0
     fi
 
@@ -350,15 +370,18 @@ write_launcher_wrapper() {
     local bin_dir=$2
     local config_path=$3
     local state_dir=$4
-    local wrapper=$bin_dir/$APP_NAME
+    local launcher_name=$5
+    local role=$6
+    local wrapper=$bin_dir/$launcher_name
     local app_q
     local config_q
     local launch_log_q
 
     mkdir -p "$bin_dir" "$state_dir"
+    chmod 700 "$state_dir"
     app_q=$(shell_quote "$target_dir/$APP_NAME")
     config_q=$(shell_quote "$config_path")
-    launch_log_q=$(shell_quote "$state_dir/desktop-launcher.log")
+    launch_log_q=$(shell_quote "$state_dir/desktop-${role}-launcher.log")
 
     cat > "$wrapper" <<EOF
 #!/usr/bin/env bash
@@ -382,7 +405,10 @@ write_desktop_entry() {
     local target_dir=$1
     local bin_dir=$2
     local desktop_dir=$3
-    local entry_path=$desktop_dir/talon-desktop.desktop
+    local launcher_name=$4
+    local entry_name=$5
+    local display_name=$6
+    local entry_path=$desktop_dir/$entry_name
     local icon_path=$target_dir/_internal/Images/talonlogo.png
 
     mkdir -p "$desktop_dir"
@@ -391,9 +417,9 @@ write_desktop_entry() {
     cat > "$entry_path" <<EOF
 [Desktop Entry]
 Type=Application
-Name=T.A.L.O.N. Desktop
+Name=$display_name
 Comment=Tactical Awareness and Linked Operations Network
-Exec=$bin_dir/$APP_NAME
+Exec=$bin_dir/$launcher_name
 Icon=$icon_path
 Terminal=false
 Categories=Network;Utility;
@@ -420,6 +446,195 @@ run_smoke_test() {
     timeout 30s "${smoke_prefix[@]}" "$target_dir/$APP_NAME" --smoke --mode "$mode"
 }
 
+manifest_path_for_role() {
+    local state_dir=$1
+    local role=$2
+    printf '%s\n' "$state_dir/desktop-${role}.install"
+}
+
+write_install_manifest() {
+    local manifest_path=$1
+    local role=$2
+    local target_dir=$3
+    local launcher_path=$4
+    local desktop_entry_path=$5
+    local config_path=$6
+    local data_dir=$7
+    local rns_dir=$8
+    local documents_dir=$9
+
+    mkdir -p "$(dirname "$manifest_path")"
+    chmod 700 "$(dirname "$manifest_path")"
+    cat > "$manifest_path" <<EOF
+role=$role
+bundle=$target_dir
+launcher=$launcher_path
+desktop_entry=$desktop_entry_path
+config=$config_path
+data=$data_dir
+rns=$rns_dir
+documents=$documents_dir
+EOF
+    chmod 600 "$manifest_path"
+}
+
+add_existing_path() {
+    local -n target_ref=$1
+    local path=$2
+    [[ -e $path || -L $path ]] || return 0
+    target_ref+=("$path")
+}
+
+add_manifest_paths() {
+    local -n target_ref=$1
+    local manifest_path=$2
+    local key
+    local value
+
+    [[ -e $manifest_path || -L $manifest_path ]] && target_ref+=("$manifest_path")
+    [[ -f $manifest_path ]] || return 0
+    while IFS='=' read -r key value; do
+        case "$key" in
+            bundle|launcher|desktop_entry|config|data|rns|documents)
+                [[ -n $value && ( -e $value || -L $value ) ]] && target_ref+=("$value")
+                ;;
+        esac
+    done < "$manifest_path"
+}
+
+path_in_list() {
+    local needle=$1
+    shift
+    local item
+    for item in "$@"; do
+        [[ $needle == "$item" ]] && return 0
+    done
+    return 1
+}
+
+unique_existing_paths() {
+    local -n output_ref=$1
+    shift
+    local path
+    output_ref=()
+    for path in "$@"; do
+        [[ -n $path ]] || continue
+        [[ -e $path || -L $path ]] || continue
+        path_in_list "$path" "${output_ref[@]}" || output_ref+=("$path")
+    done
+}
+
+require_delete_confirmation() {
+    local -a paths=("$@")
+    local path
+    warn "Installing this TALON artifact requires deleting previous local TALON files."
+    warn "This includes local databases, RNS identities, documents, launchers, desktop entries, bundles, and logs."
+    warn "Paths that will be removed:"
+    for path in "${paths[@]}"; do
+        warn "  $path"
+    done
+
+    if [[ -n $CONFIRM_DELETE ]]; then
+        [[ $CONFIRM_DELETE == "$DELETE_CONFIRMATION" ]] || die "Invalid destructive confirmation phrase."
+        return 0
+    fi
+
+    [[ -t 0 ]] || die "Destructive role switch requires --confirm-delete \"$DELETE_CONFIRMATION\"."
+    printf 'Type %s to delete previous TALON data and continue: ' "$DELETE_CONFIRMATION" >&2
+    local response
+    IFS= read -r response
+    [[ $response == "$DELETE_CONFIRMATION" ]] || die "Destructive role switch was not confirmed."
+}
+
+delete_paths() {
+    local -a paths=("$@")
+    local path
+    for path in "${paths[@]}"; do
+        rm -rf -- "$path"
+    done
+}
+
+enforce_role_path_reservation() {
+    local role=$1
+    local data_dir=$2
+    local config_path=$3
+    local client_data
+    local server_data
+
+    client_data=$(make_abs_path "$HOME/.talon")
+    server_data=$(make_abs_path "$HOME/.talon-server")
+    if [[ $role == "client" ]]; then
+        [[ $data_dir != "$server_data" ]] || die "Client artifact cannot use the server profile directory."
+        [[ $config_path != "$server_data/talon.ini" ]] || die "Client artifact cannot use the server config path."
+    else
+        [[ $data_dir != "$client_data" ]] || die "Server artifact cannot use the client profile directory."
+        [[ $config_path != "$client_data/talon.ini" ]] || die "Server artifact cannot use the client config path."
+    fi
+}
+
+guard_role_switch() {
+    local role=$1
+    local install_root=$2
+    local bin_dir=$3
+    local desktop_dir=$4
+    local state_dir=$5
+    local target_dir=$6
+    local launcher_path=$7
+    local desktop_entry_path=$8
+    local config_path=$9
+    local data_dir=${10}
+    local rns_dir=${11}
+    local documents_dir=${12}
+    local current_manifest=${13}
+    local opposite_role="server"
+    local -a detected=()
+    local -a expected=()
+    local -a unexpected=()
+    local -a destructive=()
+    local path
+
+    [[ $role == "server" ]] && opposite_role="client"
+
+    expected=(
+        "$target_dir"
+        "$launcher_path"
+        "$desktop_entry_path"
+        "$config_path"
+        "$data_dir"
+        "$rns_dir"
+        "$documents_dir"
+        "$current_manifest"
+        "$state_dir"
+    )
+
+    add_existing_path detected "$HOME/.talon"
+    add_existing_path detected "$HOME/.talon-server"
+    add_existing_path detected "$install_root/talon-desktop-linux"
+    add_existing_path detected "$install_root/talon-desktop-client-linux"
+    add_existing_path detected "$install_root/talon-desktop-server-linux"
+    add_existing_path detected "$bin_dir/talon-desktop"
+    add_existing_path detected "$bin_dir/talon-desktop-client"
+    add_existing_path detected "$bin_dir/talon-desktop-server"
+    add_existing_path detected "$desktop_dir/talon-desktop.desktop"
+    add_existing_path detected "$desktop_dir/talon-desktop-client.desktop"
+    add_existing_path detected "$desktop_dir/talon-desktop-server.desktop"
+    add_existing_path detected "$state_dir"
+    add_manifest_paths detected "$(manifest_path_for_role "$state_dir" "$role")"
+    add_manifest_paths detected "$(manifest_path_for_role "$state_dir" "$opposite_role")"
+
+    unique_existing_paths detected "${detected[@]}"
+    for path in "${detected[@]}"; do
+        if ! path_in_list "$path" "${expected[@]}"; then
+            unexpected+=("$path")
+        fi
+    done
+
+    ((${#unexpected[@]} == 0)) && return 0
+    unique_existing_paths destructive "${detected[@]}"
+    require_delete_confirmation "${destructive[@]}"
+    delete_paths "${destructive[@]}"
+}
+
 INPUT_PATH=""
 INSTALL_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/talon"
 BIN_DIR="$HOME/.local/bin"
@@ -427,7 +642,12 @@ CONFIG_PATH=""
 DATA_DIR=""
 RNS_DIR=""
 DOCUMENTS_DIR=""
-MODE="client"
+ARTIFACT_ROLE=""
+BUNDLE_NAME=""
+LAUNCHER_NAME=""
+DESKTOP_ENTRY_NAME=""
+DESKTOP_DISPLAY_NAME=""
+CONFIRM_DELETE=""
 ASSUME_YES="0"
 INSTALL_DEPS="1"
 INSTALL_DESKTOP="1"
@@ -486,11 +706,17 @@ while (($#)); do
             DOCUMENTS_DIR=${1#*=}
             ;;
         --mode)
-            shift || die "--mode requires client or server"
-            MODE=${1:-}
+            die "--mode is not supported. Install a client or server artifact instead."
             ;;
         --mode=*)
-            MODE=${1#*=}
+            die "--mode is not supported. Install a client or server artifact instead."
+            ;;
+        --confirm-delete)
+            shift || die "--confirm-delete requires the exact confirmation phrase"
+            CONFIRM_DELETE=${1:-}
+            ;;
+        --confirm-delete=*)
+            CONFIRM_DELETE=${1#*=}
             ;;
         --yes)
             ASSUME_YES="1"
@@ -536,17 +762,30 @@ else
     INPUT_PATH=$SCRIPT_DIR
 fi
 
-case "$MODE" in
-    client|server) ;;
-    *) die "--mode must be client or server" ;;
-esac
-
 INSTALL_ROOT=$(make_abs_path "$INSTALL_ROOT")
 BIN_DIR=$(make_abs_path "$BIN_DIR")
 INPUT_PATH=$(make_abs_path "$INPUT_PATH")
 
+if [[ -d $INPUT_PATH ]]; then
+    SOURCE_BUNDLE_DIR=$INPUT_PATH
+elif [[ -f $INPUT_PATH ]]; then
+    die "Archive input is not supported. Extract the TALON desktop artifact, cd into it, then run bash ./install.sh."
+else
+    die "Input path does not exist: $INPUT_PATH"
+fi
+
+ARTIFACT_ROLE=$(read_artifact_role "$SOURCE_BUNDLE_DIR")
+BUNDLE_NAME="talon-desktop-${ARTIFACT_ROLE}-linux"
+LAUNCHER_NAME="talon-desktop-${ARTIFACT_ROLE}"
+DESKTOP_ENTRY_NAME="talon-desktop-${ARTIFACT_ROLE}.desktop"
+if [[ $ARTIFACT_ROLE == "server" ]]; then
+    DESKTOP_DISPLAY_NAME="T.A.L.O.N. Server"
+else
+    DESKTOP_DISPLAY_NAME="T.A.L.O.N. Client"
+fi
+
 if [[ -z $DATA_DIR ]]; then
-    if [[ $MODE == "server" ]]; then
+    if [[ $ARTIFACT_ROLE == "server" ]]; then
         DATA_DIR="$HOME/.talon-server"
     else
         DATA_DIR="$HOME/.talon"
@@ -565,6 +804,26 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/talon"
 STATE_DIR=$(make_abs_path "$STATE_DIR")
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 DESKTOP_DIR=$(make_abs_path "$DESKTOP_DIR")
+TARGET_DIR="$INSTALL_ROOT/$BUNDLE_NAME"
+LAUNCHER_PATH="$BIN_DIR/$LAUNCHER_NAME"
+DESKTOP_ENTRY_PATH="$DESKTOP_DIR/$DESKTOP_ENTRY_NAME"
+INSTALL_MANIFEST=$(manifest_path_for_role "$STATE_DIR" "$ARTIFACT_ROLE")
+
+enforce_role_path_reservation "$ARTIFACT_ROLE" "$DATA_DIR" "$CONFIG_PATH"
+guard_role_switch \
+    "$ARTIFACT_ROLE" \
+    "$INSTALL_ROOT" \
+    "$BIN_DIR" \
+    "$DESKTOP_DIR" \
+    "$STATE_DIR" \
+    "$TARGET_DIR" \
+    "$LAUNCHER_PATH" \
+    "$DESKTOP_ENTRY_PATH" \
+    "$CONFIG_PATH" \
+    "$DATA_DIR" \
+    "$RNS_DIR" \
+    "$DOCUMENTS_DIR" \
+    "$INSTALL_MANIFEST"
 
 if [[ $INSTALL_DEPS == "1" ]]; then
     install_runtime_dependencies
@@ -572,41 +831,45 @@ else
     log "Skipping system dependency installation."
 fi
 
-if [[ -d $INPUT_PATH ]]; then
-    SOURCE_BUNDLE_DIR=$INPUT_PATH
-elif [[ -f $INPUT_PATH ]]; then
-    die "Archive input is not supported. Extract talon-desktop-linux.tar.gz, cd into talon-desktop-linux, then run bash ./install.sh."
-else
-    die "Input path does not exist: $INPUT_PATH"
-fi
-
 TARGET_DIR=$(install_bundle "$SOURCE_BUNDLE_DIR" "$INSTALL_ROOT")
-write_default_config "$CONFIG_PATH" "$MODE" "$DATA_DIR" "$RNS_DIR" "$DOCUMENTS_DIR"
+write_default_config "$CONFIG_PATH" "$ARTIFACT_ROLE" "$DATA_DIR" "$RNS_DIR" "$DOCUMENTS_DIR"
 
 if [[ $INSTALL_BIN == "1" ]]; then
-    write_launcher_wrapper "$TARGET_DIR" "$BIN_DIR" "$CONFIG_PATH" "$STATE_DIR"
+    write_launcher_wrapper "$TARGET_DIR" "$BIN_DIR" "$CONFIG_PATH" "$STATE_DIR" "$LAUNCHER_NAME" "$ARTIFACT_ROLE"
 else
     log "Skipping launcher wrapper."
 fi
 
 if [[ $INSTALL_DESKTOP == "1" && $INSTALL_BIN == "1" ]]; then
-    write_desktop_entry "$TARGET_DIR" "$BIN_DIR" "$DESKTOP_DIR"
+    write_desktop_entry "$TARGET_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$LAUNCHER_NAME" "$DESKTOP_ENTRY_NAME" "$DESKTOP_DISPLAY_NAME"
 else
     log "Skipping desktop entry."
 fi
 
+write_install_manifest \
+    "$INSTALL_MANIFEST" \
+    "$ARTIFACT_ROLE" \
+    "$TARGET_DIR" \
+    "$LAUNCHER_PATH" \
+    "$DESKTOP_ENTRY_PATH" \
+    "$CONFIG_PATH" \
+    "$DATA_DIR" \
+    "$RNS_DIR" \
+    "$DOCUMENTS_DIR"
+
 if [[ $SMOKE_TEST == "1" ]]; then
-    run_smoke_test "$TARGET_DIR" "$CONFIG_PATH" "$MODE"
+    run_smoke_test "$TARGET_DIR" "$CONFIG_PATH" "$ARTIFACT_ROLE"
 fi
 
 log ""
 log "TALON PySide6 desktop install complete."
 log "Bundle:  $TARGET_DIR"
+log "Role:    $ARTIFACT_ROLE"
 log "Config:  $CONFIG_PATH"
 log "Data:    $DATA_DIR"
 log "RNS:     $RNS_DIR"
 if [[ $INSTALL_BIN == "1" ]]; then
-    log "Launcher: $BIN_DIR/$APP_NAME"
+    log "Launcher: $LAUNCHER_PATH"
 fi
 log ""
 log "Reticulum interface setup is deployment-specific. Configure $RNS_DIR/config for TCP, Yggdrasil, I2P, or RNode before relying on network sync."

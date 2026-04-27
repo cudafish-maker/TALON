@@ -40,20 +40,23 @@ main window offscreen, navigate every section, and cover client/server unlock
 paths. Linux Breakpoint A development-shell validation passed locally, including
 same-machine Reticulum TCP loopback for enrollment and server-to-client asset
 sync. Linux Breakpoint B is complete: a PySide6 Linux PyInstaller spec,
-installer script, and manual GitHub Actions workflow now build a local
-`talon-desktop-linux.tar.gz` package that passes server/client package smoke
-tests. Target Linux Mint package install/launch validation passed without the
-old Kivy/SDL/GLX startup failure, and package-level Reticulum loopback
-enrollment/sync validation passed from the packaged artifact and an extracted
-installed package. The next development direction is a polished Linux
-server/client PySide6 release candidate, including release-readiness polish and
-operator acceptance, before Windows packaging. Windows packaging follows the
-accepted Linux release, then the Android/Chaquopy Reticulum spike.
+installer script, and manual GitHub Actions workflow now build role-specific
+`talon-desktop-client-linux.tar.gz` and `talon-desktop-server-linux.tar.gz`
+packages from one PyInstaller output. The installer reads the artifact role,
+creates explicit client/server launchers, and requires `DELETE TALON DATA`
+confirmation before destructive local role switches. Target Linux Mint package
+install/launch validation passed without the old Kivy/SDL/GLX startup failure,
+and package-level Reticulum loopback enrollment/sync validation passed from the
+packaged artifact and an extracted installed package before the role split. The
+next development direction is a polished Linux server/client PySide6 release
+candidate, including release-readiness polish and operator acceptance, before
+Windows packaging. Windows packaging follows the accepted Linux release, then
+the Android/Chaquopy Reticulum spike.
 
 | Project | State | Next Work |
 |---------|-------|-----------|
 | `talon-core` | Phase 1 facade, dashboard/sync read models, physical split hardening, and Reticulum loopback verification complete for current source tree | Keep package boundary clean during desktop packaging and mobile spike work |
-| `talon-desktop` | PySide6 shell plus SITREP, Assets, Map, Missions, Chat, Documents, Operators/server admin workflows, offscreen Qt smoke tests, Linux Breakpoint A dev-shell validation, and Linux Breakpoint B package validation exist; current release path is still legacy Kivy/KivyMD | Polish Linux server/client release candidate before Windows packaging |
+| `talon-desktop` | PySide6 shell plus SITREP, Assets, Map, Missions, Chat, Documents, Operators/server admin workflows, offscreen Qt smoke tests, Linux Breakpoint A dev-shell validation, Linux Breakpoint B package validation, and role-specific Linux client/server artifacts exist; current release path is still legacy Kivy/KivyMD | Polish Linux server/client release candidate before Windows packaging |
 | `talon-mobile` | Planned only | Run Android/Chaquopy/Reticulum feasibility spike before full UI work |
 
 ## Current Cross-Project Blockers

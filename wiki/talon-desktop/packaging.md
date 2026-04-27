@@ -43,8 +43,9 @@ The PySide6 package path is separate from the legacy Kivy package path:
 - Installer script embedded as `install.sh`: `build/install-talon-desktop.sh`
 - Manual workflow: `.github/workflows/build-talon-desktop-linux.yml`
 - Bundle directory: `dist/talon-desktop-linux/`
-- Release tarball: `dist/talon-desktop-linux.tar.gz`
-- SHA-256 file: `dist/talon-desktop-linux.tar.gz.sha256`
+- Client release tarball: `dist/talon-desktop-client-linux.tar.gz`
+- Server release tarball: `dist/talon-desktop-server-linux.tar.gz`
+- SHA-256 files: matching `.sha256` files for both role-specific tarballs.
 
 The package entry point is `talon-desktop`, not legacy `talon`. The package
 smoke command is:
@@ -54,14 +55,25 @@ QT_QPA_PLATFORM=offscreen dist/talon-desktop-linux/talon-desktop --smoke --mode 
 QT_QPA_PLATFORM=offscreen dist/talon-desktop-linux/talon-desktop --smoke --mode client
 ```
 
-The installer supports the same deployment paths as the legacy installer while
-writing a `talon-desktop` launcher wrapper:
+The workflow stamps the shared PyInstaller output into role-specific bundles
+with `.talon-artifact-role` set to `client` or `server`. The installer reads
+that marker and rejects `--mode`; role selection comes from the artifact, not
+operator input.
+
+Client install:
 
 ```bash
-tar -xzf talon-desktop-linux.tar.gz
-cd talon-desktop-linux
-./install.sh --mode client --yes
-./install.sh --mode server --yes
+tar -xzf talon-desktop-client-linux.tar.gz
+cd talon-desktop-client-linux
+./install.sh --yes
+```
+
+Server install:
+
+```bash
+tar -xzf talon-desktop-server-linux.tar.gz
+cd talon-desktop-server-linux
+./install.sh --yes
 ```
 
 For test installs that should not modify desktop launchers:
@@ -70,9 +82,24 @@ For test installs that should not modify desktop launchers:
 ./install.sh --no-deps --no-bin --no-desktop --smoke-test \
   --prefix /tmp/talon-desktop-install \
   --config /tmp/talon-desktop-config/talon.ini \
-  --data-dir /tmp/talon-desktop-data \
-  --mode server
+  --data-dir /tmp/talon-desktop-data
 ```
+
+Client artifacts create `talon-desktop-client` and
+`talon-desktop-client.desktop`. Server artifacts create `talon-desktop-server`
+and `talon-desktop-server.desktop`. The installer does not create a generic
+`talon-desktop` launcher.
+
+Client and server installs cannot coexist for one local user. If the installer
+detects an existing opposite-role or legacy TALON footprint, it stops and warns
+that all previous local TALON files, databases, RNS identities, documents,
+bundles, launchers, desktop entries, and logs will be deleted. `--yes` does not
+authorize this. The operator must type `DELETE TALON DATA`, or controlled
+automation/tests must pass `--confirm-delete "DELETE TALON DATA"`.
+
+Server installs should be treated as dedicated or hardened operator machines
+because server profiles contain higher-value local authority and identity
+material.
 
 As of 2026-04-26, a local PyInstaller build produced an 86 MB
 `talon-desktop-linux.tar.gz` artifact. The packaged executable smoke passed in
@@ -85,14 +112,8 @@ artifact and an extracted installed package also passed `talon-desktop
 --loopback-smoke`, which covers server startup, token generation, client
 enrollment, and server-to-client asset sync over Reticulum TCP loopback.
 
-Current caveat: the PySide6 bundle does not contain Kivy/KivyMD or SDL assets,
+Current caveat: the PySide6 bundles do not contain Kivy/KivyMD or SDL assets,
 but Qt still bundles optional XCB GLX integration files.
-
-The latest local package checksum is:
-
-```text
-1f4a5f25557150069399d2a8cc433593677365317f4767bf94e9248e1f960e14  dist/talon-desktop-linux.tar.gz
-```
 
 ## Linux Release Polish
 
@@ -103,7 +124,8 @@ release candidate pass:
 - global desktop error reporting or log-view affordance;
 - manual server and client acceptance from the packaged artifact;
 - paired enrollment and sync acceptance on target Linux systems;
-- install, reinstall or upgrade, launcher, and removal notes;
+- install, reinstall or upgrade, launcher, role-switch deletion, and removal
+  notes;
 - release notes with deferred items, limitations, and troubleshooting.
 
 ## Acceptance

@@ -81,36 +81,50 @@ jobs:
       - name: Validate installer script
         run: bash -n build/install-talon-desktop.sh
 
-      - name: Package Linux release tarball
+      - name: Package Linux release tarballs
         run: |
-          cp build/install-talon-desktop.sh dist/talon-desktop-linux/install.sh
-          chmod +x dist/talon-desktop-linux/install.sh
-          tar -C dist -czf dist/talon-desktop-linux.tar.gz talon-desktop-linux
-          sha256sum dist/talon-desktop-linux.tar.gz > dist/talon-desktop-linux.tar.gz.sha256
+          for role in client server; do
+            role_dir="dist/talon-desktop-${role}-linux"
+            rm -rf "$role_dir"
+            cp -a dist/talon-desktop-linux "$role_dir"
+            printf '%s\n' "$role" > "$role_dir/.talon-artifact-role"
+            cp build/install-talon-desktop.sh "$role_dir/install.sh"
+            chmod +x "$role_dir/install.sh"
+            tar -C dist -czf "dist/talon-desktop-${role}-linux.tar.gz" "talon-desktop-${role}-linux"
+            sha256sum "dist/talon-desktop-${role}-linux.tar.gz" > "dist/talon-desktop-${role}-linux.tar.gz.sha256"
+          done
 
-      - name: Smoke install Linux release artifact
+      - name: Smoke install Linux release artifacts
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          mkdir -p "$RUNNER_TEMP/talon-desktop-release"
-          cp dist/talon-desktop-linux.tar.gz "$RUNNER_TEMP/talon-desktop-release/talon-desktop-linux.tar.gz"
-          tar -C "$RUNNER_TEMP/talon-desktop-release" -xzf "$RUNNER_TEMP/talon-desktop-release/talon-desktop-linux.tar.gz"
-          (
-            cd "$RUNNER_TEMP/talon-desktop-release/talon-desktop-linux"
-            ./install.sh --no-deps --no-bin --no-desktop --smoke-test \
-              --prefix "$RUNNER_TEMP/talon-desktop-install" \
-              --config "$RUNNER_TEMP/talon-desktop-config/talon.ini" \
-              --data-dir "$RUNNER_TEMP/talon-desktop-data" \
-              --mode server
-          )
-          test -x "$RUNNER_TEMP/talon-desktop-install/talon-desktop-linux/talon-desktop"
-          test ! -d "$RUNNER_TEMP/talon-desktop-install/talon-desktop-linux/_internal/kivy"
-          test ! -d "$RUNNER_TEMP/talon-desktop-install/talon-desktop-linux/_internal/kivymd"
+          for role in client server; do
+            release_dir="$RUNNER_TEMP/talon-desktop-${role}-release"
+            mkdir -p "$release_dir"
+            cp "dist/talon-desktop-${role}-linux.tar.gz" "$release_dir/talon-desktop-${role}-linux.tar.gz"
+            tar -C "$release_dir" -xzf "$release_dir/talon-desktop-${role}-linux.tar.gz"
+            (
+              cd "$release_dir/talon-desktop-${role}-linux"
+              HOME="$RUNNER_TEMP/home-${role}" \
+              XDG_DATA_HOME="$RUNNER_TEMP/xdg-data-${role}" \
+              XDG_STATE_HOME="$RUNNER_TEMP/xdg-state-${role}" \
+              ./install.sh --no-deps --no-bin --no-desktop --smoke-test \
+                --prefix "$RUNNER_TEMP/talon-desktop-${role}-install" \
+                --config "$RUNNER_TEMP/talon-desktop-${role}-config/talon.ini" \
+                --data-dir "$RUNNER_TEMP/talon-desktop-${role}-data"
+            )
+            test -x "$RUNNER_TEMP/talon-desktop-${role}-install/talon-desktop-${role}-linux/talon-desktop"
+            test -f "$RUNNER_TEMP/talon-desktop-${role}-install/talon-desktop-${role}-linux/.talon-artifact-role"
+            test ! -d "$RUNNER_TEMP/talon-desktop-${role}-install/talon-desktop-${role}-linux/_internal/kivy"
+            test ! -d "$RUNNER_TEMP/talon-desktop-${role}-install/talon-desktop-${role}-linux/_internal/kivymd"
+          done
 
-      - name: Upload Linux artifact
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: talon-desktop-linux
           path: |
-            dist/talon-desktop-linux.tar.gz
-            dist/talon-desktop-linux.tar.gz.sha256
+            dist/talon-desktop-client-linux.tar.gz
+            dist/talon-desktop-client-linux.tar.gz.sha256
+            dist/talon-desktop-server-linux.tar.gz
+            dist/talon-desktop-server-linux.tar.gz.sha256
