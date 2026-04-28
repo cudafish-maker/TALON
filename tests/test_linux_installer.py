@@ -177,6 +177,7 @@ exit 0
 def _desktop_env(tmp_path: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["HOME"] = str(tmp_path / "home")
+    env["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
     env["XDG_DATA_HOME"] = str(tmp_path / "xdg-data")
     env["XDG_STATE_HOME"] = str(tmp_path / "xdg-state")
     return env
@@ -200,6 +201,31 @@ def _run_desktop_install(
             "--bin-dir",
             str(tmp_path / "bin"),
             str(bundle),
+            *extra_args,
+        ],
+        check=check,
+        env=install_env,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _run_desktop_uninstall(
+    tmp_path: Path,
+    *extra_args: str,
+    env: dict[str, str] | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    install_env = env or _desktop_env(tmp_path)
+    return subprocess.run(
+        [
+            "bash",
+            str(DESKTOP_INSTALLER),
+            "--uninstall",
+            "--prefix",
+            str(tmp_path / "install"),
+            "--bin-dir",
+            str(tmp_path / "bin"),
             *extra_args,
         ],
         check=check,
@@ -342,9 +368,9 @@ def test_desktop_confirmed_role_switch_deletes_previous_talon_footprint(tmp_path
     legacy_bundle = tmp_path / "install" / "talon-desktop-linux"
     legacy_bundle.mkdir()
     legacy_launcher = tmp_path / "bin" / "talon-desktop"
-    legacy_launcher.write_text("legacy\n", encoding="utf-8")
+    legacy_launcher.write_text("TALON legacy\n", encoding="utf-8")
     legacy_entry = tmp_path / "xdg-data" / "applications" / "talon-desktop.desktop"
-    legacy_entry.write_text("legacy\n", encoding="utf-8")
+    legacy_entry.write_text("Tactical Awareness legacy\n", encoding="utf-8")
     (home / ".talon" / "talon.db").write_text("client-db\n", encoding="utf-8")
     (home / ".talon" / "reticulum" / "identity").write_text("rns\n", encoding="utf-8")
     (home / ".talon" / "documents" / "doc.txt").write_text("doc\n", encoding="utf-8")
@@ -367,6 +393,122 @@ def test_desktop_confirmed_role_switch_deletes_previous_talon_footprint(tmp_path
     assert (tmp_path / "bin" / "talon-desktop-server").exists()
     assert (home / ".talon-server" / "talon.ini").exists()
     assert not (state / "old.log").exists()
+
+
+def test_desktop_uninstall_requires_delete_confirmation(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "client"), env=env)
+
+    result = _run_desktop_uninstall(tmp_path, env=env, check=False)
+
+    assert result.returncode != 0
+    assert "Uninstalling TALON requires" in result.stderr
+    assert (tmp_path / "home" / ".talon" / "talon.ini").exists()
+    assert (tmp_path / "bin" / "talon-desktop-client").exists()
+
+
+def test_desktop_uninstall_preserves_non_talon_named_files(tmp_path):
+    env = _desktop_env(tmp_path)
+    bin_dir = tmp_path / "bin"
+    desktop_dir = tmp_path / "xdg-data" / "applications"
+    bin_dir.mkdir(parents=True)
+    desktop_dir.mkdir(parents=True)
+    launcher = bin_dir / "talon"
+    entry = desktop_dir / "talon.desktop"
+    launcher.write_text("#!/usr/bin/env sh\necho other app\n", encoding="utf-8")
+    entry.write_text("[Desktop Entry]\nName=Other App\n", encoding="utf-8")
+
+    result = _run_desktop_uninstall(
+        tmp_path,
+        "--confirm-delete",
+        DELETE_PHRASE,
+        env=env,
+    )
+
+    assert "No local TALON desktop or legacy install paths were found" in result.stdout
+    assert launcher.exists()
+    assert entry.exists()
+
+
+def test_desktop_confirmed_uninstall_deletes_current_legacy_and_custom_paths(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "client"), env=env)
+    home = tmp_path / "home"
+    install_root = tmp_path / "install"
+    bin_dir = tmp_path / "bin"
+    desktop_dir = tmp_path / "xdg-data" / "applications"
+    settings_dir = tmp_path / "xdg-config" / "TALON"
+    state = tmp_path / "xdg-state" / "talon"
+    custom_config = tmp_path / "custom config" / "talon.ini"
+    custom_data = tmp_path / "custom data"
+    custom_rns = tmp_path / "custom rns"
+    custom_documents = tmp_path / "custom documents"
+
+    for directory in [
+        home / ".talon-server",
+        install_root / "talon-linux",
+        install_root / "talon-desktop-linux",
+        install_root / "talon-desktop-server-linux",
+        install_root / "talon-desktop-client-linux.backup.20260428010101",
+        install_root / ".talon-desktop-client-linux.new.1234",
+        settings_dir,
+        custom_data,
+        custom_rns,
+        custom_documents,
+    ]:
+        directory.mkdir(parents=True)
+
+    custom_config.parent.mkdir(parents=True)
+    custom_config.write_text("custom\n", encoding="utf-8")
+    (home / ".talon-server" / "talon.ini").write_text("server\n", encoding="utf-8")
+    (settings_dir / "TALON Desktop.ini").write_text("settings\n", encoding="utf-8")
+    (state / "old.log").write_text("log\n", encoding="utf-8")
+    for name in ["talon", "talon-desktop", "talon-desktop-server"]:
+        (bin_dir / name).write_text("TALON legacy\n", encoding="utf-8")
+    for name in ["talon.desktop", "talon-desktop.desktop", "talon-desktop-server.desktop"]:
+        (desktop_dir / name).write_text("Tactical Awareness legacy\n", encoding="utf-8")
+
+    result = _run_desktop_uninstall(
+        tmp_path,
+        "--config",
+        str(custom_config),
+        "--data-dir",
+        str(custom_data),
+        "--rns-dir",
+        str(custom_rns),
+        "--documents-dir",
+        str(custom_documents),
+        "--confirm-delete",
+        DELETE_PHRASE,
+        env=env,
+    )
+
+    assert "TALON desktop uninstall complete" in result.stdout
+    for path in [
+        home / ".talon",
+        home / ".talon-server",
+        install_root / "talon-linux",
+        install_root / "talon-desktop-linux",
+        install_root / "talon-desktop-client-linux",
+        install_root / "talon-desktop-server-linux",
+        install_root / "talon-desktop-client-linux.backup.20260428010101",
+        install_root / ".talon-desktop-client-linux.new.1234",
+        bin_dir / "talon",
+        bin_dir / "talon-desktop",
+        bin_dir / "talon-desktop-client",
+        bin_dir / "talon-desktop-server",
+        desktop_dir / "talon.desktop",
+        desktop_dir / "talon-desktop.desktop",
+        desktop_dir / "talon-desktop-client.desktop",
+        desktop_dir / "talon-desktop-server.desktop",
+        settings_dir,
+        state,
+        custom_config,
+        custom_data,
+        custom_rns,
+        custom_documents,
+    ]:
+        assert not path.exists()
 
 
 def test_desktop_profile_and_config_permissions_are_restricted(tmp_path):

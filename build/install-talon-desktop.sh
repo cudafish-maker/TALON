@@ -25,6 +25,7 @@ TALON PySide6 Linux desktop installer
 
 Usage:
   install.sh [options] [extracted-talon-desktop-client-linux-dir|extracted-talon-desktop-server-linux-dir]
+  install.sh --uninstall --confirm-delete "DELETE TALON DATA" [options]
 
 Options:
   --prefix DIR         Install root. Default: $XDG_DATA_HOME/talon or ~/.local/share/talon
@@ -34,6 +35,8 @@ Options:
   --rns-dir DIR        Reticulum config/key directory. Default: <data-dir>/reticulum
   --documents-dir DIR  Document storage/cache directory. Default: <data-dir>/documents
   --confirm-delete TXT Required exact phrase for destructive role switches.
+                       Also required for full uninstall cleanup.
+  --uninstall          Remove local TALON desktop/legacy installs and data, then exit.
   --yes                Assume yes for supported system package managers.
   --no-deps            Do not install system runtime dependencies.
   --no-desktop         Do not create a desktop launcher entry.
@@ -48,6 +51,7 @@ Examples:
   tar -xzf talon-desktop-server-linux.tar.gz
   cd talon-desktop-server-linux
   bash ./install.sh --yes
+  bash ./install.sh --uninstall --confirm-delete "DELETE TALON DATA"
   bash ./install.sh --no-deps --no-desktop --smoke-test
 USAGE
 }
@@ -519,8 +523,45 @@ EOF
 add_existing_path() {
     local -n target_ref=$1
     local path=$2
+    [[ -n $path ]] || return 0
     [[ -e $path || -L $path ]] || return 0
     target_ref+=("$path")
+}
+
+add_talon_owned_file_path() {
+    local -n target_ref=$1
+    local path=$2
+    local link_target=""
+
+    [[ -n $path ]] || return 0
+    [[ -e $path || -L $path ]] || return 0
+    if [[ -L $path ]]; then
+        link_target=$(readlink "$path" || :)
+        if [[ $link_target == *talon* || $link_target == *TALON* ]]; then
+            target_ref+=("$path")
+        fi
+        return 0
+    fi
+    [[ -f $path ]] || return 0
+    if grep -Eiq "TALON|T\\.A\\.L\\.O\\.N\\.|Tactical Awareness|talon-desktop|talon-linux" "$path" 2>/dev/null; then
+        target_ref+=("$path")
+    fi
+}
+
+add_install_artifact_globs() {
+    local -n target_ref=$1
+    local install_root=$2
+    local artifact_name=$3
+    local nullglob_state
+    local path
+
+    nullglob_state=$(shopt -p nullglob || :)
+    shopt -s nullglob
+    for path in "$install_root"/"$artifact_name".backup.* "$install_root"/."$artifact_name".new.*; do
+        [[ -e $path || -L $path ]] || continue
+        target_ref+=("$path")
+    done
+    eval "$nullglob_state"
 }
 
 add_manifest_paths() {
@@ -538,6 +579,52 @@ add_manifest_paths() {
                 ;;
         esac
     done < "$manifest_path"
+}
+
+collect_talon_footprint_paths() {
+    local output_name=$1
+    local -n output_ref=$output_name
+    local install_root=$2
+    local bin_dir=$3
+    local desktop_dir=$4
+    local state_dir=$5
+    local include_install_artifacts=${6:-0}
+    local artifact_name
+    local settings_home
+
+    output_ref=()
+    add_existing_path "$output_name" "$HOME/.talon"
+    add_existing_path "$output_name" "$HOME/.talon-server"
+    add_existing_path "$output_name" "$install_root/talon-linux"
+    add_existing_path "$output_name" "$install_root/talon-desktop-linux"
+    add_existing_path "$output_name" "$install_root/talon-desktop-client-linux"
+    add_existing_path "$output_name" "$install_root/talon-desktop-server-linux"
+    add_talon_owned_file_path "$output_name" "$bin_dir/talon"
+    add_talon_owned_file_path "$output_name" "$bin_dir/talon-desktop"
+    add_talon_owned_file_path "$output_name" "$bin_dir/talon-desktop-client"
+    add_talon_owned_file_path "$output_name" "$bin_dir/talon-desktop-server"
+    add_talon_owned_file_path "$output_name" "$desktop_dir/talon.desktop"
+    add_talon_owned_file_path "$output_name" "$desktop_dir/talon-desktop.desktop"
+    add_talon_owned_file_path "$output_name" "$desktop_dir/talon-desktop-client.desktop"
+    add_talon_owned_file_path "$output_name" "$desktop_dir/talon-desktop-server.desktop"
+    add_existing_path "$output_name" "$state_dir"
+    add_manifest_paths "$output_name" "$(manifest_path_for_role "$state_dir" client)"
+    add_manifest_paths "$output_name" "$(manifest_path_for_role "$state_dir" server)"
+
+    if [[ $include_install_artifacts == "1" ]]; then
+        for artifact_name in \
+            talon-linux \
+            talon-desktop-linux \
+            talon-desktop-client-linux \
+            talon-desktop-server-linux; do
+            add_install_artifact_globs "$output_name" "$install_root" "$artifact_name"
+        done
+        settings_home=$(make_abs_path "${XDG_CONFIG_HOME:-$HOME/.config}")
+        add_existing_path "$output_name" "$settings_home/TALON"
+        add_existing_path "$output_name" "${TALON_DESKTOP_SETTINGS_PATH:-}"
+    fi
+
+    unique_existing_paths "$output_name" "${output_ref[@]}"
 }
 
 path_in_list() {
@@ -563,9 +650,11 @@ unique_existing_paths() {
 }
 
 require_delete_confirmation() {
+    local operation=$1
+    shift
     local -a paths=("$@")
     local path
-    warn "Installing this TALON artifact requires deleting previous local TALON files."
+    warn "$operation requires deleting previous local TALON files."
     warn "This includes local databases, RNS identities, documents, launchers, desktop entries, bundles, and logs."
     warn "Paths that will be removed:"
     for path in "${paths[@]}"; do
@@ -577,11 +666,11 @@ require_delete_confirmation() {
         return 0
     fi
 
-    [[ -t 0 ]] || die "Destructive role switch requires --confirm-delete \"$DELETE_CONFIRMATION\"."
+    [[ -t 0 ]] || die "$operation requires --confirm-delete \"$DELETE_CONFIRMATION\"."
     printf 'Type %s to delete previous TALON data and continue: ' "$DELETE_CONFIRMATION" >&2
     local response
     IFS= read -r response
-    [[ $response == "$DELETE_CONFIRMATION" ]] || die "Destructive role switch was not confirmed."
+    [[ $response == "$DELETE_CONFIRMATION" ]] || die "$operation was not confirmed."
 }
 
 delete_paths() {
@@ -624,14 +713,11 @@ guard_role_switch() {
     local rns_dir=${11}
     local documents_dir=${12}
     local current_manifest=${13}
-    local opposite_role="server"
     local -a detected=()
     local -a expected=()
     local -a unexpected=()
     local -a destructive=()
     local path
-
-    [[ $role == "server" ]] && opposite_role="client"
 
     expected=(
         "$target_dir"
@@ -645,22 +731,7 @@ guard_role_switch() {
         "$state_dir"
     )
 
-    add_existing_path detected "$HOME/.talon"
-    add_existing_path detected "$HOME/.talon-server"
-    add_existing_path detected "$install_root/talon-desktop-linux"
-    add_existing_path detected "$install_root/talon-desktop-client-linux"
-    add_existing_path detected "$install_root/talon-desktop-server-linux"
-    add_existing_path detected "$bin_dir/talon-desktop"
-    add_existing_path detected "$bin_dir/talon-desktop-client"
-    add_existing_path detected "$bin_dir/talon-desktop-server"
-    add_existing_path detected "$desktop_dir/talon-desktop.desktop"
-    add_existing_path detected "$desktop_dir/talon-desktop-client.desktop"
-    add_existing_path detected "$desktop_dir/talon-desktop-server.desktop"
-    add_existing_path detected "$state_dir"
-    add_manifest_paths detected "$(manifest_path_for_role "$state_dir" "$role")"
-    add_manifest_paths detected "$(manifest_path_for_role "$state_dir" "$opposite_role")"
-
-    unique_existing_paths detected "${detected[@]}"
+    collect_talon_footprint_paths detected "$install_root" "$bin_dir" "$desktop_dir" "$state_dir" 0
     for path in "${detected[@]}"; do
         if ! path_in_list "$path" "${expected[@]}"; then
             unexpected+=("$path")
@@ -669,8 +740,39 @@ guard_role_switch() {
 
     ((${#unexpected[@]} == 0)) && return 0
     unique_existing_paths destructive "${detected[@]}"
-    require_delete_confirmation "${destructive[@]}"
+    require_delete_confirmation "Destructive role switch" "${destructive[@]}"
     delete_paths "${destructive[@]}"
+}
+
+run_uninstall_cleanup() {
+    local install_root=$1
+    local bin_dir=$2
+    local desktop_dir=$3
+    local state_dir=$4
+    local -a cleanup=()
+    local removed_count
+
+    collect_talon_footprint_paths cleanup "$install_root" "$bin_dir" "$desktop_dir" "$state_dir" 1
+    add_existing_path cleanup "$CONFIG_PATH"
+    add_existing_path cleanup "$DATA_DIR"
+    add_existing_path cleanup "$RNS_DIR"
+    add_existing_path cleanup "$DOCUMENTS_DIR"
+    unique_existing_paths cleanup "${cleanup[@]}"
+
+    if ((${#cleanup[@]} == 0)); then
+        log "No local TALON desktop or legacy install paths were found."
+        return 0
+    fi
+
+    require_delete_confirmation "Uninstalling TALON" "${cleanup[@]}"
+    removed_count=${#cleanup[@]}
+    delete_paths "${cleanup[@]}"
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$desktop_dir" >/dev/null 2>&1 || true
+    fi
+
+    log "TALON desktop uninstall complete."
+    log "Removed $removed_count path(s)."
 }
 
 INPUT_PATH=""
@@ -691,6 +793,7 @@ INSTALL_DEPS="1"
 INSTALL_DESKTOP="1"
 INSTALL_BIN="1"
 SMOKE_TEST="0"
+UNINSTALL="0"
 
 positionals=()
 while (($#)); do
@@ -756,6 +859,9 @@ while (($#)); do
         --confirm-delete=*)
             CONFIRM_DELETE=${1#*=}
             ;;
+        --uninstall)
+            UNINSTALL="1"
+            ;;
         --yes)
             ASSUME_YES="1"
             ;;
@@ -794,14 +900,39 @@ while (($#)); do
 done
 
 ((${#positionals[@]} <= 1)) || die "Only one extracted bundle path may be provided."
+
+INSTALL_ROOT=$(make_abs_path "$INSTALL_ROOT")
+BIN_DIR=$(make_abs_path "$BIN_DIR")
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/talon"
+STATE_DIR=$(make_abs_path "$STATE_DIR")
+DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+DESKTOP_DIR=$(make_abs_path "$DESKTOP_DIR")
+
+if [[ -n $CONFIG_PATH ]]; then
+    CONFIG_PATH=$(make_abs_path "$CONFIG_PATH")
+fi
+if [[ -n $DATA_DIR ]]; then
+    DATA_DIR=$(make_abs_path "$DATA_DIR")
+fi
+if [[ -n $RNS_DIR ]]; then
+    RNS_DIR=$(make_abs_path "$RNS_DIR")
+fi
+if [[ -n $DOCUMENTS_DIR ]]; then
+    DOCUMENTS_DIR=$(make_abs_path "$DOCUMENTS_DIR")
+fi
+
+if [[ $UNINSTALL == "1" ]]; then
+    ((${#positionals[@]} == 0)) || die "--uninstall does not accept a bundle path."
+    [[ $SMOKE_TEST == "0" ]] || die "--smoke-test cannot be used with --uninstall."
+    run_uninstall_cleanup "$INSTALL_ROOT" "$BIN_DIR" "$DESKTOP_DIR" "$STATE_DIR"
+    exit 0
+fi
+
 if [[ ${#positionals[@]} -eq 1 ]]; then
     INPUT_PATH=${positionals[0]}
 else
     INPUT_PATH=$SCRIPT_DIR
 fi
-
-INSTALL_ROOT=$(make_abs_path "$INSTALL_ROOT")
-BIN_DIR=$(make_abs_path "$BIN_DIR")
 INPUT_PATH=$(make_abs_path "$INPUT_PATH")
 
 if [[ -d $INPUT_PATH ]]; then
@@ -837,11 +968,6 @@ DATA_DIR=$(make_abs_path "$DATA_DIR")
 RNS_DIR=$(make_abs_path "$RNS_DIR")
 DOCUMENTS_DIR=$(make_abs_path "$DOCUMENTS_DIR")
 CONFIG_PATH=$(make_abs_path "$CONFIG_PATH")
-
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/talon"
-STATE_DIR=$(make_abs_path "$STATE_DIR")
-DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-DESKTOP_DIR=$(make_abs_path "$DESKTOP_DIR")
 TARGET_DIR="$INSTALL_ROOT/$BUNDLE_NAME"
 LAUNCHER_PATH="$BIN_DIR/$LAUNCHER_NAME"
 DESKTOP_ENTRY_PATH="$DESKTOP_DIR/$DESKTOP_ENTRY_NAME"
