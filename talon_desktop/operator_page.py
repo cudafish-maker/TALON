@@ -52,8 +52,26 @@ class OperatorProfileDialog(QtWidgets.QDialog):
             self._skill_checks[skill] = checkbox
             skills_layout.addWidget(checkbox, index // 3, index % 3)
 
-        custom = ", ".join(skill for skill in item.skills if skill not in predefined_skill_set())
-        self.custom_skills_field = QtWidgets.QLineEdit(custom)
+        self.custom_skills_list = QtWidgets.QListWidget()
+        self.custom_skills_list.setFixedHeight(92)
+        for skill in item.skills:
+            if skill not in predefined_skill_set():
+                self.custom_skills_list.addItem(skill)
+        self.custom_skill_input = QtWidgets.QLineEdit()
+        self.custom_skill_input.setPlaceholderText("Custom skill")
+        add_skill_button = QtWidgets.QPushButton("Add")
+        remove_skill_button = QtWidgets.QPushButton("Remove")
+        add_skill_button.clicked.connect(self._add_custom_skill)
+        remove_skill_button.clicked.connect(self._remove_custom_skill)
+        custom_skill_widget = QtWidgets.QWidget()
+        custom_skill_layout = QtWidgets.QVBoxLayout(custom_skill_widget)
+        custom_skill_layout.setContentsMargins(0, 0, 0, 0)
+        custom_skill_row = QtWidgets.QHBoxLayout()
+        custom_skill_row.addWidget(self.custom_skill_input, stretch=1)
+        custom_skill_row.addWidget(add_skill_button)
+        custom_skill_row.addWidget(remove_skill_button)
+        custom_skill_layout.addWidget(self.custom_skills_list)
+        custom_skill_layout.addLayout(custom_skill_row)
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setWordWrap(True)
 
@@ -72,7 +90,7 @@ class OperatorProfileDialog(QtWidgets.QDialog):
         form.addRow("Role", self.role_field)
         form.addRow("Notes", self.notes_field)
         form.addRow(skills_group)
-        form.addRow("Custom Skills", self.custom_skills_field)
+        form.addRow("Custom Skills", custom_skill_widget)
         form.addRow("", self.status_label)
         form.addRow("", button_row)
         self.setLayout(form)
@@ -87,7 +105,7 @@ class OperatorProfileDialog(QtWidgets.QDialog):
                 skill for skill, checkbox in self._skill_checks.items()
                 if checkbox.isChecked()
             ],
-            custom_skills_text=self.custom_skills_field.text(),
+            custom_skills_text=self._custom_skills_text(),
         )
 
     def accept(self) -> None:
@@ -97,6 +115,33 @@ class OperatorProfileDialog(QtWidgets.QDialog):
             self.status_label.setText(str(exc))
             return
         super().accept()
+
+    def _add_custom_skill(self) -> None:
+        value = self.custom_skill_input.text().strip().lower()
+        if not value:
+            return
+        existing = {
+            self.custom_skills_list.item(row).text()
+            for row in range(self.custom_skills_list.count())
+        }
+        if value not in existing:
+            self.custom_skills_list.addItem(value)
+        self.custom_skill_input.clear()
+
+    def _remove_custom_skill(self) -> None:
+        row = self.custom_skills_list.currentRow()
+        if row >= 0:
+            self.custom_skills_list.takeItem(row)
+
+    def _custom_skills_text(self) -> str:
+        values = [
+            self.custom_skills_list.item(row).text()
+            for row in range(self.custom_skills_list.count())
+        ]
+        pending = self.custom_skill_input.text().strip()
+        if pending:
+            values.append(pending)
+        return ", ".join(values)
 
 
 class OperatorPage(QtWidgets.QWidget):
@@ -420,6 +465,7 @@ class EnrollmentPage(QtWidgets.QWidget):
         clipboard = QtWidgets.QApplication.clipboard()
         clipboard.setText(text)
         self.status_label.setText("Token copied.")
+        QtCore.QTimer.singleShot(3000, self.status_label.clear)
 
 
 class AuditPage(QtWidgets.QWidget):

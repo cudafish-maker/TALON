@@ -10,6 +10,7 @@ from talon_desktop.map_data import (
     SCENE_HEIGHT,
     SCENE_WIDTH,
     AssetOverlay,
+    MapBounds,
     MapOverlayBundle,
     RouteOverlay,
     SitrepOverlay,
@@ -22,6 +23,7 @@ from talon_desktop.map_tiles import (
     TILE_LAYERS_BY_KEY,
     TileRequest,
     build_tile_plan,
+    zoom_bounds_around_scene_point,
 )
 
 _log = get_logger("desktop.map")
@@ -36,16 +38,16 @@ _ZONE_COLORS = {
 
 
 class MapGraphicsView(QtWidgets.QGraphicsView):
-    """Graphics view with standard mouse-wheel zoom behavior."""
+    """Graphics view that delegates wheel zoom to the map page viewport."""
+
+    zoomRequested = QtCore.Signal(float, float, int)
 
     def __init__(self, scene: QtWidgets.QGraphicsScene) -> None:
         super().__init__(scene)
-        self._zoom_steps = 0
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
 
     def reset_zoom(self) -> None:
-        self._zoom_steps = 0
         self.resetTransform()
         scene = self.scene()
         if scene is not None:
@@ -56,14 +58,8 @@ class MapGraphicsView(QtWidgets.QGraphicsView):
         if delta == 0:
             event.ignore()
             return
-        direction = 1 if delta > 0 else -1
-        next_steps = max(-8, min(16, self._zoom_steps + direction))
-        if next_steps == self._zoom_steps:
-            event.accept()
-            return
-        factor = 1.2 if direction > 0 else 1 / 1.2
-        self.scale(factor, factor)
-        self._zoom_steps = next_steps
+        point = self.mapToScene(event.position().toPoint())
+        self.zoomRequested.emit(point.x(), point.y(), delta)
         event.accept()
 
 
@@ -77,8 +73,12 @@ class MapPage(QtWidgets.QWidget):
         self._scene.setSceneRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
         self._scene.selectionChanged.connect(self._selection_changed)
         self._bundle: MapOverlayBundle | None = None
+        self._map_context: object | None = None
+        self._sitrep_entries: list[object] | None = None
+        self._view_bounds: MapBounds | None = None
         self._mission_ids: list[int | None] = [None]
         self._overlay_details: dict[str, str] = {}
+        self._visible_asset_ids: set[int] | None = None
         self._tile_generation = 0
         self._active_tile_layer_key = "osm"
         self._network = QtNetwork.QNetworkAccessManager(self)
@@ -107,12 +107,15 @@ class MapPage(QtWidgets.QWidget):
             )
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
+        self.asset_filter_button = QtWidgets.QPushButton("Assets")
+        self.asset_filter_button.clicked.connect(self._choose_visible_assets)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
         top_row.addStretch(1)
         top_row.addLayout(layer_row)
         top_row.addWidget(self.mission_filter)
+        top_row.addWidget(self.asset_filter_button)
         top_row.addWidget(self.refresh_button)
 
         self.view = MapGraphicsView(self._scene)
@@ -121,11 +124,23 @@ class MapPage(QtWidgets.QWidget):
         )
         self.view.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
         self.view.setMinimumSize(720, 480)
+        self.view.zoomRequested.connect(self._zoom_at_scene_point)
+
+        self.detail = QtWidgets.QTextEdit()
+        self.detail.setReadOnly(True)
+        self.detail.setMinimumWidth(300)
+        self.detail.setPlaceholderText("Select a map overlay.")
+
+        body = QtWidgets.QSplitter()
+        body.addWidget(self.view)
+        body.addWidget(self.detail)
+        body.setStretchFactor(0, 4)
+        body.setStretchFactor(1, 1)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
         layout.addWidget(self.summary)
-        layout.addWidget(self.view, stretch=1)
+        layout.addWidget(body, stretch=1)
 
     def refresh(self) -> None:
         selected_mission_id = self._selected_mission_id()
@@ -135,7 +150,11 @@ class MapPage(QtWidgets.QWidget):
             sitrep_filters = {"mission_id": selected_mission_id} if selected_mission_id else {}
             sitreps = self._core.read_model("sitreps.list", sitrep_filters)
             self._sync_mission_filter(context, selected_mission_id)
-            self._bundle = build_map_overlays(context, sitrep_entries=sitreps)
+            base_bundle = build_map_overlays(context, sitrep_entries=sitreps)
+            self._map_context = context
+            self._sitrep_entries = list(sitreps)
+            self._view_bounds = base_bundle.bounds
+            self._bundle = base_bundle
             self._render_bundle(self._bundle)
         except Exception as exc:
             _log.warning("Could not refresh map: %s", exc)
@@ -169,9 +188,16 @@ class MapPage(QtWidgets.QWidget):
             self._draw_route(route)
         for waypoint in bundle.waypoints:
             self._draw_waypoint(waypoint)
-        for asset in bundle.assets:
+        assets = [
+            asset for asset in bundle.assets
+            if self._visible_asset_ids is None or asset.id in self._visible_asset_ids
+        ]
+        visible_asset_ids = {asset.id for asset in assets}
+        for asset in assets:
             self._draw_asset(asset)
         for sitrep in bundle.sitreps:
+            if self._visible_asset_ids is not None and sitrep.asset_id not in visible_asset_ids:
+                continue
             self._draw_sitrep(sitrep)
         self._scene.setSceneRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
         self.view.reset_zoom()
@@ -196,6 +222,7 @@ class MapPage(QtWidgets.QWidget):
     def _draw_tile_layer(self, bundle: MapOverlayBundle) -> None:
         layer = TILE_LAYERS_BY_KEY.get(self._active_tile_layer_key, TILE_LAYERS[0])
         plan = build_tile_plan(layer, bundle.bounds)
+        self.summary.setToolTip(f"{layer.label} tile zoom: {plan.zoom}")
         generation = self._tile_generation
         for request in plan.requests:
             self._request_tile(request, generation)
@@ -386,11 +413,69 @@ class MapPage(QtWidgets.QWidget):
     def _selection_changed(self) -> None:
         selected = self._scene.selectedItems()
         if not selected:
+            self.detail.clear()
             return
         key = selected[-1].data(0)
         detail = self._overlay_details.get(str(key))
         if detail:
+            self.detail.setPlainText(detail)
             _log.debug("Map overlay selected: %s", detail.replace("\n", " | "))
+
+    def _choose_visible_assets(self) -> None:
+        if self._bundle is None:
+            return
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Visible Assets")
+        dialog.setMinimumWidth(420)
+        asset_list = QtWidgets.QListWidget()
+        asset_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        for asset in self._bundle.assets:
+            item = QtWidgets.QListWidgetItem(f"#{asset.id} {asset.label} [{asset.category}]")
+            item.setData(QtCore.Qt.UserRole, asset.id)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            checked = self._visible_asset_ids is None or asset.id in self._visible_asset_ids
+            item.setCheckState(QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked)
+            asset_list.addItem(item)
+
+        all_button = QtWidgets.QPushButton("All")
+        none_button = QtWidgets.QPushButton("None")
+        apply_button = QtWidgets.QPushButton("Apply")
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        all_button.clicked.connect(
+            lambda: [
+                asset_list.item(row).setCheckState(QtCore.Qt.Checked)
+                for row in range(asset_list.count())
+            ]
+        )
+        none_button.clicked.connect(
+            lambda: [
+                asset_list.item(row).setCheckState(QtCore.Qt.Unchecked)
+                for row in range(asset_list.count())
+            ]
+        )
+        apply_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addWidget(all_button)
+        buttons.addWidget(none_button)
+        buttons.addStretch(1)
+        buttons.addWidget(cancel_button)
+        buttons.addWidget(apply_button)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(asset_list)
+        layout.addLayout(buttons)
+
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        selected: set[int] = set()
+        for row in range(asset_list.count()):
+            item = asset_list.item(row)
+            if item.checkState() == QtCore.Qt.Checked:
+                selected.add(int(item.data(QtCore.Qt.UserRole)))
+        all_ids = {asset.id for asset in self._bundle.assets}
+        self._visible_asset_ids = None if selected == all_ids else selected
+        self._render_bundle(self._bundle)
 
     def _selected_mission_id(self) -> int | None:
         index = self.mission_filter.currentIndex()
@@ -429,6 +514,26 @@ class MapPage(QtWidgets.QWidget):
             self._render_bundle(self._bundle)
         else:
             self.refresh()
+
+    def _zoom_at_scene_point(self, x: float, y: float, wheel_delta: int) -> None:
+        if (
+            self._map_context is None
+            or self._sitrep_entries is None
+            or self._view_bounds is None
+        ):
+            return
+        steps = max(-4, min(4, wheel_delta / 120.0))
+        factor = 1.75**steps
+        next_bounds = zoom_bounds_around_scene_point(self._view_bounds, x, y, factor)
+        if next_bounds == self._view_bounds:
+            return
+        self._view_bounds = next_bounds
+        self._bundle = build_map_overlays(
+            self._map_context,
+            sitrep_entries=self._sitrep_entries,
+            bounds=next_bounds,
+        )
+        self._render_bundle(self._bundle)
 
     def _install_tile_cache(self) -> None:
         cache = QtNetwork.QNetworkDiskCache(self)

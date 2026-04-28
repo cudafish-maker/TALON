@@ -135,6 +135,9 @@ class ChatPage(QtWidgets.QWidget):
         self._messages: list[DesktopMessageItem] = []
         self._operators: list[DesktopOperatorItem] = []
         self._active_channel_id: int | None = None
+        self._blink_on = False
+        self._blink_timer = QtCore.QTimer(self)
+        self._blink_timer.timeout.connect(self._blink_urgent_messages)
 
         self.heading = QtWidgets.QLabel("Chat")
         self.heading.setObjectName("pageHeading")
@@ -163,12 +166,20 @@ class ChatPage(QtWidgets.QWidget):
         self.channel_list.setMinimumWidth(240)
         self.channel_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.channel_list.itemSelectionChanged.connect(self._on_channel_selected)
+        self.channel_search = QtWidgets.QLineEdit()
+        self.channel_search.setPlaceholderText("Search channels")
+        self.channel_search.textChanged.connect(lambda _text: self._populate_channels(self._active_channel_id))
+        self.user_footer = QtWidgets.QLabel("")
+        self.user_footer.setWordWrap(True)
+        self.user_footer.setObjectName("summaryLabel")
 
         channel_panel = QtWidgets.QWidget()
         channel_layout = QtWidgets.QVBoxLayout(channel_panel)
         channel_layout.setContentsMargins(0, 0, 0, 0)
         channel_layout.addWidget(QtWidgets.QLabel("Channels"))
+        channel_layout.addWidget(self.channel_search)
         channel_layout.addWidget(self.channel_list)
+        channel_layout.addWidget(self.user_footer)
 
         self.channel_title = QtWidgets.QLabel("")
         self.channel_title.setObjectName("sectionHeading")
@@ -188,6 +199,9 @@ class ChatPage(QtWidgets.QWidget):
         self.urgent_check = QtWidgets.QCheckBox("Urgent")
         self.grid_field = QtWidgets.QLineEdit()
         self.grid_field.setPlaceholderText("Grid reference")
+        self.grid_field.setVisible(False)
+        self.grid_toggle = QtWidgets.QCheckBox("Grid")
+        self.grid_toggle.toggled.connect(self.grid_field.setVisible)
         self.send_button = QtWidgets.QPushButton("Send")
         self.send_button.clicked.connect(self._send_message)
         self.delete_message_button = QtWidgets.QPushButton("Delete Message")
@@ -202,6 +216,7 @@ class ChatPage(QtWidgets.QWidget):
 
         composer_actions = QtWidgets.QHBoxLayout()
         composer_actions.addWidget(self.urgent_check)
+        composer_actions.addWidget(self.grid_toggle)
         composer_actions.addWidget(self.delete_message_button)
         composer_actions.addStretch(1)
         composer_actions.addWidget(self.send_button)
@@ -216,11 +231,27 @@ class ChatPage(QtWidgets.QWidget):
         message_layout.addWidget(self.message_list, stretch=1)
         message_layout.addLayout(composer_form)
 
+        self.operator_list = QtWidgets.QListWidget()
+        self.operator_list.setMinimumWidth(220)
+        self.operator_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.alert_list = QtWidgets.QListWidget()
+        self.alert_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+
+        right_panel = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.addWidget(QtWidgets.QLabel("Operators"))
+        right_layout.addWidget(self.operator_list, stretch=1)
+        right_layout.addWidget(QtWidgets.QLabel("Alerts"))
+        right_layout.addWidget(self.alert_list, stretch=1)
+
         splitter = QtWidgets.QSplitter()
         splitter.addWidget(channel_panel)
         splitter.addWidget(message_panel)
+        splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(2, 1)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
@@ -243,6 +274,7 @@ class ChatPage(QtWidgets.QWidget):
             return
 
         self._populate_channels(current_id)
+        self._refresh_side_panel()
         self._refresh_messages()
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
@@ -256,8 +288,23 @@ class ChatPage(QtWidgets.QWidget):
         self.channel_list.blockSignals(True)
         try:
             self.channel_list.clear()
-            for channel in self._channels:
-                label = f"{channel.display_name}  [{channel.group_label}]"
+            search = self.channel_search.text().strip().lower()
+            channels = [
+                channel for channel in self._channels
+                if not search
+                or search in channel.display_name.lower()
+                or search in channel.group_label.lower()
+                or search in channel.name.lower()
+            ]
+            current_group = ""
+            for channel in sorted(channels, key=_channel_sort_key):
+                if channel.group_label != current_group:
+                    current_group = channel.group_label
+                    header = QtWidgets.QListWidgetItem(current_group.upper())
+                    header.setFlags(QtCore.Qt.NoItemFlags)
+                    header.setForeground(QtGui.QColor("#8fbcbb"))
+                    self.channel_list.addItem(header)
+                label = channel.display_name
                 item = QtWidgets.QListWidgetItem(label)
                 item.setData(QtCore.Qt.UserRole, channel.id)
                 if channel.is_dm:
@@ -268,7 +315,12 @@ class ChatPage(QtWidgets.QWidget):
         finally:
             self.channel_list.blockSignals(False)
 
-        if not self._channels:
+        selectable = [
+            self.channel_list.item(row)
+            for row in range(self.channel_list.count())
+            if self.channel_list.item(row).data(QtCore.Qt.UserRole) not in (None, "")
+        ]
+        if not selectable:
             placeholder = QtWidgets.QListWidgetItem("No channels.")
             placeholder.setFlags(QtCore.Qt.NoItemFlags)
             self.channel_list.addItem(placeholder)
@@ -282,7 +334,11 @@ class ChatPage(QtWidgets.QWidget):
             if item.data(QtCore.Qt.UserRole) == target_id:
                 self.channel_list.setCurrentRow(row)
                 return
-        self.channel_list.setCurrentRow(0)
+        for row in range(self.channel_list.count()):
+            item = self.channel_list.item(row)
+            if item.data(QtCore.Qt.UserRole) not in (None, ""):
+                self.channel_list.setCurrentRow(row)
+                return
 
     def _refresh_messages(self) -> None:
         channel = self._selected_channel()
@@ -324,6 +380,7 @@ class ChatPage(QtWidgets.QWidget):
             f"{urgent_count} urgent."
         )
         self._update_controls()
+        self._sync_blink_timer()
 
     def _message_row(self, message: DesktopMessageItem) -> QtWidgets.QListWidgetItem:
         header = f"{message.sent_time}  {message.callsign}"
@@ -334,6 +391,7 @@ class ChatPage(QtWidgets.QWidget):
             text += f"\nGrid: {message.grid_ref}"
         item = QtWidgets.QListWidgetItem(text)
         item.setData(QtCore.Qt.UserRole, message.id)
+        item.setData(QtCore.Qt.UserRole + 1, message.is_urgent)
         if message.is_urgent:
             item.setBackground(_URGENT_BACKGROUND)
             item.setForeground(_URGENT_FOREGROUND)
@@ -405,6 +463,7 @@ class ChatPage(QtWidgets.QWidget):
 
         self.body_field.clear()
         self.grid_field.clear()
+        self.grid_toggle.setChecked(False)
         self.urgent_check.setChecked(False)
         self.status_label.setText("Message sent.")
         self._refresh_messages()
@@ -487,6 +546,68 @@ class ChatPage(QtWidgets.QWidget):
         self.send_button.setEnabled(channel is not None)
         self.body_field.setEnabled(channel is not None)
         self.grid_field.setEnabled(channel is not None)
+        self.grid_toggle.setEnabled(channel is not None)
         self.urgent_check.setEnabled(channel is not None)
         self.delete_channel_button.setEnabled(can_delete_channel(self._core.mode, channel))
         self.delete_message_button.setEnabled(can_delete_message(self._core.mode, message))
+
+    def _refresh_side_panel(self) -> None:
+        try:
+            current = self._core.read_model("chat.current_operator")
+        except Exception:
+            current = {}
+        callsign = current.get("callsign", "") if isinstance(current, dict) else ""
+        role = current.get("role", "") if isinstance(current, dict) else ""
+        self.user_footer.setText(" | ".join(part for part in (callsign, role) if part))
+
+        self.operator_list.clear()
+        for operator in sorted(self._operators, key=lambda item: (not item.online, item.callsign)):
+            suffix = "online" if operator.online else "offline"
+            label = f"{operator.callsign}  {suffix}"
+            if operator.role:
+                label += f"  {operator.role}"
+            item = QtWidgets.QListWidgetItem(label)
+            item.setForeground(QtGui.QColor("#8fbcbb" if operator.online else "#93a1a8"))
+            self.operator_list.addItem(item)
+        if not self._operators:
+            self.operator_list.addItem("No operators.")
+
+        self.alert_list.clear()
+        try:
+            alerts = self._core.read_model("chat.alerts")
+        except Exception as exc:
+            self.alert_list.addItem(f"Unable to load alerts: {exc}")
+            return
+        for alert in alerts:
+            text = str(alert.get("text", alert)) if isinstance(alert, dict) else str(alert)
+            self.alert_list.addItem(text)
+        if not alerts:
+            self.alert_list.addItem("No urgent alerts.")
+
+    def _sync_blink_timer(self) -> None:
+        has_urgent = any(message.is_urgent for message in self._messages)
+        if has_urgent and not self._blink_timer.isActive():
+            self._blink_timer.start(650)
+        elif not has_urgent and self._blink_timer.isActive():
+            self._blink_timer.stop()
+
+    def _blink_urgent_messages(self) -> None:
+        self._blink_on = not self._blink_on
+        for row in range(self.message_list.count()):
+            item = self.message_list.item(row)
+            if not item.data(QtCore.Qt.UserRole + 1):
+                continue
+            item.setBackground(
+                QtGui.QColor("#532233") if self._blink_on else _URGENT_BACKGROUND
+            )
+
+
+def _channel_sort_key(channel: DesktopChannelItem) -> tuple[int, str]:
+    order = {
+        "Emergency": 0,
+        "All Hands": 1,
+        "Mission": 2,
+        "Squad": 3,
+        "Direct": 4,
+    }
+    return (order.get(channel.group_label, 99), channel.display_name.lower())

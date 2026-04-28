@@ -12,7 +12,7 @@ import typing
 from talon_core.constants import SITREP_LEVELS
 
 FLASH_LEVELS = frozenset({"FLASH", "FLASH_OVERRIDE"})
-ATTENTION_LEVELS = frozenset({"IMMEDIATE", "FLASH", "FLASH_OVERRIDE"})
+ATTENTION_LEVELS = frozenset(SITREP_LEVELS)
 
 
 @dataclasses.dataclass(frozen=True)

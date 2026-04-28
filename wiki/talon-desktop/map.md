@@ -19,19 +19,22 @@ map tiles underneath local operational overlays.
 
 - Mission filter scopes route and AO overlays.
 - OSM, TOPO, and Satellite radio buttons switch the visible base layer.
-- Mouse-wheel scrolling zooms the map in and out around the cursor.
+- Mouse-wheel scrolling zooms the map viewport in and out around the cursor,
+  then requests fresh raster tiles for the updated geographic bounds so zoomed
+  views resolve to higher tile resolution instead of scaling the old image.
 - Selecting assets, mission routes, zones, waypoints, or asset-linked SITREPs
-  uses item tooltips/details without a persistent side panel.
-- Asset creation/editing includes an OSM map picker for click-to-place asset
-  coordinates.
-- Drawing tools for AO polygons and waypoint routes remain open.
+  writes full overlay details into the persistent side panel.
+- Asset visibility can be scoped through an all/none/apply picker.
+- Asset creation/editing and mission workflows use the shared map picker with
+  operational overlays and OSM/TOPO/Satellite base-layer selection.
+- Drawing tools for AO polygons and waypoint routes are implemented.
 
 ## Current Implementation
 
 - `talon_desktop.map_data` provides Qt-free projection and overlay helpers.
 - `talon_desktop.map_tiles` provides Qt-free raster tile layer definitions,
   Web Mercator projection helpers, reverse click-to-coordinate projection, and
-  visible-tile planning.
+  visible-tile planning for both base and zoomed view bounds.
 - `talon_desktop.map_page.MapPage` renders a Qt `QGraphicsScene` operational
   surface from `TalonCoreSession.read_model("map.context")`.
 - The page uses Qt network loading for visible OSM, TOPO, and Satellite tiles,
@@ -39,6 +42,8 @@ map tiles underneath local operational overlays.
   traffic.
 - The page renders asset markers, zone polygons, mission route lines, waypoint
   markers, and asset-linked SITREP markers.
+- `talon_desktop.map_picker` provides reusable point, polygon, and route
+  dialogs for asset placement and mission geometry.
 - The page refreshes from core events for assets, missions, zones, waypoints,
   and SITREPs.
 ## Deferred

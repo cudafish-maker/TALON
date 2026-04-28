@@ -5,17 +5,27 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 
 _THEME_MARKER = "_talon_desktop_theme_applied"
+_THEME_STATE = "_talon_desktop_theme_state"
 
 
-def apply_desktop_theme(app: QtWidgets.QApplication) -> None:
+def apply_desktop_theme(
+    app: QtWidgets.QApplication,
+    *,
+    theme_key: str = "dark",
+    font_scale: float = 1.0,
+) -> None:
     """Apply TALON's dark operational Qt theme once per QApplication."""
-    if getattr(app, _THEME_MARKER, False):
+    theme_key = theme_key if theme_key in {"dark", "high_contrast", "field"} else "dark"
+    font_scale = max(0.8, min(1.6, float(font_scale)))
+    state = (theme_key, round(font_scale, 2))
+    if getattr(app, _THEME_MARKER, False) and getattr(app, _THEME_STATE, None) == state:
         return
 
     app.setStyle("Fusion")
-    app.setPalette(_palette())
-    app.setStyleSheet(_stylesheet())
+    app.setPalette(_palette(theme_key))
+    app.setStyleSheet(_stylesheet(theme_key=theme_key, font_scale=font_scale))
     setattr(app, _THEME_MARKER, True)
+    setattr(app, _THEME_STATE, state)
 
 
 def configure_data_table(table: QtWidgets.QTableWidget) -> None:
@@ -31,14 +41,15 @@ def configure_data_table(table: QtWidgets.QTableWidget) -> None:
     table.verticalHeader().setDefaultSectionSize(32)
 
 
-def _palette() -> QtGui.QPalette:
+def _palette(theme_key: str = "dark") -> QtGui.QPalette:
     palette = QtGui.QPalette()
-    background = QtGui.QColor("#0d1214")
-    surface = QtGui.QColor("#141b1e")
-    panel = QtGui.QColor("#182226")
-    text = QtGui.QColor("#d8dee9")
-    muted = QtGui.QColor("#93a1a8")
-    accent = QtGui.QColor("#8fbcbb")
+    colors = _theme_colors(theme_key)
+    background = QtGui.QColor(colors["background"])
+    surface = QtGui.QColor(colors["surface"])
+    panel = QtGui.QColor(colors["panel"])
+    text = QtGui.QColor(colors["text"])
+    muted = QtGui.QColor(colors["muted"])
+    accent = QtGui.QColor(colors["accent"])
 
     palette.setColor(QtGui.QPalette.Window, background)
     palette.setColor(QtGui.QPalette.WindowText, text)
@@ -62,13 +73,13 @@ def _palette() -> QtGui.QPalette:
     return palette
 
 
-def _stylesheet() -> str:
-    return """
+def _stylesheet(*, theme_key: str = "dark", font_scale: float = 1.0) -> str:
+    sheet = """
     QWidget {
         background: #0d1214;
         color: #d8dee9;
         font-family: "Segoe UI", "Inter", "Noto Sans", sans-serif;
-        font-size: 10.5pt;
+        font-size: __BASE_FONT_SIZE__;
         selection-background-color: #28484d;
         selection-color: #f6fbfb;
     }
@@ -442,3 +453,72 @@ def _stylesheet() -> str:
         padding: 6px;
     }
     """
+    sheet = sheet.replace("__BASE_FONT_SIZE__", f"{10.5 * font_scale:.1f}pt")
+    return sheet + _theme_overrides(theme_key)
+
+
+def _theme_colors(theme_key: str) -> dict[str, str]:
+    if theme_key == "high_contrast":
+        return {
+            "background": "#050607",
+            "surface": "#101315",
+            "panel": "#151b1e",
+            "text": "#f3f8fa",
+            "muted": "#aebbc2",
+            "accent": "#ffe082",
+        }
+    if theme_key == "field":
+        return {
+            "background": "#0f1511",
+            "surface": "#161d17",
+            "panel": "#1d261e",
+            "text": "#dfe8da",
+            "muted": "#9fad99",
+            "accent": "#a8c686",
+        }
+    return {
+        "background": "#0d1214",
+        "surface": "#141b1e",
+        "panel": "#182226",
+        "text": "#d8dee9",
+        "muted": "#93a1a8",
+        "accent": "#8fbcbb",
+    }
+
+
+def _theme_overrides(theme_key: str) -> str:
+    if theme_key == "high_contrast":
+        return """
+        QWidget { background: #050607; color: #f3f8fa; }
+        QMainWindow, QDialog, QMessageBox { background: #050607; }
+        QListWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit,
+        QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
+            background: #101315;
+            color: #f3f8fa;
+            border-color: #5c6f78;
+        }
+        QPushButton {
+            background: #162127;
+            border-color: #6e8791;
+            color: #ffffff;
+        }
+        QLabel#sideMode, QGroupBox::title { color: #ffe082; }
+        """
+    if theme_key == "field":
+        return """
+        QWidget { background: #0f1511; color: #dfe8da; }
+        QMainWindow, QDialog, QMessageBox { background: #0f1511; }
+        QListWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit,
+        QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
+            background: #161d17;
+            color: #dfe8da;
+            border-color: #334233;
+        }
+        QPushButton {
+            background: #1d2a1f;
+            border-color: #4f674e;
+            color: #edf4e9;
+        }
+        QLabel#sideMode, QGroupBox::title { color: #a8c686; }
+        """
+    return ""

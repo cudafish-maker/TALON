@@ -46,6 +46,7 @@ from talon_desktop.map_tiles import (
     build_tile_plan,
     lat_lon_for_scene_point,
     scene_point_for_lat_lon,
+    zoom_bounds_around_scene_point,
 )
 from talon_desktop.missions import (
     build_create_payload as build_mission_create_payload,
@@ -690,6 +691,16 @@ def test_sitrep_feed_item_normalizes_core_tuple() -> None:
     assert item.needs_attention is True
     assert severity_counts([item])["IMMEDIATE"] == 1
 
+    routine = types.SimpleNamespace(
+        id=6,
+        level="ROUTINE",
+        body="Status normal",
+        mission_id=None,
+        asset_id=None,
+        created_at=123457,
+    )
+    assert feed_item_from_entry((routine, "ALPHA", None)).needs_attention is True
+
 
 def test_asset_create_payload_validates_and_normalizes_fields() -> None:
     payload = build_asset_create_payload(
@@ -888,6 +899,40 @@ def test_map_projection_round_trips_scene_points() -> None:
     assert lon == pytest.approx(-75.163, abs=0.000001)
 
 
+def test_map_wheel_zoom_bounds_request_higher_resolution_tiles() -> None:
+    context = types.SimpleNamespace(
+        assets=[
+            types.SimpleNamespace(
+                id=1,
+                label="Relay",
+                category="radio",
+                verified=True,
+                mission_id=None,
+                lat=39.953,
+                lon=-75.163,
+            ),
+        ],
+        zones=[],
+        waypoints=[],
+        missions=[],
+    )
+    overlays = build_map_overlays(context)
+    base_plan = build_tile_plan(TILE_LAYERS_BY_KEY["osm"], overlays.bounds)
+    zoomed_bounds = zoom_bounds_around_scene_point(overlays.bounds, 500.0, 350.0, 8.0)
+    zoomed_plan = build_tile_plan(TILE_LAYERS_BY_KEY["osm"], zoomed_bounds)
+    zoomed_overlays = build_map_overlays(context, bounds=zoomed_bounds)
+
+    assert zoomed_bounds.max_lat - zoomed_bounds.min_lat < (
+        overlays.bounds.max_lat - overlays.bounds.min_lat
+    )
+    assert zoomed_bounds.max_lon - zoomed_bounds.min_lon < (
+        overlays.bounds.max_lon - overlays.bounds.min_lon
+    )
+    assert zoomed_plan.zoom > base_plan.zoom
+    assert 0 <= zoomed_overlays.assets[0].point.x <= 1000
+    assert 0 <= zoomed_overlays.assets[0].point.y <= 700
+
+
 def test_mission_create_payload_parses_assets_ao_and_route() -> None:
     payload = build_mission_create_payload(
         title="  Cache Sweep  ",
@@ -899,6 +944,21 @@ def test_mission_create_payload_parses_assets_ao_and_route() -> None:
         organization="Team 1",
         ao_text="40.0, -75.0\n40.1, -75.0\n40.1, -74.9",
         route_text="40.0 -75.0\n40.1 -74.9",
+        activation_time="2026-04-28 10:00",
+        operation_window="0800-1800",
+        max_duration="8h",
+        staging_area="40.000000, -75.000000",
+        demob_point="40.100000, -74.900000",
+        standdown_criteria="All caches verified",
+        phases=[{"name": "Ingress", "objective": "Reach cache", "duration": "1h"}],
+        constraints=["Two-person teams"],
+        support_medical="Aid station",
+        support_logistics="Fuel",
+        support_comms="Repeater",
+        support_equipment="Generator",
+        custom_resources=[{"label": "Water", "details": "20 gal"}],
+        objectives=[{"label": "Primary", "criteria": "Cache verified"}],
+        key_locations={"icp": "40.000000, -75.000000", "empty": ""},
     )
 
     assert payload["title"] == "Cache Sweep"
@@ -907,6 +967,14 @@ def test_mission_create_payload_parses_assets_ao_and_route() -> None:
     assert payload["priority"] == "IMMEDIATE"
     assert payload["ao_polygon"] == [[40.0, -75.0], [40.1, -75.0], [40.1, -74.9]]
     assert payload["route"] == [(40.0, -75.0), (40.1, -74.9)]
+    assert payload["activation_time"] == "2026-04-28 10:00"
+    assert payload["phases"] == [
+        {"name": "Ingress", "objective": "Reach cache", "duration": "1h"}
+    ]
+    assert payload["constraints"] == ["Two-person teams"]
+    assert payload["custom_resources"] == [{"label": "Water", "details": "20 gal"}]
+    assert payload["objectives"] == [{"label": "Primary", "criteria": "Cache verified"}]
+    assert payload["key_locations"] == {"icp": "40.000000, -75.000000"}
 
 
 def test_mission_payload_rejects_invalid_title_priority_and_geometry() -> None:

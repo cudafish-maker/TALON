@@ -1,6 +1,8 @@
 """PySide6 mission list, detail, create, and lifecycle page."""
 from __future__ import annotations
 
+import typing
+
 from PySide6 import QtCore, QtWidgets
 
 from talon_core import TalonCoreSession
@@ -10,16 +12,20 @@ from talon_desktop.missions import (
     MISSION_STATUS_OPTIONS,
     DesktopMissionItem,
     build_create_payload,
+    format_coordinate_lines,
     items_from_missions,
+    line_items,
+    parse_coordinate_lines,
     server_actions_for_status,
 )
+from talon_desktop.map_picker import format_coordinate, pick_path_on_map, pick_point_on_map
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.missions")
 
 
 class MissionCreateDialog(QtWidgets.QDialog):
-    """Compact mission create workflow with asset, AO, and route inputs."""
+    """Extended mission create workflow with assets, timing, map geometry, and support fields."""
 
     def __init__(
         self,
@@ -29,38 +35,75 @@ class MissionCreateDialog(QtWidgets.QDialog):
     ) -> None:
         super().__init__(parent)
         self._core = core
+        self._key_location_fields: dict[str, QtWidgets.QLineEdit] = {}
+        self._constraint_checks: dict[str, QtWidgets.QCheckBox] = {}
         self.setWindowTitle("Mission")
-        self.setMinimumWidth(620)
+        self.setMinimumSize(820, 720)
 
         self.title_field = QtWidgets.QLineEdit()
         self.description_field = QtWidgets.QTextEdit()
-        self.description_field.setFixedHeight(92)
-        self.type_field = QtWidgets.QLineEdit()
+        self.description_field.setFixedHeight(96)
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.setEditable(True)
+        for mission_type in (
+            "Search / Rescue",
+            "Medical",
+            "Logistics",
+            "Damage Assessment",
+            "Security",
+            "Communications",
+            "Custom",
+        ):
+            self.type_combo.addItem(mission_type, mission_type)
         self.priority_combo = QtWidgets.QComboBox()
         for level in SITREP_LEVELS:
             self.priority_combo.addItem(level, level)
         self.lead_field = QtWidgets.QLineEdit()
         self.organization_field = QtWidgets.QLineEdit()
 
-        form = QtWidgets.QFormLayout()
-        form.addRow("Title", self.title_field)
-        form.addRow("Description", self.description_field)
-        form.addRow("Type", self.type_field)
-        form.addRow("Priority", self.priority_combo)
-        form.addRow("Lead", self.lead_field)
-        form.addRow("Organization", self.organization_field)
+        self.activation_enabled = QtWidgets.QCheckBox("Set activation time")
+        self.activation_time = QtWidgets.QDateTimeEdit(QtCore.QDateTime.currentDateTime())
+        self.activation_time.setCalendarPopup(True)
+        self.activation_time.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.activation_time.setEnabled(False)
+        self.activation_enabled.toggled.connect(self.activation_time.setEnabled)
+        self.operation_window_field = QtWidgets.QLineEdit()
+        self.max_duration_field = QtWidgets.QLineEdit()
+        self.staging_area_field = QtWidgets.QLineEdit()
+        self.demob_point_field = QtWidgets.QLineEdit()
+        self.standdown_field = QtWidgets.QTextEdit()
+        self.standdown_field.setFixedHeight(76)
+        self.phase_table = self._table(["Name", "Objective", "Duration"])
 
         self.assets_list = QtWidgets.QListWidget()
         self.assets_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self.assets_list.setMinimumHeight(110)
+        self.assets_list.setMinimumHeight(160)
         self._load_assets()
 
         self.ao_field = QtWidgets.QPlainTextEdit()
         self.ao_field.setPlaceholderText("lat, lon\nlat, lon\nlat, lon")
-        self.ao_field.setFixedHeight(90)
+        self.ao_field.setFixedHeight(112)
         self.route_field = QtWidgets.QPlainTextEdit()
         self.route_field.setPlaceholderText("lat, lon\nlat, lon")
-        self.route_field.setFixedHeight(90)
+        self.route_field.setFixedHeight(112)
+        self.objective_table = self._table(["Label", "Criteria"])
+
+        self.support_medical = self._text_edit()
+        self.support_logistics = self._text_edit()
+        self.support_comms = self._text_edit()
+        self.support_equipment = self._text_edit()
+        self.custom_resource_table = self._table(["Label", "Details"])
+        self.custom_constraints = QtWidgets.QPlainTextEdit()
+        self.custom_constraints.setFixedHeight(78)
+        self.custom_constraints.setPlaceholderText("One custom constraint per line")
+
+        tabs = QtWidgets.QTabWidget()
+        tabs.addTab(self._scroll_page(self._overview_tab()), "Overview")
+        tabs.addTab(self._scroll_page(self._timing_tab()), "Timing")
+        tabs.addTab(self._scroll_page(self._assets_tab()), "Assets")
+        tabs.addTab(self._scroll_page(self._area_tab()), "Area / Route")
+        tabs.addTab(self._scroll_page(self._support_tab()), "Support")
+
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setWordWrap(True)
 
@@ -74,13 +117,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         button_row.addWidget(self.save_button)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(QtWidgets.QLabel("Requested Assets"))
-        layout.addWidget(self.assets_list)
-        layout.addWidget(QtWidgets.QLabel("AO Polygon"))
-        layout.addWidget(self.ao_field)
-        layout.addWidget(QtWidgets.QLabel("Route / Waypoints"))
-        layout.addWidget(self.route_field)
+        layout.addWidget(tabs, stretch=1)
         layout.addWidget(self.status_label)
         layout.addLayout(button_row)
 
@@ -89,12 +126,33 @@ class MissionCreateDialog(QtWidgets.QDialog):
             title=self.title_field.text(),
             description=self.description_field.toPlainText(),
             asset_ids=self.selected_asset_ids(),
-            mission_type=self.type_field.text(),
+            mission_type=self.type_combo.currentText(),
             priority=str(self.priority_combo.currentData()),
             lead_coordinator=self.lead_field.text(),
             organization=self.organization_field.text(),
             ao_text=self.ao_field.toPlainText(),
             route_text=self.route_field.toPlainText(),
+            activation_time=self._activation_text(),
+            operation_window=self.operation_window_field.text(),
+            max_duration=self.max_duration_field.text(),
+            staging_area=self.staging_area_field.text(),
+            demob_point=self.demob_point_field.text(),
+            standdown_criteria=self.standdown_field.toPlainText(),
+            phases=self._table_dicts(self.phase_table, ("name", "objective", "duration")),
+            constraints=self._constraints(),
+            support_medical=self.support_medical.toPlainText(),
+            support_logistics=self.support_logistics.toPlainText(),
+            support_comms=self.support_comms.toPlainText(),
+            support_equipment=self.support_equipment.toPlainText(),
+            custom_resources=self._table_dicts(
+                self.custom_resource_table,
+                ("label", "details"),
+            ),
+            objectives=self._table_dicts(self.objective_table, ("label", "criteria")),
+            key_locations={
+                key: field.text()
+                for key, field in self._key_location_fields.items()
+            },
         )
 
     def selected_asset_ids(self) -> list[int]:
@@ -127,6 +185,360 @@ class MissionCreateDialog(QtWidgets.QDialog):
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
             item.setCheckState(QtCore.Qt.Unchecked)
             self.assets_list.addItem(item)
+
+    def _overview_tab(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(page)
+        form.addRow("Title", self.title_field)
+        form.addRow("Description", self.description_field)
+        form.addRow("Type", self.type_combo)
+        form.addRow("Priority", self.priority_combo)
+        form.addRow("Lead", self.lead_field)
+        form.addRow("Organization", self.organization_field)
+        return page
+
+    def _timing_tab(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(page)
+        activation_row = QtWidgets.QHBoxLayout()
+        activation_row.addWidget(self.activation_enabled)
+        activation_row.addWidget(self.activation_time, stretch=1)
+        form.addRow("Activation", activation_row)
+        form.addRow("Operation Window", self.operation_window_field)
+        form.addRow("Max Duration", self.max_duration_field)
+        form.addRow("Staging Area", self._point_row(self.staging_area_field, "Staging Area"))
+        form.addRow("Demob Point", self._point_row(self.demob_point_field, "Demob Point"))
+        form.addRow("Stand-down Criteria", self.standdown_field)
+        form.addRow("Phases", self._table_with_buttons(self.phase_table))
+        return page
+
+    def _assets_tab(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.addWidget(QtWidgets.QLabel("Requested Assets"))
+        layout.addWidget(self.assets_list)
+        return page
+
+    def _area_tab(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(page)
+        form.addRow("AO Polygon", self._geometry_row(self.ao_field, self._draw_ao))
+        form.addRow("Route / Waypoints", self._geometry_row(self.route_field, self._draw_route))
+        form.addRow("Objectives", self._table_with_buttons(self.objective_table))
+
+        key_group = QtWidgets.QGroupBox("Key Locations")
+        key_form = QtWidgets.QFormLayout(key_group)
+        for key, label in (
+            ("incident_command_post", "Incident Command Post"),
+            ("staging_area", "Staging Area"),
+            ("medical", "Medical"),
+            ("evacuation", "Evacuation"),
+            ("supply", "Supply"),
+        ):
+            field = QtWidgets.QLineEdit()
+            self._key_location_fields[key] = field
+            key_form.addRow(label, self._point_row(field, label))
+        form.addRow(key_group)
+        return page
+
+    def _support_tab(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(page)
+        constraints_group = QtWidgets.QGroupBox("Constraints")
+        constraints_layout = QtWidgets.QGridLayout(constraints_group)
+        for index, label in enumerate(
+            (
+                "Daylight only",
+                "Two-person teams",
+                "Medical standby",
+                "Comms check required",
+                "Avoid restricted zones",
+                "Server approval required",
+            )
+        ):
+            check = QtWidgets.QCheckBox(label)
+            self._constraint_checks[label] = check
+            constraints_layout.addWidget(check, index // 2, index % 2)
+        form.addRow(constraints_group)
+        form.addRow("Custom Constraints", self.custom_constraints)
+        form.addRow("Medical", self.support_medical)
+        form.addRow("Logistics", self.support_logistics)
+        form.addRow("Comms", self.support_comms)
+        form.addRow("Equipment", self.support_equipment)
+        form.addRow("Custom Resources", self._table_with_buttons(self.custom_resource_table))
+        return page
+
+    def _geometry_row(
+        self,
+        editor: QtWidgets.QPlainTextEdit,
+        callback: typing.Callable[[], None],
+    ) -> QtWidgets.QWidget:
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        button = QtWidgets.QPushButton("Draw on Map")
+        button.clicked.connect(callback)
+        row = QtWidgets.QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(button)
+        layout.addWidget(editor)
+        layout.addLayout(row)
+        return container
+
+    def _point_row(self, field: QtWidgets.QLineEdit, title: str) -> QtWidgets.QWidget:
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        button = QtWidgets.QPushButton("Pick on Map")
+        button.clicked.connect(lambda _checked=False, f=field, t=title: self._pick_point(f, t))
+        layout.addWidget(field, stretch=1)
+        layout.addWidget(button)
+        return container
+
+    def _draw_ao(self) -> None:
+        points = self._parse_existing_points(self.ao_field, "AO polygon", 3)
+        if points is None:
+            return
+        selected = pick_path_on_map(
+            core=self._core,
+            title="AO Polygon",
+            mode="polygon",
+            initial_points=points,
+            parent=self,
+        )
+        if selected is not None:
+            self.ao_field.setPlainText(format_coordinate_lines(selected))
+            self.status_label.clear()
+
+    def _draw_route(self) -> None:
+        points = self._parse_existing_points(self.route_field, "Route", 1)
+        if points is None:
+            return
+        selected = pick_path_on_map(
+            core=self._core,
+            title="Route / Waypoints",
+            mode="route",
+            initial_points=points,
+            parent=self,
+        )
+        if selected is not None:
+            self.route_field.setPlainText(format_coordinate_lines(selected))
+            self.status_label.clear()
+
+    def _pick_point(self, field: QtWidgets.QLineEdit, title: str) -> None:
+        initial_lat = None
+        initial_lon = None
+        text = field.text().strip()
+        if text:
+            try:
+                points = parse_coordinate_lines(
+                    text,
+                    label=title,
+                    minimum_points=1,
+                    empty_ok=False,
+                )
+                initial_lat, initial_lon = points[0]
+            except ValueError as exc:
+                self.status_label.setText(str(exc))
+                return
+        selected = pick_point_on_map(
+            core=self._core,
+            title=title,
+            initial_lat=initial_lat,
+            initial_lon=initial_lon,
+            parent=self,
+        )
+        if selected is None:
+            return
+        field.setText(format_coordinate(*selected))
+        self.status_label.clear()
+
+    def _parse_existing_points(
+        self,
+        editor: QtWidgets.QPlainTextEdit,
+        label: str,
+        minimum_points: int,
+    ) -> list[tuple[float, float]] | None:
+        try:
+            return parse_coordinate_lines(
+                editor.toPlainText(),
+                label=label,
+                minimum_points=1 if editor.toPlainText().strip() else minimum_points,
+                empty_ok=True,
+            )
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return None
+
+    def _activation_text(self) -> str:
+        if not self.activation_enabled.isChecked():
+            return ""
+        return self.activation_time.dateTime().toString("yyyy-MM-dd HH:mm")
+
+    def _constraints(self) -> list[str]:
+        values = [
+            label for label, check in self._constraint_checks.items()
+            if check.isChecked()
+        ]
+        values.extend(line_items(self.custom_constraints.toPlainText()))
+        return values
+
+    @staticmethod
+    def _text_edit() -> QtWidgets.QTextEdit:
+        edit = QtWidgets.QTextEdit()
+        edit.setFixedHeight(76)
+        return edit
+
+    @staticmethod
+    def _table(headers: list[str]) -> QtWidgets.QTableWidget:
+        table = QtWidgets.QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.verticalHeader().setVisible(False)
+        table.setMinimumHeight(130)
+        return table
+
+    def _table_with_buttons(self, table: QtWidgets.QTableWidget) -> QtWidgets.QWidget:
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        row = QtWidgets.QHBoxLayout()
+        add_button = QtWidgets.QPushButton("Add")
+        remove_button = QtWidgets.QPushButton("Remove")
+        add_button.clicked.connect(lambda _checked=False, t=table: self._add_table_row(t))
+        remove_button.clicked.connect(lambda _checked=False, t=table: self._remove_table_row(t))
+        row.addStretch(1)
+        row.addWidget(add_button)
+        row.addWidget(remove_button)
+        layout.addWidget(table)
+        layout.addLayout(row)
+        return container
+
+    @staticmethod
+    def _add_table_row(table: QtWidgets.QTableWidget) -> None:
+        row = table.rowCount()
+        table.insertRow(row)
+        for column in range(table.columnCount()):
+            table.setItem(row, column, QtWidgets.QTableWidgetItem(""))
+        table.setCurrentCell(row, 0)
+
+    @staticmethod
+    def _remove_table_row(table: QtWidgets.QTableWidget) -> None:
+        row = table.currentRow()
+        if row < 0 and table.rowCount():
+            row = table.rowCount() - 1
+        if row >= 0:
+            table.removeRow(row)
+
+    @staticmethod
+    def _table_dicts(
+        table: QtWidgets.QTableWidget,
+        keys: tuple[str, ...],
+    ) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        for row in range(table.rowCount()):
+            values: dict[str, str] = {}
+            has_value = False
+            for column, key in enumerate(keys):
+                item = table.item(row, column)
+                text = item.text().strip() if item is not None else ""
+                values[key] = text
+                has_value = has_value or bool(text)
+            if has_value:
+                rows.append(values)
+        return rows
+
+    @staticmethod
+    def _scroll_page(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(widget)
+        return scroll
+
+
+class MissionApprovalDialog(QtWidgets.QDialog):
+    """Server review dialog that can adjust requested asset allocation."""
+
+    def __init__(
+        self,
+        core: TalonCoreSession,
+        mission_id: int,
+        *,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._core = core
+        self._mission_id = mission_id
+        self.setWindowTitle("Approve Mission")
+        self.setMinimumSize(560, 620)
+
+        self.summary = QtWidgets.QLabel("")
+        self.summary.setWordWrap(True)
+        self.asset_list = QtWidgets.QListWidget()
+        self.asset_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
+
+        self.approve_button = QtWidgets.QPushButton("Approve")
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.approve_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.approve_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.summary)
+        layout.addWidget(QtWidgets.QLabel("Asset Allocation"))
+        layout.addWidget(self.asset_list, stretch=1)
+        layout.addWidget(self.status_label)
+        layout.addLayout(buttons)
+        self._load()
+
+    def selected_asset_ids(self) -> list[int]:
+        selected: list[int] = []
+        for row in range(self.asset_list.count()):
+            item = self.asset_list.item(row)
+            if item.checkState() == QtCore.Qt.Checked:
+                selected.append(int(item.data(QtCore.Qt.UserRole)))
+        return selected
+
+    def _load(self) -> None:
+        try:
+            context = self._core.read_model(
+                "missions.approval_context",
+                {"mission_id": self._mission_id},
+            )
+        except Exception as exc:
+            self.status_label.setText(f"Unable to load approval context: {exc}")
+            self.approve_button.setDisabled(True)
+            return
+        mission = context["mission"]
+        creator = context.get("creator_callsign", "")
+        requested_ids = set(context.get("requested_ids", set()))
+        self.summary.setText(
+            f"#{mission.id} {mission.title}\n"
+            f"Requested by: {creator}\n"
+            f"Priority: {getattr(mission, 'priority', '')} | "
+            f"Type: {getattr(mission, 'mission_type', '')}"
+        )
+        for asset in context.get("all_assets", []):
+            mission_id = getattr(asset, "mission_id", None)
+            if mission_id is not None and int(mission_id) != int(mission.id):
+                continue
+            requested = int(getattr(asset, "id")) in requested_ids
+            label = (
+                f"#{asset.id} {asset.label} [{asset.category}]"
+                + ("  requested" if requested else "")
+            )
+            item = QtWidgets.QListWidgetItem(label)
+            item.setData(QtCore.Qt.UserRole, int(asset.id))
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Checked if requested else QtCore.Qt.Unchecked)
+            self.asset_list.addItem(item)
+        if self.asset_list.count() == 0:
+            self.status_label.setText("No allocatable assets are available.")
 
 
 class MissionPage(QtWidgets.QWidget):
@@ -283,6 +695,12 @@ class MissionPage(QtWidgets.QWidget):
             "complete": "missions.complete",
             "delete": "missions.delete",
         }[action]
+        payload: dict[str, object] = {"mission_id": item.id}
+        if action == "approve":
+            dialog = MissionApprovalDialog(self._core, item.id, parent=self)
+            if dialog.exec() != QtWidgets.QDialog.Accepted:
+                return
+            payload["asset_ids"] = dialog.selected_asset_ids()
         if action in {"delete", "reject", "abort", "complete"}:
             if (
                 QtWidgets.QMessageBox.question(
@@ -294,7 +712,7 @@ class MissionPage(QtWidgets.QWidget):
             ):
                 return
         try:
-            self._core.command(command, mission_id=item.id)
+            self._core.command(command, payload)
             self.refresh()
         except Exception as exc:
             _log.warning("Mission %s failed: %s", action, exc)
@@ -310,6 +728,11 @@ class MissionPage(QtWidgets.QWidget):
         zones = detail.get("zones", [])
         waypoints = detail.get("waypoints", [])
         sitreps = detail.get("sitreps", [])
+        phases = getattr(mission, "phases", []) or []
+        constraints = getattr(mission, "constraints", []) or []
+        objectives = getattr(mission, "objectives", []) or []
+        key_locations = getattr(mission, "key_locations", {}) or {}
+        custom_resources = getattr(mission, "custom_resources", []) or []
         lines = [
             f"#{mission.id} {mission.title}",
             f"Status: {mission.status}",
@@ -317,9 +740,41 @@ class MissionPage(QtWidgets.QWidget):
             f"Type: {getattr(mission, 'mission_type', '')}",
             f"Creator: {detail.get('creator_callsign', '')}",
             f"Channel: {detail.get('channel_name', '')}",
+            f"Lead: {getattr(mission, 'lead_coordinator', '')}",
+            f"Organization: {getattr(mission, 'organization', '')}",
+            f"Activation: {getattr(mission, 'activation_time', '')}",
+            f"Window: {getattr(mission, 'operation_window', '')}",
+            f"Max Duration: {getattr(mission, 'max_duration', '')}",
+            f"Staging Area: {getattr(mission, 'staging_area', '')}",
+            f"Demob Point: {getattr(mission, 'demob_point', '')}",
+            f"Stand-down: {getattr(mission, 'standdown_criteria', '')}",
             "",
             mission.description,
             "",
+            "Constraints:",
+            *[f"  {constraint}" for constraint in constraints],
+            "Phases:",
+            *[f"  {_mission_mapping_line(phase, ('name', 'objective', 'duration'))}" for phase in phases],
+            "Support:",
+            f"  Medical: {getattr(mission, 'support_medical', '')}",
+            f"  Logistics: {getattr(mission, 'support_logistics', '')}",
+            f"  Comms: {getattr(mission, 'support_comms', '')}",
+            f"  Equipment: {getattr(mission, 'support_equipment', '')}",
+            *[
+                f"  {_mission_mapping_line(resource, ('label', 'details'))}"
+                for resource in custom_resources
+            ],
+            "Objectives:",
+            *[
+                f"  {_mission_mapping_line(objective, ('label', 'criteria'))}"
+                for objective in objectives
+            ],
+            "Key Locations:",
+            *[
+                f"  {str(key).replace('_', ' ').title()}: {value}"
+                for key, value in key_locations.items()
+                if value
+            ],
             "Assets:",
             *[f"  #{asset.id} {asset.label}" for asset in assets],
             "Zones:",
@@ -333,3 +788,11 @@ class MissionPage(QtWidgets.QWidget):
             *[f"  #{item[0].id if isinstance(item, tuple) else item.id}" for item in sitreps],
         ]
         return "\n".join(lines).strip()
+
+
+def _mission_mapping_line(item: object, keys: tuple[str, ...]) -> str:
+    if isinstance(item, dict):
+        parts = [str(item.get(key, "") or "").strip() for key in keys]
+        parts = [part for part in parts if part]
+        return " | ".join(parts)
+    return str(item)

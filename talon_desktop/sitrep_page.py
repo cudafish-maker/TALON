@@ -313,6 +313,9 @@ class SitrepAlertOverlay(QtWidgets.QFrame):
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.setAutoFillBackground(False)
         self._item: SitrepFeedItem | None = None
+        self._auto_hide_timer = QtCore.QTimer(self)
+        self._auto_hide_timer.setSingleShot(True)
+        self._auto_hide_timer.timeout.connect(self.hide)
 
         self.title = QtWidgets.QLabel("")
         self.title.setObjectName("sitrepAlertTitle")
@@ -363,6 +366,10 @@ class SitrepAlertOverlay(QtWidgets.QFrame):
         self.reposition()
         self.show()
         self.raise_()
+        if item.level in {"ROUTINE", "PRIORITY"}:
+            self._auto_hide_timer.start(5000)
+        else:
+            self._auto_hide_timer.stop()
 
         if should_play_audio(item.level, audio_enabled):
             QtWidgets.QApplication.beep()

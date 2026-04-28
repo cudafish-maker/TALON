@@ -4,8 +4,9 @@ from __future__ import annotations
 import pathlib
 import threading
 import typing
+import datetime
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from talon_core import TalonCoreSession
 from talon_core.utils.logging import get_logger
@@ -81,11 +82,16 @@ class LoginWindow(QtWidgets.QWidget):
         enrollment_layout = QtWidgets.QFormLayout(self.enrollment_group)
         self.token_field = QtWidgets.QLineEdit()
         self.token_field.setPlaceholderText("TOKEN:SERVER_HASH")
+        self.paste_token_button = QtWidgets.QPushButton("Paste")
+        self.paste_token_button.clicked.connect(self._paste_token)
+        token_row = QtWidgets.QHBoxLayout()
+        token_row.addWidget(self.token_field, stretch=1)
+        token_row.addWidget(self.paste_token_button)
         self.callsign_field = QtWidgets.QLineEdit()
         self.callsign_field.setPlaceholderText("Callsign")
         self.enroll_button = QtWidgets.QPushButton("Enroll Client")
         self.enroll_button.clicked.connect(self._enroll_clicked)
-        enrollment_layout.addRow("Token", self.token_field)
+        enrollment_layout.addRow("Token", token_row)
         enrollment_layout.addRow("Callsign", self.callsign_field)
         enrollment_layout.addRow("", self.enroll_button)
         self.enrollment_group.setVisible(False)
@@ -102,6 +108,7 @@ class LoginWindow(QtWidgets.QWidget):
     def set_busy(self, busy: bool, message: str = "") -> None:
         self.unlock_button.setDisabled(busy)
         self.enroll_button.setDisabled(busy)
+        self.paste_token_button.setDisabled(busy)
         self.passphrase.setDisabled(busy)
         self.status_label.setText(message)
 
@@ -130,6 +137,10 @@ class LoginWindow(QtWidgets.QWidget):
             self.show_error("Callsign is required.")
             return
         self.enrollRequested.emit(token, callsign)
+
+    def _paste_token(self) -> None:
+        clipboard = QtWidgets.QApplication.clipboard()
+        self.token_field.setText(clipboard.text().strip())
 
 
 class LockWindow(QtWidgets.QDialog):
@@ -311,6 +322,156 @@ class DesktopPage(QtWidgets.QWidget):
         return "Core session and operational summary.", rows
 
 
+class OperationalDashboardPage(QtWidgets.QWidget):
+    """Integrated command dashboard with map, assets, missions, and SITREPs."""
+
+    navigateRequested = QtCore.Signal(str)
+
+    def __init__(self, core: TalonCoreSession) -> None:
+        super().__init__()
+        self._core = core
+
+        self.heading = QtWidgets.QLabel("Dashboard")
+        self.heading.setObjectName("pageHeading")
+        self.active_mission = QtWidgets.QLabel("")
+        self.active_mission.setObjectName("sectionHeading")
+        self.zulu_clock = QtWidgets.QLabel("")
+        self.zulu_clock.setObjectName("sectionHeading")
+
+        self.new_mission_button = QtWidgets.QPushButton("New Mission")
+        self.new_sitrep_button = QtWidgets.QPushButton("New SITREP")
+        self.chat_button = QtWidgets.QPushButton("Chat")
+        self.left_toggle = QtWidgets.QPushButton("Assets")
+        self.right_toggle = QtWidgets.QPushButton("Mission / SITREP")
+        self.new_mission_button.clicked.connect(lambda: self.navigateRequested.emit("missions"))
+        self.new_sitrep_button.clicked.connect(lambda: self.navigateRequested.emit("sitreps"))
+        self.chat_button.clicked.connect(lambda: self.navigateRequested.emit("chat"))
+        self.left_toggle.clicked.connect(self._toggle_left)
+        self.right_toggle.clicked.connect(self._toggle_right)
+
+        top = QtWidgets.QHBoxLayout()
+        top.addWidget(self.heading)
+        top.addWidget(self.active_mission, stretch=1)
+        top.addWidget(self.zulu_clock)
+        top.addWidget(self.left_toggle)
+        top.addWidget(self.right_toggle)
+        top.addWidget(self.new_mission_button)
+        top.addWidget(self.new_sitrep_button)
+        top.addWidget(self.chat_button)
+
+        self.summary = QtWidgets.QLabel("")
+        self.summary.setWordWrap(True)
+
+        self.asset_list = QtWidgets.QListWidget()
+        self.asset_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.mission_list = QtWidgets.QListWidget()
+        self.mission_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.sitrep_list = QtWidgets.QListWidget()
+        self.sitrep_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+
+        self.left_panel = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(self.left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.addWidget(QtWidgets.QLabel("Assets"))
+        left_layout.addWidget(self.asset_list)
+
+        self.map_page = MapPage(core)
+
+        self.right_panel = QtWidgets.QTabWidget()
+        missions_tab = QtWidgets.QWidget()
+        missions_layout = QtWidgets.QVBoxLayout(missions_tab)
+        missions_layout.setContentsMargins(0, 0, 0, 0)
+        missions_layout.addWidget(self.mission_list)
+        sitreps_tab = QtWidgets.QWidget()
+        sitreps_layout = QtWidgets.QVBoxLayout(sitreps_tab)
+        sitreps_layout.setContentsMargins(0, 0, 0, 0)
+        sitreps_layout.addWidget(self.sitrep_list)
+        self.right_panel.addTab(missions_tab, "Missions")
+        self.right_panel.addTab(sitreps_tab, "SITREPs")
+
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.addWidget(self.left_panel)
+        self.splitter.addWidget(self.map_page)
+        self.splitter.addWidget(self.right_panel)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 4)
+        self.splitter.setStretchFactor(2, 2)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(top)
+        layout.addWidget(self.summary)
+        layout.addWidget(self.splitter, stretch=1)
+
+        self._clock_timer = QtCore.QTimer(self)
+        self._clock_timer.timeout.connect(self._update_clock)
+        self._clock_timer.start(1000)
+        self._update_clock()
+
+    def refresh(self) -> None:
+        try:
+            assets = list(self._core.read_model("assets.list"))
+            missions = list(self._core.read_model("missions.list"))
+            sitreps = list(self._core.read_model("sitreps.list", {"limit": 30}))
+            summary = self._core.read_model("dashboard.summary")
+        except Exception as exc:
+            self.summary.setText(f"Unable to load dashboard: {exc}")
+            return
+
+        self.asset_list.clear()
+        for asset in assets:
+            coord = ""
+            if getattr(asset, "lat", None) is not None and getattr(asset, "lon", None) is not None:
+                coord = f"  {asset.lat:.5f}, {asset.lon:.5f}"
+            mission = f"  M{asset.mission_id}" if getattr(asset, "mission_id", None) else ""
+            self.asset_list.addItem(f"#{asset.id} {asset.label} [{asset.category}]{mission}{coord}")
+        if not assets:
+            self.asset_list.addItem("No assets.")
+
+        active = [mission for mission in missions if getattr(mission, "status", "") == "active"]
+        pending = [mission for mission in missions if getattr(mission, "status", "") == "pending_approval"]
+        self.active_mission.setText(
+            f"Active: {active[0].title}" if active else "No active mission"
+        )
+        self.mission_list.clear()
+        for mission in missions[:30]:
+            self.mission_list.addItem(
+                f"#{mission.id} {mission.title} [{mission.status}] {getattr(mission, 'priority', '')}"
+            )
+        if not missions:
+            self.mission_list.addItem("No missions.")
+
+        self.sitrep_list.clear()
+        for entry in sitreps:
+            sitrep = entry[0] if isinstance(entry, tuple) else entry
+            callsign = entry[1] if isinstance(entry, tuple) and len(entry) > 1 else "UNKNOWN"
+            body = str(getattr(sitrep, "body", "") or "")
+            self.sitrep_list.addItem(f"#{sitrep.id} {sitrep.level} {callsign}: {body[:120]}")
+        if not sitreps:
+            self.sitrep_list.addItem("No SITREPs.")
+
+        counts = summary.counts
+        self.summary.setText(
+            f"{len(assets)} assets | {len(active)} active mission(s) | "
+            f"{len(pending)} pending approval | {counts.get('urgent_messages', 0)} urgent messages"
+        )
+        self.map_page.refresh()
+
+    def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
+        _ = action, record_id
+        if table in {"assets", "missions", "zones", "waypoints", "sitreps", "messages"}:
+            self.refresh()
+
+    def _toggle_left(self) -> None:
+        self.left_panel.setVisible(not self.left_panel.isVisible())
+
+    def _toggle_right(self) -> None:
+        self.right_panel.setVisible(not self.right_panel.isVisible())
+
+    def _update_clock(self) -> None:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        self.zulu_clock.setText(now.strftime("%H:%M:%SZ"))
+
+
 class _NavItemProxy:
     def __init__(self, section: DesktopNavItem) -> None:
         self._section = section
@@ -342,6 +503,7 @@ class DesktopNavRail(QtWidgets.QWidget):
         self._sections = tuple(sections)
         self._items = tuple(_NavItemProxy(section) for section in self._sections)
         self._buttons: list[QtWidgets.QToolButton] = []
+        self._badges: dict[str, int] = {}
         self._current_row = -1
         self._expanded = True
 
@@ -423,6 +585,21 @@ class DesktopNavRail(QtWidgets.QWidget):
         self._buttons[row].setChecked(True)
         self.currentRowChanged.emit(row)
 
+    def increment_badge(self, section_key: str) -> None:
+        if self.currentItem() is not None and self.currentItem().data(QtCore.Qt.UserRole) == section_key:
+            return
+        self._badges[section_key] = self._badges.get(section_key, 0) + 1
+        self._sync_button_labels()
+
+    def clear_badge(self, section_key: str) -> None:
+        if section_key in self._badges:
+            self._badges.pop(section_key, None)
+            self._sync_button_labels()
+
+    def set_badges(self, badges: dict[str, int]) -> None:
+        self._badges = {key: count for key, count in badges.items() if count > 0}
+        self._sync_button_labels()
+
     def _apply_expanded_state(self) -> None:
         content_width = self._EXPANDED_WIDTH if self._expanded else self._COLLAPSED_WIDTH
         self._content.setFixedWidth(content_width)
@@ -440,6 +617,15 @@ class DesktopNavRail(QtWidgets.QWidget):
             button.setToolButtonStyle(style)
             button.setFixedHeight(40)
             button.setIconSize(QtCore.QSize(22, 22))
+        self._sync_button_labels()
+
+    def _sync_button_labels(self) -> None:
+        for section, button in zip(self._sections, self._buttons):
+            count = self._badges.get(section.key, 0)
+            label = section.label if not count else f"{section.label} ({count})"
+            button.setText(label)
+            tooltip = section.label if not count else f"{section.label}: {count} update(s)"
+            button.setToolTip(tooltip)
 
     def _icon_for(self, key: str) -> QtGui.QIcon:
         style = self.style()
@@ -479,6 +665,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_buffer = log_buffer if log_buffer is not None else desktop_log_buffer()
         self._log_dialog: LogDialog | None = None
         self._settings_prefix = f"{core.mode}/main_window"
+        self._theme_key = str(self._settings.value(self._setting_key("theme"), "dark"))
+        self._font_scale = self._read_font_scale()
+        self._apply_visual_preferences()
         self.setWindowTitle(f"T.A.L.O.N. Desktop [{core.mode.upper()}]")
         self.resize(1180, 760)
 
@@ -487,7 +676,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack = QtWidgets.QStackedWidget()
 
         for section in sections:
-            if section.key == "sitreps":
+            if section.key == "dashboard":
+                page = OperationalDashboardPage(core)
+                page.navigateRequested.connect(self._navigate_to_section)
+            elif section.key == "sitreps":
                 page = SitrepPage(core)
             elif section.key == "assets":
                 page = AssetPage(core)
@@ -525,6 +717,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_button = QtWidgets.QPushButton("Logs")
         self._log_button.setObjectName("statusButton")
         self._log_button.clicked.connect(self._show_logs)
+        self._theme_button = QtWidgets.QPushButton("Theme")
+        self._theme_button.setObjectName("statusButton")
+        self._theme_button.clicked.connect(self._show_theme_menu)
+        self._font_button = QtWidgets.QPushButton("Font")
+        self._font_button.setObjectName("statusButton")
+        self._font_button.clicked.connect(self._show_font_scale_dialog)
+        self.statusBar().addPermanentWidget(self._theme_button)
+        self.statusBar().addPermanentWidget(self._font_button)
         self.statusBar().addPermanentWidget(self._log_button)
         self._log_timer = QtCore.QTimer(self)
         self._log_timer.timeout.connect(self._refresh_log_button)
@@ -558,6 +758,14 @@ class MainWindow(QtWidgets.QMainWindow):
         section_key = item.data(QtCore.Qt.UserRole)
         self._settings.setValue(self._setting_key("last_section"), str(section_key))
         self.refresh_section(str(section_key))
+        self.nav.clear_badge(str(section_key))
+
+    @QtCore.Slot(str)
+    def _navigate_to_section(self, section_key: str) -> None:
+        for row in range(self.nav.count()):
+            if self.nav.item(row).data(QtCore.Qt.UserRole) == section_key:
+                self.nav.setCurrentRow(row)
+                return
 
     def closeEvent(self, event: QtCore.QEvent) -> None:
         self._save_desktop_state()
@@ -651,6 +859,75 @@ class MainWindow(QtWidgets.QMainWindow):
     def _setting_key(self, *parts: str) -> str:
         return "/".join((self._settings_prefix, *parts))
 
+    def _read_font_scale(self) -> float:
+        try:
+            return float(self._core.read_model("settings.font_scale"))
+        except Exception:
+            return 1.0
+
+    def _apply_visual_preferences(self) -> None:
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            apply_desktop_theme(
+                app,
+                theme_key=self._theme_key,
+                font_scale=self._font_scale,
+            )
+
+    @QtCore.Slot()
+    def _show_theme_menu(self) -> None:
+        menu = QtWidgets.QMenu(self)
+        options = (
+            ("dark", "Dark"),
+            ("high_contrast", "High Contrast"),
+            ("field", "Field"),
+        )
+        for key, label in options:
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(key == self._theme_key)
+            action.triggered.connect(lambda _checked=False, k=key: self._set_theme(k))
+        menu.exec(self._theme_button.mapToGlobal(QtCore.QPoint(0, self._theme_button.height())))
+
+    def _set_theme(self, theme_key: str) -> None:
+        self._theme_key = theme_key
+        self._settings.setValue(self._setting_key("theme"), theme_key)
+        self._apply_visual_preferences()
+
+    @QtCore.Slot()
+    def _show_font_scale_dialog(self) -> None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Font Scale")
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(0.8, 1.6)
+        spin.setSingleStep(0.05)
+        spin.setDecimals(2)
+        spin.setValue(self._font_scale)
+        save = QtWidgets.QPushButton("Save")
+        cancel = QtWidgets.QPushButton("Cancel")
+        save.clicked.connect(dialog.accept)
+        cancel.clicked.connect(dialog.reject)
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        form = QtWidgets.QFormLayout(dialog)
+        form.addRow("Scale", spin)
+        form.addRow("", buttons)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        self._font_scale = float(spin.value())
+        try:
+            self._core.command(
+                "settings.set_meta",
+                key="global_font_scale",
+                value=self._font_scale,
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Font Scale", str(exc))
+            return
+        self._apply_visual_preferences()
+
     def _on_core_event(self, event: object) -> None:
         kind = getattr(event, "kind", "event")
         self.statusBar().showMessage(f"Core event: {kind}", 5000)
@@ -671,6 +948,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_record_mutated(self, action: str, table: str, record_id: int) -> None:
         self.statusBar().showMessage(f"{table} {action}: #{record_id}", 5000)
+        self._mark_badges_for_mutation(table)
+        dashboard_page = self._pages.get("dashboard")
+        if isinstance(dashboard_page, OperationalDashboardPage):
+            dashboard_page.handle_record_mutation(action, table, record_id)
         if table == "sitreps":
             page = self._pages.get("sitreps")
             if isinstance(page, SitrepPage):
@@ -721,6 +1002,22 @@ class MainWindow(QtWidgets.QMainWindow):
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
+
+    def _mark_badges_for_mutation(self, table: str) -> None:
+        sections_by_table = {
+            "assets": ("assets", "map", "dashboard"),
+            "missions": ("missions", "map", "dashboard"),
+            "zones": ("map", "dashboard"),
+            "waypoints": ("map", "dashboard"),
+            "sitreps": ("sitreps", "map", "dashboard"),
+            "channels": ("chat",),
+            "messages": ("chat", "dashboard"),
+            "documents": ("documents",),
+            "operators": ("operators", "clients", "keys", "chat"),
+        }
+        for section in sections_by_table.get(table, ()):
+            if section in self._pages:
+                self.nav.increment_badge(section)
 
     def _show_sitrep_overlay(self, record_id: int) -> None:
         try:

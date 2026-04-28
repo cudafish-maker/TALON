@@ -33,9 +33,9 @@ toggle, but playback eligibility comes from core event policy.
   `settings.set_audio_enabled`.
 - FLASH and FLASH_OVERRIDE can trigger a Qt beep only when audio is already
   enabled; no audio is played by default.
-- Incoming IMMEDIATE/FLASH/FLASH_OVERRIDE SITREPs render through a non-modal
-  dashboard overlay attached to the main desktop content area instead of modal
-  alert dialogs.
+- Incoming SITREPs render through a dashboard overlay attached to the main
+  desktop content area. ROUTINE/PRIORITY overlays auto-dismiss; IMMEDIATE,
+  FLASH, and FLASH_OVERRIDE stay visible until acknowledged.
 
 ## Open Gaps
 

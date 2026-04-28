@@ -12,6 +12,16 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-28: `python -m compileall talon_desktop talon_core`, `pytest -q
+  tests/test_desktop_shell.py tests/test_core_session.py`, and `pytest -q`
+  passed after desktop parity polish for mission map pickers, dashboard,
+  chat, SITREP overlays, nav badges, theme/font controls, and small QOL
+  carryovers.
+- 2026-04-28: `pytest -q tests/test_desktop_shell.py -k "map or qt"` passed,
+  19 tests, after changing map wheel zoom to update geographic bounds and
+  request higher-resolution tiles instead of scaling existing pixmaps.
+- 2026-04-28: `pytest -q` passed, 275 tests and 1 skipped after the map
+  viewport zoom/high-resolution tile update.
 - 2026-04-27: `pytest -q` passed, 274 tests and 1 skipped after adding the
   asset create/edit OSM map picker and click-to-coordinate projection.
 - 2026-04-27: `pytest -q tests/test_desktop_shell.py -k "asset or map or qt"`

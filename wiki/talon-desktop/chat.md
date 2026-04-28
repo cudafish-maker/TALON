@@ -6,9 +6,9 @@ Desktop presents channel and message workflows backed by core chat services.
 
 - `talon_desktop.chat` provides Qt-free channel/message/operator view models and
   command payload helpers.
-- `talon_desktop.chat_page.ChatPage` renders channels, message feed, composer,
-  channel creation, DM creation, server-only delete controls, and urgent
-  message styling.
+- `talon_desktop.chat_page.ChatPage` renders searchable/grouped channels,
+  message feed, composer, channel creation, DM creation, server-only delete
+  controls, urgent message styling/blink, operator presence, and alert feed.
 - The page calls `TalonCoreSession.command("chat.ensure_defaults")` before
   loading channels.
 - Channel/message mutations refresh the Chat page through the desktop event
@@ -19,8 +19,11 @@ Desktop presents channel and message workflows backed by core chat services.
 ## Views
 
 - Channel list.
+- Channel search and group headers.
 - Message timeline.
 - Compose bar.
+- Toggleable grid-reference entry.
+- Operator/alert side panel.
 - New channel dialog.
 - New DM dialog.
 - Server-only delete channel/message actions.
@@ -28,6 +31,7 @@ Desktop presents channel and message workflows backed by core chat services.
 ## Behavior
 
 - Default, custom, mission, and DM channels appear in one navigation surface.
+- Default, custom, mission, and DM channels are grouped for scanability.
 - Client-authored messages use the outbox and update after server ack.
 - DM UI must clearly follow core's current security state: server-readable until
   Phase 2b E2E encryption lands.

@@ -91,17 +91,19 @@ def build_map_overlays(
     context: object,
     *,
     sitrep_entries: typing.Iterable[object] = (),
+    bounds: MapBounds | None = None,
 ) -> MapOverlayBundle:
     assets = list(_field(context, "assets", default=[]) or [])
     zones = list(_field(context, "zones", default=[]) or [])
     waypoints = list(_field(context, "waypoints", default=[]) or [])
     missions = list(_field(context, "missions", default=[]) or [])
 
-    bounds = bounds_for_context(
-        assets=assets,
-        zones=zones,
-        waypoints=waypoints,
-    )
+    if bounds is None:
+        bounds = bounds_for_context(
+            assets=assets,
+            zones=zones,
+            waypoints=waypoints,
+        )
     mission_labels = {
         int(_field(mission, "id")): str(_field(mission, "title", default="Mission"))
         for mission in missions

@@ -18,6 +18,8 @@ layout.
 - `talon_desktop.document_page.DocumentPage` renders the document list, detail
   panel, server-only upload dialog, download/save flow, server delete flow, and
   document event refresh.
+- Client mode shows an explanatory upload-unavailable note instead of leaving
+  the server-only upload workflow implicit.
 - Uploads call `TalonCoreSession.command("documents.upload")`; downloads call
   `TalonCoreSession.command("documents.download")`; server deletes call
   `TalonCoreSession.command("documents.delete")`.

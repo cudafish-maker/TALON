@@ -156,6 +156,48 @@ def lat_lon_for_world_pixel(x: float, y: float, zoom: int) -> tuple[float, float
     return _clamp_lat(lat), max(-180.0, min(180.0, lon))
 
 
+def zoom_bounds_around_scene_point(
+    bounds: MapBounds,
+    x: float,
+    y: float,
+    factor: float,
+) -> MapBounds:
+    if factor <= 0:
+        raise ValueError("Map zoom factor must be positive.")
+    bounds = normalise_bounds(bounds)
+    projection_zoom = 20
+    left, top, span_x, span_y = _world_view(bounds, projection_zoom)
+    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
+    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
+    ratio_x = max(0.0, min(1.0, (x - SCENE_MARGIN) / usable_width))
+    ratio_y = max(0.0, min(1.0, (y - SCENE_MARGIN) / usable_height))
+    anchor_x = left + (ratio_x * span_x)
+    anchor_y = top + (ratio_y * span_y)
+    next_span_x = max(1.0, span_x / factor)
+    next_span_y = max(1.0, span_y / factor)
+    world_size = TILE_SIZE * (2**projection_zoom)
+    next_left = _clamp(
+        anchor_x - (ratio_x * next_span_x),
+        0.0,
+        world_size - next_span_x,
+    )
+    next_top = _clamp(anchor_y - (ratio_y * next_span_y), 0.0, world_size - next_span_y)
+    max_lat, min_lon = lat_lon_for_world_pixel(next_left, next_top, projection_zoom)
+    min_lat, max_lon = lat_lon_for_world_pixel(
+        next_left + next_span_x,
+        next_top + next_span_y,
+        projection_zoom,
+    )
+    return normalise_bounds(
+        MapBounds(
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lon=min_lon,
+            max_lon=max_lon,
+        )
+    )
+
+
 def build_tile_plan(layer: TileLayer, bounds: MapBounds) -> TilePlan:
     bounds = normalise_bounds(bounds)
     zoom = choose_zoom(bounds, min_zoom=layer.min_zoom, max_zoom=layer.max_zoom)
@@ -231,3 +273,9 @@ def _world_view(bounds: MapBounds, zoom: int) -> tuple[float, float, float, floa
 
 def _clamp_lat(lat: float) -> float:
     return max(-WEB_MERCATOR_MAX_LAT, min(WEB_MERCATOR_MAX_LAT, lat))
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    if maximum < minimum:
+        return minimum
+    return max(minimum, min(maximum, value))

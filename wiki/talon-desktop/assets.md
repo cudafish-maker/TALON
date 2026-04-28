@@ -8,8 +8,9 @@ Desktop asset UI consumes core asset read models and sends core asset commands.
 - Detail panel with verification, deletion-request, mission, and coordinate
   state.
 - Create/edit dialog for category, label, description, latitude, and longitude.
-- Asset location picker that opens an OSM map from the create/edit dialog and
-  writes clicked coordinates back to the latitude/longitude fields.
+- Asset location picker that opens the shared operational map picker from the
+  create/edit dialog and writes clicked coordinates back to the
+  latitude/longitude fields.
 - Verification/unverification controls.
 - Client deletion request and server hard-delete controls.
 - Linked SITREPs remain open.
@@ -28,8 +29,8 @@ Desktop asset UI consumes core asset read models and sends core asset commands.
 - `talon_desktop.asset_page.AssetPage` renders the Qt asset table and detail
   panel.
 - `AssetDialog` creates and edits assets through core command payloads.
-- `AssetLocationMapDialog` reuses desktop map tile/projection helpers for
-  click-to-place asset coordinates.
+- Asset placement reuses `talon_desktop.map_picker` so pickers show
+  operational overlays and OSM/TOPO/Satellite layer controls.
 - Asset create, update, verify/unverify, client deletion request, and server
   hard delete all call `TalonCoreSession.command(...)`.
 - Asset domain events refresh Assets, Dashboard, and Map through the desktop

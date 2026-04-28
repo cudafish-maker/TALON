@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import typing
+from collections.abc import Mapping
 
 from talon_core.constants import SITREP_LEVELS
 
@@ -59,6 +60,21 @@ def build_create_payload(
     organization: str = "",
     ao_text: str = "",
     route_text: str = "",
+    activation_time: str = "",
+    operation_window: str = "",
+    max_duration: str = "",
+    staging_area: str = "",
+    demob_point: str = "",
+    standdown_criteria: str = "",
+    phases: typing.Iterable[Mapping[str, object] | str] = (),
+    constraints: typing.Iterable[str] = (),
+    support_medical: str = "",
+    support_logistics: str = "",
+    support_comms: str = "",
+    support_equipment: str = "",
+    custom_resources: typing.Iterable[Mapping[str, object] | str] = (),
+    objectives: typing.Iterable[Mapping[str, object] | str] = (),
+    key_locations: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     title = title.strip()
     if not title:
@@ -75,6 +91,21 @@ def build_create_payload(
         "priority": priority,
         "lead_coordinator": lead_coordinator.strip(),
         "organization": organization.strip(),
+        "activation_time": activation_time.strip(),
+        "operation_window": operation_window.strip(),
+        "max_duration": max_duration.strip(),
+        "staging_area": staging_area.strip(),
+        "demob_point": demob_point.strip(),
+        "standdown_criteria": standdown_criteria.strip(),
+        "phases": _phase_items(phases),
+        "constraints": _clean_lines(constraints),
+        "support_medical": support_medical.strip(),
+        "support_logistics": support_logistics.strip(),
+        "support_comms": support_comms.strip(),
+        "support_equipment": support_equipment.strip(),
+        "custom_resources": _custom_resource_items(custom_resources),
+        "objectives": _objective_items(objectives),
+        "key_locations": _compact_mapping(key_locations or {}),
     }
     ao_polygon = parse_coordinate_lines(
         ao_text,
@@ -93,6 +124,15 @@ def build_create_payload(
     if route:
         payload["route"] = route
     return payload
+
+
+def line_items(text: str) -> list[str]:
+    """Return non-empty stripped lines from a multi-line desktop editor."""
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def format_coordinate_lines(points: typing.Iterable[tuple[float, float]]) -> str:
+    return "\n".join(f"{lat:.6f}, {lon:.6f}" for lat, lon in points)
 
 
 def parse_coordinate_lines(
@@ -143,3 +183,86 @@ def _field(obj: object, name: str, *, default: object = None) -> object:
     if hasattr(obj, name):
         return getattr(obj, name)
     return default
+
+
+def _clean_lines(values: typing.Iterable[object]) -> list[str]:
+    cleaned: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if text and text not in cleaned:
+            cleaned.append(text)
+    return cleaned
+
+
+def _phase_items(
+    values: typing.Iterable[Mapping[str, object] | str],
+) -> list[dict[str, str]]:
+    phases: list[dict[str, str]] = []
+    for index, value in enumerate(values, start=1):
+        if isinstance(value, Mapping):
+            name = str(value.get("name", "") or "").strip()
+            objective = str(value.get("objective", "") or "").strip()
+            duration = str(value.get("duration", "") or "").strip()
+        else:
+            name = str(value).strip()
+            objective = ""
+            duration = ""
+        if not (name or objective or duration):
+            continue
+        phases.append(
+            {
+                "name": name or f"Phase {index}",
+                "objective": objective,
+                "duration": duration,
+            }
+        )
+    return phases
+
+
+def _objective_items(
+    values: typing.Iterable[Mapping[str, object] | str],
+) -> list[dict[str, str]]:
+    objectives: list[dict[str, str]] = []
+    for index, value in enumerate(values, start=1):
+        if isinstance(value, Mapping):
+            label = str(value.get("label", "") or "").strip()
+            criteria = str(value.get("criteria", "") or "").strip()
+        else:
+            label = str(value).strip()
+            criteria = ""
+        if not (label or criteria):
+            continue
+        objectives.append(
+            {
+                "label": label or ("Primary objective" if index == 1 else f"Objective {index}"),
+                "criteria": criteria,
+            }
+        )
+    return objectives
+
+
+def _custom_resource_items(
+    values: typing.Iterable[Mapping[str, object] | str],
+) -> list[dict[str, str]]:
+    resources: list[dict[str, str]] = []
+    for index, value in enumerate(values, start=1):
+        if isinstance(value, Mapping):
+            label = str(value.get("label", "") or "").strip()
+            details = str(value.get("details", "") or "").strip()
+        else:
+            label = f"Custom Resource {index}"
+            details = str(value).strip()
+        if not (label or details):
+            continue
+        resources.append({"label": label or f"Custom Resource {index}", "details": details})
+    return resources
+
+
+def _compact_mapping(values: Mapping[str, object]) -> dict[str, str]:
+    compact: dict[str, str] = {}
+    for key, value in values.items():
+        name = str(key).strip()
+        text = str(value).strip()
+        if name and text:
+            compact[name] = text
+    return compact

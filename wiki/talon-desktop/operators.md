@@ -10,6 +10,7 @@ Desktop presents operator state from `talon-core`.
 - `talon_desktop.operator_page.OperatorPage` renders operator/client lists,
   detail panels, profile/skills edit dialog, server lease renewal, and server
   revocation controls.
+- The profile dialog uses checkbox skills plus add/remove custom skill rows.
 - Profile updates call `TalonCoreSession.command("operators.update")`.
 - Lease renewals call `TalonCoreSession.command("operators.renew_lease")`.
 - Revocations call `TalonCoreSession.command("operators.revoke")` after

@@ -28,6 +28,7 @@ from talon_desktop.map_tiles import (
     lat_lon_for_scene_point,
     scene_point_for_lat_lon,
 )
+from talon_desktop.map_picker import format_coordinate, pick_point_on_map
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.assets")
@@ -367,19 +368,18 @@ class AssetDialog(QtWidgets.QDialog):
             )
             return
 
-        dialog = AssetLocationMapDialog(
+        selected = pick_point_on_map(
             core=self._core,
+            title="Asset Location",
             initial_lat=initial_lat,
             initial_lon=initial_lon,
             parent=self,
         )
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
+        if selected is None:
             return
-        if dialog.selected_location is None:
-            return
-        lat, lon = dialog.selected_location
-        self.lat_field.setText(f"{lat:.6f}")
-        self.lon_field.setText(f"{lon:.6f}")
+        lat, lon = selected
+        self.lat_field.setText(format_coordinate(lat, lon).split(", ")[0])
+        self.lon_field.setText(format_coordinate(lat, lon).split(", ")[1])
         self.status_label.clear()
 
 

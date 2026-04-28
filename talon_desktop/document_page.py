@@ -113,6 +113,11 @@ class DocumentPage(QtWidgets.QWidget):
         self.heading.setObjectName("pageHeading")
         self.summary = QtWidgets.QLabel("")
         self.summary.setWordWrap(True)
+        self.client_upload_note = QtWidgets.QLabel(
+            "Upload is server-only; clients receive documents through sync."
+        )
+        self.client_upload_note.setWordWrap(True)
+        self.client_upload_note.setVisible(not can_upload_document(self._core.mode))
 
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
@@ -160,6 +165,7 @@ class DocumentPage(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
         layout.addWidget(self.summary)
+        layout.addWidget(self.client_upload_note)
         layout.addWidget(body, stretch=1)
         layout.addWidget(self.status_label)
 
