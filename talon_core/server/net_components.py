@@ -337,11 +337,15 @@ class ServerPushDispatcher:
             handler._push_buffer.clear()
             handler._push_flush_scheduled = False
 
-        for table, ids in snapshot.items():
+        sync_order = {table: index for index, table in enumerate(SYNC_TABLES)}
+        for table, ids in sorted(
+            snapshot.items(),
+            key=lambda item: sync_order.get(item[0], 999),
+        ):
             links = self._active_clients.snapshot_links()
             if not links:
                 continue
-            for record_id in ids:
+            for record_id in sorted(ids):
                 try:
                     with handler._lock:
                         record = handler._fetch_record(table, record_id)

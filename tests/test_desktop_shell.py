@@ -25,6 +25,7 @@ from talon_desktop.chat import (
     build_message_payload,
     can_delete_channel,
     can_delete_message,
+    grid_reference_items_from_context,
     item_from_channel,
     item_from_message,
 )
@@ -45,6 +46,7 @@ from talon_desktop.map_tiles import (
     TILE_LAYERS_BY_KEY,
     build_tile_plan,
     lat_lon_for_scene_point,
+    pan_bounds_by_scene_delta,
     scene_point_for_lat_lon,
     zoom_bounds_around_scene_point,
 )
@@ -143,7 +145,7 @@ import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from talon_core import TalonCoreSession
 from talon_desktop.app import DesktopRuntime, LoginWindow, MainWindow
@@ -256,7 +258,17 @@ second = None
 try:
     core.unlock_with_key(bytes(range(32)))
     settings = QtCore.QSettings(settings_path, QtCore.QSettings.IniFormat)
+    stale_horizontal_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+    stale_horizontal_splitter.addWidget(QtWidgets.QLabel("Selection"))
+    stale_horizontal_splitter.addWidget(QtWidgets.QLabel("Missions"))
+    stale_horizontal_splitter.addWidget(QtWidgets.QLabel("SITREPs"))
+    settings.setValue(
+        "server/main_window/pages/map/splitters/0",
+        stale_horizontal_splitter.saveState(),
+    )
     first = MainWindow(core, CoreEventBridge(), settings=settings)
+    assert first._pages["map"].right_panel_splitter.orientation() == QtCore.Qt.Vertical
+    first._pages["map"].right_panel_splitter.setSizes([80, 320, 120])
     documents_row = None
     for index in range(first.nav.count()):
         if first.nav.item(index).data(QtCore.Qt.UserRole) == "documents":
@@ -274,11 +286,16 @@ try:
     assert settings.value("server/main_window/geometry") is not None
     assert settings.value("server/main_window/splitters/main") is not None
     assert settings.value("server/main_window/pages/assets/tables/0") is not None
+    assert settings.value("server/main_window/pages/map/splitters/0") is not None
 
     second = MainWindow(core, CoreEventBridge(), settings=settings)
     app.processEvents()
     assert second.nav.currentItem().data(QtCore.Qt.UserRole) == "documents"
     assert second._pages["assets"].table.columnWidth(1) == 211
+    map_splitter_sizes = second._pages["map"].right_panel_splitter.sizes()
+    assert second._pages["map"].right_panel_splitter.orientation() == QtCore.Qt.Vertical
+    assert len(map_splitter_sizes) == 3
+    assert map_splitter_sizes[1] > map_splitter_sizes[2]
     print("settings-ok")
 finally:
     if second is not None:
@@ -318,6 +335,178 @@ try:
     print("picker-zoom-refresh-ok")
 finally:
     dialog.close()
+    app.processEvents()
+"""
+
+_QT_MAP_TILE_RENDERER_SCRIPT = r"""
+import logging
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtGui, QtNetwork, QtWidgets
+
+from talon_desktop.map_data import DEFAULT_MAP_BOUNDS
+from talon_desktop.map_scene_tiles import MapTileSceneRenderer, SHARED_TILE_PIXMAP_CACHE
+from talon_desktop.map_tiles import TILE_LAYERS_BY_KEY, build_tile_plan
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+scene = QtWidgets.QGraphicsScene()
+network = QtNetwork.QNetworkAccessManager()
+renderer = MapTileSceneRenderer(
+    scene=scene,
+    network=network,
+    user_agent="TALON test",
+    logger=logging.getLogger("test.map_tiles"),
+)
+plan = build_tile_plan(TILE_LAYERS_BY_KEY["osm"], DEFAULT_MAP_BOUNDS)
+tile = plan.requests[0]
+pixmap = QtGui.QPixmap(16, 16)
+pixmap.fill(QtGui.QColor("#123456"))
+SHARED_TILE_PIXMAP_CACHE.put(tile.url, pixmap)
+
+renderer.begin_frame()
+renderer.request_tiles([tile])
+first_items = [
+    item for item in scene.items()
+    if isinstance(item, QtWidgets.QGraphicsPixmapItem)
+]
+assert len(first_items) == 1
+assert first_items[0].zValue() == -20
+
+renderer.begin_frame()
+stale_items = [
+    item for item in scene.items()
+    if isinstance(item, QtWidgets.QGraphicsPixmapItem)
+]
+assert len(stale_items) == 1
+assert stale_items[0].zValue() == -25
+
+renderer.request_tiles([tile])
+current_items = [
+    item for item in scene.items()
+    if isinstance(item, QtWidgets.QGraphicsPixmapItem)
+]
+assert len(current_items) == 1
+assert current_items[0].zValue() == -20
+print("map-tile-renderer-retains-stale-ok")
+"""
+
+_QT_MAP_PANEL_SCRIPT = r"""
+import os
+import pathlib
+import sys
+import types
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtCore, QtWidgets
+
+from talon_desktop.map_page import MapPage
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+class FakeCore:
+    mode = sys.argv[2]
+
+    def __init__(self) -> None:
+        self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
+
+    def read_model(self, name, filters=None):
+        if name == "map.context":
+            return types.SimpleNamespace(
+                assets=[
+                    types.SimpleNamespace(
+                        id=1,
+                        label="Relay",
+                        category="radio",
+                        verified=True,
+                        mission_id=7,
+                        lat=39.953,
+                        lon=-75.163,
+                    ),
+                    types.SimpleNamespace(
+                        id=2,
+                        label="Cache",
+                        category="supply",
+                        verified=False,
+                        mission_id=None,
+                        lat=40.5,
+                        lon=-75.5,
+                    ),
+                ],
+                zones=[],
+                waypoints=[],
+                missions=[
+                    types.SimpleNamespace(
+                        id=7,
+                        title="North Route",
+                        status="active",
+                    )
+                ],
+            )
+        if name == "sitreps.list":
+            return [
+                types.SimpleNamespace(
+                    id=9,
+                    level="ROUTINE",
+                    body="Comms check complete.",
+                    asset_id=1,
+                    mission_id=7,
+                )
+            ]
+        raise KeyError(name)
+
+page = MapPage(FakeCore())
+try:
+    page.refresh()
+    assert page.left_panel.objectName() == "mapLeftPanel"
+    assert page.right_panel.objectName() == "mapRightPanel"
+    assert not page.left_panel.isHidden()
+    assert not page.right_panel.isHidden()
+    assert page.right_panel_splitter.orientation() == QtCore.Qt.Vertical
+    assert page.right_panel_splitter.count() == 3
+    assert page.asset_panel_list.count() == 2
+    assert page.mission_panel_list.count() == 1
+    assert page.sitrep_panel_list.count() == 1
+    page._resize_scene(900.0, 500.0)
+    scene_rect = page._scene.sceneRect()
+    assert scene_rect.width() == 900.0
+    assert scene_rect.height() == 500.0
+    app.processEvents()
+    before_bounds = page._view_bounds
+    page.asset_panel_list.setCurrentRow(1)
+    app.processEvents()
+    after_bounds = page._view_bounds
+    assert after_bounds.max_lat - after_bounds.min_lat < (
+        before_bounds.max_lat - before_bounds.min_lat
+    )
+    assert after_bounds.max_lon - after_bounds.min_lon < (
+        before_bounds.max_lon - before_bounds.min_lon
+    )
+    assert after_bounds.min_lat < 40.5 < after_bounds.max_lat
+    assert after_bounds.min_lon < -75.5 < after_bounds.max_lon
+    assert any(
+        str(item.data(0)) == "asset:2"
+        for item in page._scene.selectedItems()
+    )
+
+    page._toggle_panel("left")
+    assert page.left_panel.isHidden()
+    assert page.left_toggle.findChild(QtWidgets.QToolButton).text() == ">"
+    page._toggle_panel("left")
+    assert not page.left_panel.isHidden()
+
+    page._toggle_panel("right")
+    assert page.right_panel.isHidden()
+    assert page.right_toggle.findChild(QtWidgets.QToolButton).text() == "<"
+    page._toggle_panel("right")
+    assert not page.right_panel.isHidden()
+
+    print(f"map-panels-ok-{FakeCore.mode}")
+finally:
+    page.close()
     app.processEvents()
 """
 
@@ -457,6 +646,36 @@ def test_qt_picker_zoom_refreshes_tiles_and_bounds(tmp_path: pathlib.Path) -> No
     )
 
     assert "picker-zoom-refresh-ok" in result.stdout
+
+
+def test_qt_map_tile_renderer_keeps_stale_tiles_until_replacement(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_MAP_TILE_RENDERER_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="map-tile-renderer",
+        timeout=30,
+    )
+
+    assert "map-tile-renderer-retains-stale-ok" in result.stdout
+
+
+@pytest.mark.parametrize("mode", ("client", "server"))
+def test_qt_map_page_has_collapsible_side_panels(
+    tmp_path: pathlib.Path,
+    mode: str,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_MAP_PANEL_SCRIPT,
+        tmp_path,
+        mode=mode,
+        extra_arg="map-panels",
+        timeout=30,
+    )
+
+    assert f"map-panels-ok-{mode}" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))
@@ -623,6 +842,31 @@ def test_map_tile_plan_builds_visible_osm_tiles() -> None:
         request.scene_width > 0 and request.scene_height > 0
         for request in plan.requests
     )
+
+
+def test_map_tile_plan_covers_custom_scene_without_internal_margin() -> None:
+    from talon_desktop.map_data import MapBounds
+
+    scene_width = 1218.0
+    scene_height = 852.0
+    bounds = MapBounds(min_lat=42.9, max_lat=43.2, min_lon=-71.3, max_lon=-71.0)
+
+    plan = build_tile_plan(
+        TILE_LAYERS_BY_KEY["osm"],
+        bounds,
+        scene_width=scene_width,
+        scene_height=scene_height,
+        scene_margin=0.0,
+    )
+
+    assert min(request.scene_x for request in plan.requests) <= 0.0
+    assert min(request.scene_y for request in plan.requests) <= 0.0
+    assert max(
+        request.scene_x + request.scene_width for request in plan.requests
+    ) >= scene_width
+    assert max(
+        request.scene_y + request.scene_height for request in plan.requests
+    ) >= scene_height
 
 
 def test_map_tile_layers_expose_required_base_maps() -> None:
@@ -950,6 +1194,33 @@ def test_map_projection_round_trips_scene_points() -> None:
     assert lon == pytest.approx(-75.163, abs=0.000001)
 
 
+def test_map_projection_round_trips_custom_scene_size() -> None:
+    from talon_desktop.map_data import MapBounds
+
+    bounds = MapBounds(min_lat=39.0, max_lat=41.0, min_lon=-76.0, max_lon=-74.0)
+    x, y = scene_point_for_lat_lon(
+        bounds,
+        39.953,
+        -75.163,
+        scene_width=1218.0,
+        scene_height=852.0,
+        scene_margin=0.0,
+    )
+    lat, lon = lat_lon_for_scene_point(
+        bounds,
+        x,
+        y,
+        scene_width=1218.0,
+        scene_height=852.0,
+        scene_margin=0.0,
+    )
+
+    assert 0.0 <= x <= 1218.0
+    assert 0.0 <= y <= 852.0
+    assert lat == pytest.approx(39.953, abs=0.000001)
+    assert lon == pytest.approx(-75.163, abs=0.000001)
+
+
 def test_map_wheel_zoom_bounds_request_higher_resolution_tiles() -> None:
     context = types.SimpleNamespace(
         assets=[
@@ -982,6 +1253,22 @@ def test_map_wheel_zoom_bounds_request_higher_resolution_tiles() -> None:
     assert zoomed_plan.zoom > base_plan.zoom
     assert 0 <= zoomed_overlays.assets[0].point.x <= 1000
     assert 0 <= zoomed_overlays.assets[0].point.y <= 700
+
+
+def test_map_pan_bounds_follow_drag_direction() -> None:
+    from talon_desktop.map_data import MapBounds
+
+    before = MapBounds(min_lat=40.0, max_lat=45.0, min_lon=-75.0, max_lon=-70.0)
+    after = pan_bounds_by_scene_delta(before, 100.0, 100.0)
+
+    assert after.min_lon < before.min_lon
+    assert after.max_lon < before.max_lon
+    assert after.min_lat > before.min_lat
+    assert after.max_lat > before.max_lat
+    assert (after.max_lat - after.min_lat) == pytest.approx(
+        before.max_lat - before.min_lat,
+        rel=0.02,
+    )
 
 
 def test_mission_create_payload_parses_assets_ao_and_route() -> None:
@@ -1144,6 +1431,55 @@ def test_chat_message_payload_and_item_preserve_urgent_grid_state() -> None:
     assert item.grid_ref == "18T WL 000 000"
     assert can_delete_message("server", item) is True
     assert can_delete_message("client", item) is False
+
+
+def test_chat_grid_reference_items_are_built_from_map_context() -> None:
+    context = types.SimpleNamespace(
+        assets=[
+            types.SimpleNamespace(
+                id=1,
+                label="Cache",
+                category="cache",
+                lat=40.1234567,
+                lon=-75.25,
+            ),
+            types.SimpleNamespace(
+                id=2,
+                label="No Location",
+                category="vehicle",
+                lat=None,
+                lon=None,
+            ),
+        ],
+        waypoints=[
+            types.SimpleNamespace(
+                id=3,
+                label="Rally",
+                mission_id=9,
+                sequence=2,
+                lat=40.5,
+                lon=-75.5,
+            )
+        ],
+        zones=[
+            types.SimpleNamespace(
+                id=4,
+                label="AO",
+                zone_type="OBJECTIVE",
+                polygon=[[40.0, -75.0], [40.0, -74.0], [41.0, -74.0]],
+            )
+        ],
+    )
+    sitrep = types.SimpleNamespace(id=5, level="ROUTINE", asset_id=1)
+
+    items = grid_reference_items_from_context(context, sitrep_entries=[sitrep])
+    references = {item.reference for item in items}
+
+    assert "ASSET Cache 40.123457, -75.250000" in references
+    assert "WAYPOINT Rally 40.500000, -75.500000" in references
+    assert "ZONE AO 40.333333, -74.333333" in references
+    assert "SITREP ROUTINE #5 40.123457, -75.250000" in references
+    assert all("No Location" not in item.reference for item in items)
 
 
 def test_chat_payload_helpers_reject_invalid_inputs() -> None:

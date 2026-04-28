@@ -827,6 +827,7 @@ class TalonCoreSession:
         from talon_core.network.registry import is_offline_creatable, is_syncable
 
         client_primary_records = self._client_primary_records(result)
+        should_flush_server_changes = False
         for event in events:
             for mutation in event.iter_records():
                 table = mutation.table
@@ -839,6 +840,7 @@ class TalonCoreSession:
                         continue
                     if mutation.action == "changed":
                         self._net_handler.notify_change(table, record_id)
+                        should_flush_server_changes = True
                     elif mutation.action == "deleted":
                         self._net_handler.notify_delete(table, record_id)
                     continue
@@ -850,6 +852,11 @@ class TalonCoreSession:
                 self._mark_client_record_pending(table, record_id)
                 if self._client_sync is not None:
                     self._client_sync.push_record_pending(table, record_id)
+
+        if should_flush_server_changes and self._net_handler is not None:
+            flush = getattr(self._net_handler, "flush_pending_changes", None)
+            if callable(flush):
+                flush()
 
     @staticmethod
     def _client_primary_records(result: object) -> set[tuple[str, int]]:

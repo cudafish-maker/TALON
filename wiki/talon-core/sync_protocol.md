@@ -15,13 +15,20 @@ platform split.
   requests.
 - LoRa polling fallback at 120 seconds.
 - Server-to-client delta sync by table/version.
+- Sync responses and coalesced server pushes apply parent tables before child
+  tables so foreign-keyed records such as mission-linked assets and messages do
+  not arrive before their referenced records.
 - Client-to-server outbox push for offline-created records.
 - Core service command events feed sync side effects through
   `TalonCoreSession`: server mutations call `notify_change`/`notify_delete`,
+  local server commands flush queued `push_update` records after the DB commit,
   and client primary outbox records are marked pending and queued for push.
 - Network-applied records notify the core event stream with table refresh
   events when a client uses event subscriptions instead of the legacy Kivy
   `on_data_pushed` callback.
+- If a mid-session `push_update` cannot apply because a referenced row is
+  missing locally, the client requests a fresh dependency sync over the active
+  link instead of permanently dropping the update.
 - `ClientSyncManager.push_record_pending()` is the public client outbox entry
   point used by the facade for immediate chat/SITREP/asset push attempts.
 - Tombstone sync for deletes.

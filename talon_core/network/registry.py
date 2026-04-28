@@ -35,7 +35,7 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "assets": SyncedTable(
         name="assets",
-        sync_order=1,
+        sync_order=2,
         client_pushable=True,
         offline_creatable=True,
         tombstone_order=5,
@@ -49,7 +49,7 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "sitreps": SyncedTable(
         name="sitreps",
-        sync_order=2,
+        sync_order=7,
         client_pushable=True,
         offline_creatable=True,
         tombstone_order=4,
@@ -59,7 +59,7 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "missions": SyncedTable(
         name="missions",
-        sync_order=3,
+        sync_order=1,
         client_pushable=True,
         offline_creatable=True,
         tombstone_order=7,
@@ -75,13 +75,13 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "waypoints": SyncedTable(
         name="waypoints",
-        sync_order=4,
+        sync_order=3,
         tombstone_order=2,
         ui_refresh_targets=_fields("mission", "main"),
     ),
     "zones": SyncedTable(
         name="zones",
-        sync_order=5,
+        sync_order=4,
         client_pushable=True,
         offline_creatable=True,
         tombstone_order=3,
@@ -90,7 +90,7 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "channels": SyncedTable(
         name="channels",
-        sync_order=6,
+        sync_order=5,
         tombstone_order=1,
         ui_refresh_targets=_fields("chat"),
         predelete_sql=(
@@ -99,7 +99,7 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "messages": SyncedTable(
         name="messages",
-        sync_order=7,
+        sync_order=6,
         client_pushable=True,
         offline_creatable=True,
         tombstone_order=0,

@@ -361,6 +361,57 @@ def test_core_session_server_chat_message_notifies_sync_push(
     session.close()
 
 
+def test_core_session_server_commands_flush_push_updates_without_timer(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from talon.network import protocol as proto
+    from talon.server import net_components, net_handler
+
+    class _NoOpTimer:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            return None
+
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    sent: list[dict] = []
+    monkeypatch.setattr(
+        net_handler,
+        "_smart_send",
+        lambda _link, data: sent.append(proto.decode(data)),
+    )
+    monkeypatch.setattr(net_components.threading, "Timer", _NoOpTimer)
+    handler = net_handler.ServerNetHandler(
+        session.conn,
+        session.cfg,
+        TEST_KEY,
+    )
+    handler._active_links["client"] = object()
+    session._net_handler = handler
+
+    session.command("chat.ensure_defaults")
+    channel_result = session.command("chat.create_channel", name="ops")
+    message_result = session.command(
+        "chat.send_message",
+        channel_id=channel_result.channel.id,
+        body="Server push update",
+    )
+
+    updates = [msg for msg in sent if msg["type"] == proto.MSG_PUSH_UPDATE]
+    assert any(
+        msg["table"] == "messages"
+        and msg["record"]["id"] == message_result.message.id
+        for msg in updates
+    )
+
+    session.close()
+
+
 def test_core_session_client_chat_message_enters_outbox(
     tmp_path: pathlib.Path,
 ) -> None:

@@ -117,15 +117,26 @@ def scene_point_for_lat_lon(
     lon: float,
     *,
     zoom: int | None = None,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
 ) -> tuple[float, float]:
     bounds = normalise_bounds(bounds)
-    z = zoom if zoom is not None else choose_zoom(bounds)
+    z = zoom if zoom is not None else choose_zoom(
+        bounds,
+        scene_width=scene_width,
+        scene_height=scene_height,
+        scene_margin=scene_margin,
+    )
     left, top, span_x, span_y = _world_view(bounds, z)
     point_x, point_y = world_pixel(lat, lon, z)
-    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
-    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
-    x = SCENE_MARGIN + ((point_x - left) / span_x) * usable_width
-    y = SCENE_MARGIN + ((point_y - top) / span_y) * usable_height
+    margin, usable_width, usable_height = _scene_metrics(
+        scene_width,
+        scene_height,
+        scene_margin,
+    )
+    x = margin + ((point_x - left) / span_x) * usable_width
+    y = margin + ((point_y - top) / span_y) * usable_height
     return x, y
 
 
@@ -135,14 +146,25 @@ def lat_lon_for_scene_point(
     y: float,
     *,
     zoom: int | None = None,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
 ) -> tuple[float, float]:
     bounds = normalise_bounds(bounds)
-    z = zoom if zoom is not None else choose_zoom(bounds)
+    z = zoom if zoom is not None else choose_zoom(
+        bounds,
+        scene_width=scene_width,
+        scene_height=scene_height,
+        scene_margin=scene_margin,
+    )
     left, top, span_x, span_y = _world_view(bounds, z)
-    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
-    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
-    ratio_x = max(0.0, min(1.0, (x - SCENE_MARGIN) / usable_width))
-    ratio_y = max(0.0, min(1.0, (y - SCENE_MARGIN) / usable_height))
+    margin, usable_width, usable_height = _scene_metrics(
+        scene_width,
+        scene_height,
+        scene_margin,
+    )
+    ratio_x = max(0.0, min(1.0, (x - margin) / usable_width))
+    ratio_y = max(0.0, min(1.0, (y - margin) / usable_height))
     world_x = left + (ratio_x * span_x)
     world_y = top + (ratio_y * span_y)
     return lat_lon_for_world_pixel(world_x, world_y, z)
@@ -161,16 +183,23 @@ def zoom_bounds_around_scene_point(
     x: float,
     y: float,
     factor: float,
+    *,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
 ) -> MapBounds:
     if factor <= 0:
         raise ValueError("Map zoom factor must be positive.")
     bounds = normalise_bounds(bounds)
     projection_zoom = 20
     left, top, span_x, span_y = _world_view(bounds, projection_zoom)
-    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
-    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
-    ratio_x = max(0.0, min(1.0, (x - SCENE_MARGIN) / usable_width))
-    ratio_y = max(0.0, min(1.0, (y - SCENE_MARGIN) / usable_height))
+    margin, usable_width, usable_height = _scene_metrics(
+        scene_width,
+        scene_height,
+        scene_margin,
+    )
+    ratio_x = max(0.0, min(1.0, (x - margin) / usable_width))
+    ratio_y = max(0.0, min(1.0, (y - margin) / usable_height))
     anchor_x = left + (ratio_x * span_x)
     anchor_y = top + (ratio_y * span_y)
     next_span_x = max(1.0, span_x / factor)
@@ -198,13 +227,86 @@ def zoom_bounds_around_scene_point(
     )
 
 
-def build_tile_plan(layer: TileLayer, bounds: MapBounds) -> TilePlan:
+def pan_bounds_by_scene_delta(
+    bounds: MapBounds,
+    delta_x: float,
+    delta_y: float,
+    *,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
+) -> MapBounds:
+    """Move map bounds so dragged content follows the cursor."""
     bounds = normalise_bounds(bounds)
-    zoom = choose_zoom(bounds, min_zoom=layer.min_zoom, max_zoom=layer.max_zoom)
-    requests = _requests_for_zoom(layer, bounds, zoom)
+    projection_zoom = 20
+    left, top, span_x, span_y = _world_view(bounds, projection_zoom)
+    _margin, usable_width, usable_height = _scene_metrics(
+        scene_width,
+        scene_height,
+        scene_margin,
+    )
+    world_size = TILE_SIZE * (2**projection_zoom)
+    next_left = _clamp(
+        left - ((delta_x / usable_width) * span_x),
+        0.0,
+        world_size - span_x,
+    )
+    next_top = _clamp(
+        top - ((delta_y / usable_height) * span_y),
+        0.0,
+        world_size - span_y,
+    )
+    max_lat, min_lon = lat_lon_for_world_pixel(next_left, next_top, projection_zoom)
+    min_lat, max_lon = lat_lon_for_world_pixel(
+        next_left + span_x,
+        next_top + span_y,
+        projection_zoom,
+    )
+    return normalise_bounds(
+        MapBounds(
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lon=min_lon,
+            max_lon=max_lon,
+        )
+    )
+
+
+def build_tile_plan(
+    layer: TileLayer,
+    bounds: MapBounds,
+    *,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
+) -> TilePlan:
+    bounds = normalise_bounds(bounds)
+    zoom = choose_zoom(
+        bounds,
+        min_zoom=layer.min_zoom,
+        max_zoom=layer.max_zoom,
+        scene_width=scene_width,
+        scene_height=scene_height,
+        scene_margin=scene_margin,
+    )
+    requests = _requests_for_zoom(
+        layer,
+        bounds,
+        zoom,
+        scene_width=scene_width,
+        scene_height=scene_height,
+        scene_margin=scene_margin,
+    )
     while len(requests) > MAX_TILE_REQUESTS and zoom > layer.min_zoom:
         zoom -= 1
-        requests = _requests_for_zoom(layer, bounds, zoom)
+        requests = _requests_for_zoom(
+            layer,
+            bounds,
+            zoom,
+            scene_width=scene_width,
+            scene_height=scene_height,
+            scene_margin=scene_margin,
+        )
     return TilePlan(layer=layer, bounds=bounds, zoom=zoom, requests=tuple(requests))
 
 
@@ -213,10 +315,16 @@ def choose_zoom(
     *,
     min_zoom: int = 2,
     max_zoom: int = 18,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
 ) -> int:
     bounds = normalise_bounds(bounds)
-    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
-    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
+    _margin, usable_width, usable_height = _scene_metrics(
+        scene_width,
+        scene_height,
+        scene_margin,
+    )
     chosen = min_zoom
     for zoom in range(min_zoom, max_zoom + 1):
         _left, _top, span_x, span_y = _world_view(bounds, zoom)
@@ -230,6 +338,10 @@ def _requests_for_zoom(
     layer: TileLayer,
     bounds: MapBounds,
     zoom: int,
+    *,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
 ) -> list[TileRequest]:
     left, top, span_x, span_y = _world_view(bounds, zoom)
     right = left + span_x
@@ -239,15 +351,18 @@ def _requests_for_zoom(
     max_x = min(tile_count - 1, int(math.floor((right - 0.001) / TILE_SIZE)))
     min_y = max(0, int(math.floor(top / TILE_SIZE)))
     max_y = min(tile_count - 1, int(math.floor((bottom - 0.001) / TILE_SIZE)))
-    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
-    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
+    margin, usable_width, usable_height = _scene_metrics(
+        scene_width,
+        scene_height,
+        scene_margin,
+    )
     requests: list[TileRequest] = []
     for tile_y in range(min_y, max_y + 1):
         for tile_x in range(min_x, max_x + 1):
             tile_left = tile_x * TILE_SIZE
             tile_top = tile_y * TILE_SIZE
-            scene_x = SCENE_MARGIN + ((tile_left - left) / span_x) * usable_width
-            scene_y = SCENE_MARGIN + ((tile_top - top) / span_y) * usable_height
+            scene_x = margin + ((tile_left - left) / span_x) * usable_width
+            scene_y = margin + ((tile_top - top) / span_y) * usable_height
             scene_w = (TILE_SIZE / span_x) * usable_width
             scene_h = (TILE_SIZE / span_y) * usable_height
             requests.append(
@@ -269,6 +384,19 @@ def _world_view(bounds: MapBounds, zoom: int) -> tuple[float, float, float, floa
     left, top = world_pixel(bounds.max_lat, bounds.min_lon, zoom)
     right, bottom = world_pixel(bounds.min_lat, bounds.max_lon, zoom)
     return left, top, max(1.0, right - left), max(1.0, bottom - top)
+
+
+def _scene_metrics(
+    scene_width: float,
+    scene_height: float,
+    scene_margin: float,
+) -> tuple[float, float, float]:
+    width = max(1.0, float(scene_width))
+    height = max(1.0, float(scene_height))
+    margin = max(0.0, min(float(scene_margin), (min(width, height) / 2.0) - 0.5))
+    usable_width = max(1.0, width - (margin * 2.0))
+    usable_height = max(1.0, height - (margin * 2.0))
+    return margin, usable_width, usable_height
 
 
 def _clamp_lat(lat: float) -> float:

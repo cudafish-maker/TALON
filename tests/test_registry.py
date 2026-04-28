@@ -11,13 +11,13 @@ from talon.server import net_handler
 def test_registry_exposes_current_sync_sets():
     assert registry.SYNC_TABLES == (
         "operators",
-        "assets",
-        "sitreps",
         "missions",
+        "assets",
         "waypoints",
         "zones",
         "channels",
         "messages",
+        "sitreps",
         "documents",
     )
     assert registry.CLIENT_PUSH_TABLES == {
@@ -28,11 +28,11 @@ def test_registry_exposes_current_sync_sets():
         "zones",
     }
     assert registry.OFFLINE_TABLES == (
-        "assets",
-        "sitreps",
         "missions",
+        "assets",
         "zones",
         "messages",
+        "sitreps",
     )
     assert registry.TOMBSTONE_APPLY_ORDER == (
         "messages",

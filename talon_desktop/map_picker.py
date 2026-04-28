@@ -15,12 +15,13 @@ from talon_desktop.map_data import (
     MapBounds,
     build_map_overlays,
 )
+from talon_desktop.map_scene_tiles import MapTileSceneRenderer
 from talon_desktop.map_tiles import (
     TILE_LAYERS,
     TILE_LAYERS_BY_KEY,
-    TileRequest,
     build_tile_plan,
     lat_lon_for_scene_point,
+    pan_bounds_by_scene_delta,
     scene_point_for_lat_lon,
     zoom_bounds_around_scene_point,
 )
@@ -33,6 +34,8 @@ class MapPickView(QtWidgets.QGraphicsView):
 
     locationClicked = QtCore.Signal(float, float)
     zoomRequested = QtCore.Signal(float, float, int)
+    panRequested = QtCore.Signal(float, float)
+    sceneSizeChanged = QtCore.Signal(float, float)
 
     def __init__(self, scene: QtWidgets.QGraphicsScene, bounds: MapBounds) -> None:
         super().__init__(scene)
@@ -40,25 +43,100 @@ class MapPickView(QtWidgets.QGraphicsView):
         self.setCursor(QtCore.Qt.CrossCursor)
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
-        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
+        self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self._scene_width = SCENE_WIDTH
+        self._scene_height = SCENE_HEIGHT
+        self._scene_margin = 0.0
+        self._pan_active = False
+        self._pan_moved = False
+        self._last_pan_pos = QtCore.QPoint()
+        self._pending_pan_delta = QtCore.QPointF()
+        self._pan_timer = QtCore.QTimer(self)
+        self._pan_timer.setInterval(16)
+        self._pan_timer.setSingleShot(True)
+        self._pan_timer.timeout.connect(self._emit_pending_pan)
+        self._pending_zoom_delta = 0
+        self._pending_zoom_point = QtCore.QPointF()
+        self._zoom_timer = QtCore.QTimer(self)
+        self._zoom_timer.setInterval(24)
+        self._zoom_timer.setSingleShot(True)
+        self._zoom_timer.timeout.connect(self._emit_pending_zoom)
 
     def set_bounds(self, bounds: MapBounds) -> None:
         self._bounds = bounds
 
+    def set_scene_geometry(
+        self,
+        width: float,
+        height: float,
+        margin: float,
+    ) -> None:
+        self._scene_width = max(1.0, float(width))
+        self._scene_height = max(1.0, float(height))
+        self._scene_margin = max(0.0, float(margin))
+
     def reset_zoom(self) -> None:
         self.resetTransform()
-        scene = self.scene()
-        if scene is not None:
-            self.fitInView(scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.reset_zoom()
+        size = self.viewport().size()
+        self.sceneSizeChanged.emit(float(size.width()), float(size.height()))
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.LeftButton:
-            point = self.mapToScene(event.position().toPoint())
-            lat, lon = lat_lon_for_scene_point(self._bounds, point.x(), point.y())
-            self.locationClicked.emit(lat, lon)
+            self._pan_active = True
+            self._pan_moved = False
+            self._last_pan_pos = event.position().toPoint()
+            self.setCursor(QtCore.Qt.ClosedHandCursor)
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._pan_active and event.buttons() & QtCore.Qt.LeftButton:
+            current = event.position().toPoint()
+            delta = current - self._last_pan_pos
+            if delta.manhattanLength() >= QtWidgets.QApplication.startDragDistance():
+                self._pan_moved = True
+            if self._pan_moved and not delta.isNull():
+                last_scene = self.mapToScene(self._last_pan_pos)
+                current_scene = self.mapToScene(current)
+                self._queue_pan_delta(
+                    QtCore.QPointF(
+                        current_scene.x() - last_scene.x(),
+                        current_scene.y() - last_scene.y(),
+                    )
+                )
+                self._last_pan_pos = current
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton and self._pan_active:
+            self._emit_pending_pan()
+            self.setCursor(QtCore.Qt.CrossCursor)
+            if not self._pan_moved:
+                point = self.mapToScene(event.position().toPoint())
+                lat, lon = lat_lon_for_scene_point(
+                    self._bounds,
+                    point.x(),
+                    point.y(),
+                    scene_width=self._scene_width,
+                    scene_height=self._scene_height,
+                    scene_margin=self._scene_margin,
+                )
+                self.locationClicked.emit(lat, lon)
+            self._pan_active = False
+            self._pan_moved = False
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         delta = event.angleDelta().y()
@@ -66,8 +144,31 @@ class MapPickView(QtWidgets.QGraphicsView):
             event.ignore()
             return
         point = self.mapToScene(event.position().toPoint())
-        self.zoomRequested.emit(point.x(), point.y(), delta)
+        self._pending_zoom_delta += delta
+        self._pending_zoom_point = QtCore.QPointF(point.x(), point.y())
+        if not self._zoom_timer.isActive():
+            self._zoom_timer.start()
         event.accept()
+
+    def _queue_pan_delta(self, delta: QtCore.QPointF) -> None:
+        self._pending_pan_delta += delta
+        if not self._pan_timer.isActive():
+            self._pan_timer.start()
+
+    def _emit_pending_pan(self) -> None:
+        if self._pending_pan_delta.isNull():
+            return
+        delta = QtCore.QPointF(self._pending_pan_delta)
+        self._pending_pan_delta = QtCore.QPointF()
+        self.panRequested.emit(delta.x(), delta.y())
+
+    def _emit_pending_zoom(self) -> None:
+        if self._pending_zoom_delta == 0:
+            return
+        delta = self._pending_zoom_delta
+        point = QtCore.QPointF(self._pending_zoom_point)
+        self._pending_zoom_delta = 0
+        self.zoomRequested.emit(point.x(), point.y(), delta)
 
 
 class MapCoordinateDialog(QtWidgets.QDialog):
@@ -91,6 +192,9 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self._context: object | None = None
         self._sitrep_entries: list[object] = []
         self._bounds = DEFAULT_MAP_BOUNDS
+        self._scene_width = SCENE_WIDTH
+        self._scene_height = SCENE_HEIGHT
+        self._scene_margin = 0.0
         self._tile_generation = 0
         self._active_tile_layer_key = "osm"
         self._network = QtNetwork.QNetworkAccessManager(self)
@@ -104,6 +208,12 @@ class MapCoordinateDialog(QtWidgets.QDialog):
 
         self._scene = QtWidgets.QGraphicsScene(self)
         self._scene.setSceneRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
+        self._tile_renderer = MapTileSceneRenderer(
+            scene=self._scene,
+            network=self._network,
+            user_agent="TALON Desktop/0.1 PySide6 map picker",
+            logger=_log,
+        )
         self.view = MapPickView(self._scene, self._bounds)
         self.view.setRenderHints(
             QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing
@@ -111,6 +221,13 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self.view.setMinimumSize(760, 460)
         self.view.locationClicked.connect(self._add_point)
         self.view.zoomRequested.connect(self._zoom_at_scene_point)
+        self.view.panRequested.connect(self._pan_by_scene_delta)
+        self.view.sceneSizeChanged.connect(self._resize_scene)
+        self.view.set_scene_geometry(
+            self._scene_width,
+            self._scene_height,
+            self._scene_margin,
+        )
 
         self.layer_group = QtWidgets.QButtonGroup(self)
         self.layer_buttons: dict[str, QtWidgets.QRadioButton] = {}
@@ -154,7 +271,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
 
         self._render()
         self._sync_status()
-        QtCore.QTimer.singleShot(0, self.view.reset_zoom)
+        QtCore.QTimer.singleShot(0, self._sync_scene_size_to_view)
 
     @property
     def selected_points(self) -> list[tuple[float, float]]:
@@ -197,40 +314,68 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         return bounds
 
     def _render(self) -> None:
-        self._scene.clear()
-        self._tile_generation += 1
+        self._tile_generation = self._tile_renderer.begin_frame()
         self._draw_background()
         self._draw_tile_layer()
         self._draw_context_overlays()
         self._draw_selection()
-        self._scene.setSceneRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
+        self._scene.setSceneRect(0, 0, self._scene_width, self._scene_height)
+
+    def _sync_scene_size_to_view(self) -> None:
+        size = self.view.viewport().size()
+        self._resize_scene(float(size.width()), float(size.height()))
+
+    def _resize_scene(self, width: float, height: float) -> None:
+        next_width = max(1.0, float(width))
+        next_height = max(1.0, float(height))
+        if (
+            abs(next_width - self._scene_width) < 1.0
+            and abs(next_height - self._scene_height) < 1.0
+        ):
+            return
+        self._scene_width = next_width
+        self._scene_height = next_height
+        self._scene.setSceneRect(0, 0, self._scene_width, self._scene_height)
+        self.view.set_scene_geometry(
+            self._scene_width,
+            self._scene_height,
+            self._scene_margin,
+        )
+        self._render()
 
     def _draw_background(self) -> None:
         self._scene.addRect(
             0,
             0,
-            SCENE_WIDTH,
-            SCENE_HEIGHT,
+            self._scene_width,
+            self._scene_height,
             QtGui.QPen(QtGui.QColor("#2f3437")),
             QtGui.QBrush(QtGui.QColor("#111619")),
         ).setZValue(-40)
         grid_pen = QtGui.QPen(QtGui.QColor(236, 240, 241, 34))
-        for x in range(100, int(SCENE_WIDTH), 100):
-            self._scene.addLine(x, 0, x, SCENE_HEIGHT, grid_pen).setZValue(-5)
-        for y in range(100, int(SCENE_HEIGHT), 100):
-            self._scene.addLine(0, y, SCENE_WIDTH, y, grid_pen).setZValue(-5)
+        for x in range(100, int(self._scene_width), 100):
+            self._scene.addLine(x, 0, x, self._scene_height, grid_pen).setZValue(-5)
+        for y in range(100, int(self._scene_height), 100):
+            self._scene.addLine(0, y, self._scene_width, y, grid_pen).setZValue(-5)
 
     def _draw_tile_layer(self) -> None:
         layer = TILE_LAYERS_BY_KEY.get(self._active_tile_layer_key, TILE_LAYERS[0])
-        plan = build_tile_plan(layer, self._bounds)
-        generation = self._tile_generation
-        for request in plan.requests:
-            self._request_tile(request, generation)
+        plan = build_tile_plan(
+            layer,
+            self._bounds,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
+        self._tile_renderer.request_tiles(plan.requests)
         item = self._scene.addText(layer.attribution)
         item.setDefaultTextColor(QtGui.QColor("#ecf0f1"))
         item.setZValue(30)
         rect = item.boundingRect()
-        item.setPos(SCENE_WIDTH - rect.width() - 12, SCENE_HEIGHT - rect.height() - 8)
+        item.setPos(
+            self._scene_width - rect.width() - 12,
+            self._scene_height - rect.height() - 8,
+        )
 
     def _draw_context_overlays(self) -> None:
         if self._context is None:
@@ -240,6 +385,9 @@ class MapCoordinateDialog(QtWidgets.QDialog):
                 self._context,
                 sitrep_entries=self._sitrep_entries,
                 bounds=self._bounds,
+                scene_width=self._scene_width,
+                scene_height=self._scene_height,
+                scene_margin=self._scene_margin,
             )
         except Exception as exc:
             _log.debug("Map picker overlay render failed: %s", exc)
@@ -304,7 +452,16 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         if not self._points:
             return
         scene_points = [
-            QtCore.QPointF(*scene_point_for_lat_lon(self._bounds, lat, lon))
+            QtCore.QPointF(
+                *scene_point_for_lat_lon(
+                    self._bounds,
+                    lat,
+                    lon,
+                    scene_width=self._scene_width,
+                    scene_height=self._scene_height,
+                    scene_margin=self._scene_margin,
+                )
+            )
             for lat, lon in self._points
         ]
         pen = QtGui.QPen(QtGui.QColor("#f6fbfb"), 2)
@@ -341,49 +498,6 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             rect = label.boundingRect()
             label.setPos(point.x() - rect.width() / 2, point.y() - rect.height() / 2)
 
-    def _request_tile(self, tile: TileRequest, generation: int) -> None:
-        request = QtNetwork.QNetworkRequest(QtCore.QUrl(tile.url))
-        request.setHeader(
-            QtNetwork.QNetworkRequest.UserAgentHeader,
-            "TALON Desktop/0.1 PySide6 map picker",
-        )
-        reply = self._network.get(request)
-        reply.finished.connect(
-            lambda reply=reply, tile=tile, generation=generation: self._tile_finished(
-                reply,
-                tile,
-                generation,
-            )
-        )
-
-    def _tile_finished(
-        self,
-        reply: QtNetwork.QNetworkReply,
-        tile: TileRequest,
-        generation: int,
-    ) -> None:
-        try:
-            if generation != self._tile_generation:
-                return
-            if reply.error() != QtNetwork.QNetworkReply.NoError:
-                _log.debug("Map picker tile request failed: %s", reply.errorString())
-                return
-            pixmap = QtGui.QPixmap()
-            if not pixmap.loadFromData(reply.readAll()):
-                return
-            item = self._scene.addPixmap(pixmap)
-            item.setTransformationMode(QtCore.Qt.SmoothTransformation)
-            item.setPos(tile.scene_x, tile.scene_y)
-            item.setTransform(
-                QtGui.QTransform().scale(
-                    tile.scene_width / pixmap.width(),
-                    tile.scene_height / pixmap.height(),
-                )
-            )
-            item.setZValue(-20)
-        finally:
-            reply.deleteLater()
-
     def _add_point(self, lat: float, lon: float) -> None:
         point = (_clamp_lat(lat), _clamp_lon(lon))
         if self._mode == "point":
@@ -413,13 +527,35 @@ class MapCoordinateDialog(QtWidgets.QDialog):
     def _zoom_at_scene_point(self, x: float, y: float, wheel_delta: int) -> None:
         steps = max(-4, min(4, wheel_delta / 120.0))
         factor = 1.75**steps
-        next_bounds = zoom_bounds_around_scene_point(self._bounds, x, y, factor)
+        next_bounds = zoom_bounds_around_scene_point(
+            self._bounds,
+            x,
+            y,
+            factor,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
         if next_bounds == self._bounds:
             return
         self._bounds = next_bounds
         self.view.set_bounds(next_bounds)
         self._render()
-        self.view.reset_zoom()
+
+    def _pan_by_scene_delta(self, delta_x: float, delta_y: float) -> None:
+        next_bounds = pan_bounds_by_scene_delta(
+            self._bounds,
+            delta_x,
+            delta_y,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
+        if next_bounds == self._bounds:
+            return
+        self._bounds = next_bounds
+        self.view.set_bounds(next_bounds)
+        self._render()
 
     def _sync_status(self) -> None:
         count = len(self._points)

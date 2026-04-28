@@ -433,14 +433,14 @@ class ClientRecordApplier:
             self._log.warning("Local operator revoked by server: id=%s", op_id)
             manager._trigger_local_lock_check()
 
-    def apply_record(self, table: str, record: dict, *, badge: bool = True) -> None:
+    def apply_record(self, table: str, record: dict, *, badge: bool = True) -> bool:
         manager = self._manager
         if not is_syncable(table):
             self._log.warning(
                 "Received record for non-allowlisted table %r - ignored",
                 table,
             )
-            return
+            return False
 
         record = prepare_server_record_for_client_store(
             table,
@@ -449,7 +449,7 @@ class ClientRecordApplier:
             logger=self._log,
         )
         if record is None:
-            return
+            return False
 
         applied = False
         local_operator_was_revoked = False
@@ -504,6 +504,8 @@ class ClientRecordApplier:
                     manager._operator_id,
                 )
                 manager._trigger_local_lock_check()
+
+        return applied
 
     def apply_delete(
         self,
@@ -1037,15 +1039,17 @@ class ClientLinkLifecycle:
         sync_done_event = threading.Event()
         my_rns_hash = manager._identity.hash.hex() if manager._identity else ""
 
-        with manager._lock:
-            version_map = SyncEngine.build_version_map(manager._conn)
-
-        wire_vm = {
-            table: {str(record_id): version for record_id, version in versions.items()}
-            for table, versions in version_map.items()
-        }
-
         def _send_sync_request(link: RNS.Link) -> None:
+            with manager._lock:
+                version_map = SyncEngine.build_version_map(manager._conn)
+
+            wire_vm = {
+                table: {
+                    str(record_id): version
+                    for record_id, version in versions.items()
+                }
+                for table, versions in version_map.items()
+            }
             self._smart_send(
                 link,
                 proto.encode(
@@ -1470,12 +1474,20 @@ class ClientLinkLifecycle:
             table = msg.get("table", "")
             record = msg.get("record")
             if record and table:
-                manager._apply_record(table, record)
-                self._log.debug(
-                    "Push update applied: table=%s id=%s",
-                    table,
-                    record.get("id"),
-                )
+                applied = manager._apply_record(table, record)
+                if applied:
+                    self._log.debug(
+                        "Push update applied: table=%s id=%s",
+                        table,
+                        record.get("id"),
+                    )
+                elif send_sync_request is not None and manager._link is not None:
+                    self._log.info(
+                        "Push update deferred; requesting dependency sync: table=%s id=%s",
+                        table,
+                        record.get("id"),
+                    )
+                    send_sync_request(manager._link)
 
         elif msg_type == proto.MSG_PUSH_DELETE:
             table = msg.get("table", "")

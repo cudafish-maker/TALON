@@ -1,6 +1,8 @@
 """PySide6 operational map page."""
 from __future__ import annotations
 
+import math
+
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6 import QtNetwork
 
@@ -18,11 +20,13 @@ from talon_desktop.map_data import (
     ZoneOverlay,
     build_map_overlays,
 )
+from talon_desktop.map_scene_tiles import MapTileSceneRenderer
 from talon_desktop.map_tiles import (
     TILE_LAYERS,
     TILE_LAYERS_BY_KEY,
-    TileRequest,
+    WEB_MERCATOR_MAX_LAT,
     build_tile_plan,
+    pan_bounds_by_scene_delta,
     zoom_bounds_around_scene_point,
 )
 
@@ -35,23 +39,92 @@ _ZONE_COLORS = {
     "FRIENDLY": QtGui.QColor(46, 204, 113, 70),
     "OBJECTIVE": QtGui.QColor(241, 196, 15, 75),
 }
+_ASSET_FOCUS_MIN_LAT_SPAN = 0.01
+_ASSET_FOCUS_MAX_LAT_SPAN = 0.05
 
 
 class MapGraphicsView(QtWidgets.QGraphicsView):
     """Graphics view that delegates wheel zoom to the map page viewport."""
 
     zoomRequested = QtCore.Signal(float, float, int)
+    panRequested = QtCore.Signal(float, float)
+    sceneClicked = QtCore.Signal(float, float)
+    sceneSizeChanged = QtCore.Signal(float, float)
 
     def __init__(self, scene: QtWidgets.QGraphicsScene) -> None:
         super().__init__(scene)
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
+        self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self._pan_active = False
+        self._pan_moved = False
+        self._last_pan_pos = QtCore.QPoint()
+        self._pending_pan_delta = QtCore.QPointF()
+        self._pan_timer = QtCore.QTimer(self)
+        self._pan_timer.setInterval(16)
+        self._pan_timer.setSingleShot(True)
+        self._pan_timer.timeout.connect(self._emit_pending_pan)
+        self._pending_zoom_delta = 0
+        self._pending_zoom_point = QtCore.QPointF()
+        self._zoom_timer = QtCore.QTimer(self)
+        self._zoom_timer.setInterval(24)
+        self._zoom_timer.setSingleShot(True)
+        self._zoom_timer.timeout.connect(self._emit_pending_zoom)
 
     def reset_zoom(self) -> None:
         self.resetTransform()
-        scene = self.scene()
-        if scene is not None:
-            self.fitInView(scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.reset_zoom()
+        size = self.viewport().size()
+        self.sceneSizeChanged.emit(float(size.width()), float(size.height()))
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton:
+            self._pan_active = True
+            self._pan_moved = False
+            self._last_pan_pos = event.position().toPoint()
+            self.setCursor(QtCore.Qt.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._pan_active and event.buttons() & QtCore.Qt.LeftButton:
+            current = event.position().toPoint()
+            delta = current - self._last_pan_pos
+            if delta.manhattanLength() >= QtWidgets.QApplication.startDragDistance():
+                self._pan_moved = True
+            if self._pan_moved and not delta.isNull():
+                last_scene = self.mapToScene(self._last_pan_pos)
+                current_scene = self.mapToScene(current)
+                self._queue_pan_delta(
+                    QtCore.QPointF(
+                        current_scene.x() - last_scene.x(),
+                        current_scene.y() - last_scene.y(),
+                    )
+                )
+                self._last_pan_pos = current
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton and self._pan_active:
+            self._emit_pending_pan()
+            self.setCursor(QtCore.Qt.ArrowCursor)
+            if not self._pan_moved:
+                point = self.mapToScene(event.position().toPoint())
+                self.sceneClicked.emit(point.x(), point.y())
+            self._pan_active = False
+            self._pan_moved = False
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         delta = event.angleDelta().y()
@@ -59,8 +132,43 @@ class MapGraphicsView(QtWidgets.QGraphicsView):
             event.ignore()
             return
         point = self.mapToScene(event.position().toPoint())
-        self.zoomRequested.emit(point.x(), point.y(), delta)
+        self._pending_zoom_delta += delta
+        self._pending_zoom_point = QtCore.QPointF(point.x(), point.y())
+        if not self._zoom_timer.isActive():
+            self._zoom_timer.start()
         event.accept()
+
+    def _queue_pan_delta(self, delta: QtCore.QPointF) -> None:
+        self._pending_pan_delta += delta
+        if not self._pan_timer.isActive():
+            self._pan_timer.start()
+
+    def _emit_pending_pan(self) -> None:
+        if self._pending_pan_delta.isNull():
+            return
+        delta = QtCore.QPointF(self._pending_pan_delta)
+        self._pending_pan_delta = QtCore.QPointF()
+        self.panRequested.emit(delta.x(), delta.y())
+
+    def _emit_pending_zoom(self) -> None:
+        if self._pending_zoom_delta == 0:
+            return
+        delta = self._pending_zoom_delta
+        point = QtCore.QPointF(self._pending_zoom_point)
+        self._pending_zoom_delta = 0
+        self.zoomRequested.emit(point.x(), point.y(), delta)
+
+
+class MapRightPanelSplitter(QtWidgets.QSplitter):
+    """Splitter that never restores into a horizontal map-panel layout."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(QtCore.Qt.Vertical, parent)
+
+    def restoreState(self, state: QtCore.QByteArray) -> bool:
+        restored = super().restoreState(state)
+        self.setOrientation(QtCore.Qt.Vertical)
+        return restored
 
 
 class MapPage(QtWidgets.QWidget):
@@ -79,9 +187,18 @@ class MapPage(QtWidgets.QWidget):
         self._mission_ids: list[int | None] = [None]
         self._overlay_details: dict[str, str] = {}
         self._visible_asset_ids: set[int] | None = None
+        self._scene_width = SCENE_WIDTH
+        self._scene_height = SCENE_HEIGHT
+        self._scene_margin = 0.0
         self._tile_generation = 0
         self._active_tile_layer_key = "osm"
         self._network = QtNetwork.QNetworkAccessManager(self)
+        self._tile_renderer = MapTileSceneRenderer(
+            scene=self._scene,
+            network=self._network,
+            user_agent="TALON Desktop/0.1 PySide6 map",
+            logger=_log,
+        )
         self._install_tile_cache()
 
         self.heading = QtWidgets.QLabel("Map")
@@ -122,16 +239,36 @@ class MapPage(QtWidgets.QWidget):
         self.view.setRenderHints(
             QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing
         )
-        self.view.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-        self.view.setMinimumSize(720, 480)
+        self.view.setMinimumSize(480, 420)
         self.view.zoomRequested.connect(self._zoom_at_scene_point)
+        self.view.panRequested.connect(self._pan_by_scene_delta)
+        self.view.sceneClicked.connect(self._select_overlay_at_scene_point)
+        self.view.sceneSizeChanged.connect(self._resize_scene)
+
+        self.left_panel = self._build_left_panel()
+        self.right_panel = self._build_right_panel()
+        self.left_toggle = self._build_panel_toggle("left")
+        self.right_toggle = self._build_panel_toggle("right")
+        self._left_panel_collapsed = False
+        self._right_panel_collapsed = False
+
+        map_row = QtWidgets.QHBoxLayout()
+        map_row.setContentsMargins(0, 0, 0, 0)
+        map_row.setSpacing(6)
+        map_row.addWidget(self.left_panel)
+        map_row.addWidget(self.left_toggle)
+        map_row.addWidget(self.view, stretch=1)
+        map_row.addWidget(self.right_toggle)
+        map_row.addWidget(self.right_panel)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
         layout.addWidget(self.summary)
-        layout.addWidget(self.view, stretch=1)
+        layout.addLayout(map_row, stretch=1)
+        QtCore.QTimer.singleShot(0, self._sync_scene_size_to_view)
 
     def refresh(self) -> None:
+        self._sync_scene_size_to_view(rerender=False)
         selected_mission_id = self._selected_mission_id()
         try:
             filters = {"mission_id": selected_mission_id} if selected_mission_id else {}
@@ -139,12 +276,13 @@ class MapPage(QtWidgets.QWidget):
             sitrep_filters = {"mission_id": selected_mission_id} if selected_mission_id else {}
             sitreps = self._core.read_model("sitreps.list", sitrep_filters)
             self._sync_mission_filter(context, selected_mission_id)
-            base_bundle = build_map_overlays(context, sitrep_entries=sitreps)
+            base_bundle = self._build_map_overlays(context, sitrep_entries=sitreps)
             self._map_context = context
             self._sitrep_entries = list(sitreps)
             self._view_bounds = base_bundle.bounds
             self._bundle = base_bundle
-            self._render_bundle(self._bundle)
+            self._render_bundle(self._bundle, refit=True)
+            self._refresh_side_panels()
         except Exception as exc:
             _log.warning("Could not refresh map: %s", exc)
             self.summary.setText(f"Unable to load map: {exc}")
@@ -160,15 +298,414 @@ class MapPage(QtWidgets.QWidget):
             f"{len(self._bundle.sitreps)} linked SITREPs."
         )
 
+    def _sync_scene_size_to_view(self, *, rerender: bool = True) -> None:
+        if not hasattr(self, "view"):
+            return
+        size = self.view.viewport().size()
+        self._resize_scene(
+            float(size.width()),
+            float(size.height()),
+            rerender=rerender,
+        )
+
+    def _resize_scene(
+        self,
+        width: float,
+        height: float,
+        *,
+        rerender: bool = True,
+    ) -> None:
+        next_width = max(1.0, float(width))
+        next_height = max(1.0, float(height))
+        if (
+            abs(next_width - self._scene_width) < 1.0
+            and abs(next_height - self._scene_height) < 1.0
+        ):
+            return
+        self._scene_width = next_width
+        self._scene_height = next_height
+        self._scene.setSceneRect(0, 0, self._scene_width, self._scene_height)
+        if not rerender:
+            return
+        if (
+            self._map_context is None
+            or self._sitrep_entries is None
+            or self._view_bounds is None
+        ):
+            return
+        self._bundle = self._build_map_overlays(
+            self._map_context,
+            sitrep_entries=self._sitrep_entries,
+            bounds=self._view_bounds,
+        )
+        self._render_bundle(self._bundle)
+
+    def _build_map_overlays(
+        self,
+        context: object,
+        *,
+        sitrep_entries: object = (),
+        bounds: MapBounds | None = None,
+    ) -> MapOverlayBundle:
+        return build_map_overlays(
+            context,
+            sitrep_entries=sitrep_entries,
+            bounds=bounds,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
+
+    def _build_left_panel(self) -> QtWidgets.QFrame:
+        panel = QtWidgets.QFrame()
+        panel.setObjectName("mapLeftPanel")
+        panel.setFixedWidth(210)
+        layout = QtWidgets.QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        header = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Assets")
+        title.setObjectName("sideMode")
+        self.asset_panel_count = QtWidgets.QLabel("0")
+        self.asset_panel_count.setObjectName("sideMode")
+        self.asset_panel_count.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
+        header.addWidget(title)
+        header.addWidget(self.asset_panel_count)
+        layout.addLayout(header)
+
+        self.asset_panel_list = QtWidgets.QListWidget()
+        self.asset_panel_list.setObjectName("mapSideList")
+        self.asset_panel_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self.asset_panel_list.itemSelectionChanged.connect(
+            self._zoom_to_selected_asset
+        )
+        layout.addWidget(self.asset_panel_list, stretch=1)
+        return panel
+
+    def _build_right_panel(self) -> QtWidgets.QFrame:
+        panel = QtWidgets.QFrame()
+        panel.setObjectName("mapRightPanel")
+        panel.setFixedWidth(230)
+        layout = QtWidgets.QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        self.selection_detail = QtWidgets.QTextEdit()
+        self.selection_detail.setObjectName("mapSelectionDetail")
+        self.selection_detail.setReadOnly(True)
+        self.selection_detail.setMinimumHeight(64)
+        self._set_selection_detail("")
+
+        self.mission_panel_count = QtWidgets.QLabel("0")
+        self.mission_panel_count.setObjectName("sideMode")
+        self.mission_panel_count.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
+        self.mission_panel_list = QtWidgets.QListWidget()
+        self.mission_panel_list.setObjectName("mapSideList")
+        self.mission_panel_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self.mission_panel_list.setMinimumHeight(72)
+
+        self.sitrep_panel_count = QtWidgets.QLabel("0")
+        self.sitrep_panel_count.setObjectName("sideMode")
+        self.sitrep_panel_count.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
+        self.sitrep_panel_list = QtWidgets.QListWidget()
+        self.sitrep_panel_list.setObjectName("mapSideList")
+        self.sitrep_panel_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self.sitrep_panel_list.setMinimumHeight(72)
+
+        self.right_panel_splitter = MapRightPanelSplitter()
+        self.right_panel_splitter.setObjectName("mapRightSplitter")
+        self.right_panel_splitter.setChildrenCollapsible(False)
+        self.right_panel_splitter.addWidget(
+            self._build_right_panel_section("Selection", self.selection_detail)
+        )
+        self.right_panel_splitter.addWidget(
+            self._build_right_panel_section(
+                "Missions",
+                self.mission_panel_list,
+                self.mission_panel_count,
+            )
+        )
+        self.right_panel_splitter.addWidget(
+            self._build_right_panel_section(
+                "SITREPs",
+                self.sitrep_panel_list,
+                self.sitrep_panel_count,
+            )
+        )
+        self.right_panel_splitter.setStretchFactor(0, 1)
+        self.right_panel_splitter.setStretchFactor(1, 2)
+        self.right_panel_splitter.setStretchFactor(2, 2)
+        self.right_panel_splitter.setSizes([130, 255, 255])
+        layout.addWidget(self.right_panel_splitter, stretch=1)
+        return panel
+
+    def _build_right_panel_section(
+        self,
+        title: str,
+        content: QtWidgets.QWidget,
+        count_label: QtWidgets.QLabel | None = None,
+    ) -> QtWidgets.QWidget:
+        section = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(section)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        header = QtWidgets.QHBoxLayout()
+        label = QtWidgets.QLabel(title)
+        label.setObjectName("sideMode")
+        header.addWidget(label)
+        if count_label is not None:
+            header.addWidget(count_label)
+        layout.addLayout(header)
+        layout.addWidget(content, stretch=1)
+        return section
+
+    def _build_panel_toggle(self, side: str) -> QtWidgets.QFrame:
+        strip = QtWidgets.QFrame()
+        strip.setObjectName("mapPanelToggleStrip")
+        strip.setFixedWidth(22)
+        layout = QtWidgets.QVBoxLayout(strip)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addStretch(1)
+        button = QtWidgets.QToolButton()
+        button.setObjectName("mapPanelToggle")
+        button.setText("<" if side == "left" else ">")
+        button.setToolTip(
+            "Collapse assets panel" if side == "left" else "Collapse context panel"
+        )
+        button.setFixedSize(22, 54)
+        button.clicked.connect(
+            lambda _checked=False, target=side: self._toggle_panel(target)
+        )
+        layout.addWidget(button)
+        layout.addStretch(1)
+        return strip
+
+    def _toggle_panel(self, side: str) -> None:
+        if side == "left":
+            self._left_panel_collapsed = not self._left_panel_collapsed
+            self.left_panel.setVisible(not self._left_panel_collapsed)
+            button = self.left_toggle.findChild(QtWidgets.QToolButton)
+            if button is not None:
+                button.setText(">" if self._left_panel_collapsed else "<")
+                button.setToolTip(
+                    "Expand assets panel"
+                    if self._left_panel_collapsed
+                    else "Collapse assets panel"
+                )
+            return
+
+        self._right_panel_collapsed = not self._right_panel_collapsed
+        self.right_panel.setVisible(not self._right_panel_collapsed)
+        button = self.right_toggle.findChild(QtWidgets.QToolButton)
+        if button is not None:
+            button.setText("<" if self._right_panel_collapsed else ">")
+            button.setToolTip(
+                "Expand context panel"
+                if self._right_panel_collapsed
+                else "Collapse context panel"
+            )
+
+    def _refresh_side_panels(self) -> None:
+        context = self._map_context
+        assets = list(getattr(context, "assets", []) or []) if context is not None else []
+        missions = list(getattr(context, "missions", []) or []) if context is not None else []
+        sitreps = list(self._sitrep_entries or [])
+
+        visible_asset_ids = (
+            {asset.id for asset in self._bundle.assets}
+            if self._bundle is not None
+            else set()
+        )
+        self.asset_panel_count.setText(f"{len(visible_asset_ids)}/{len(assets)}")
+        self.asset_panel_list.blockSignals(True)
+        try:
+            self.asset_panel_list.clear()
+            for asset in assets:
+                label = str(getattr(asset, "label", "Asset"))
+                category = str(getattr(asset, "category", ""))
+                lat = getattr(asset, "lat", None)
+                lon = getattr(asset, "lon", None)
+                location = (
+                    f"{lat:.4f}, {lon:.4f}"
+                    if lat is not None and lon is not None
+                    else "No GPS"
+                )
+                suffix = " [mapped]" if getattr(asset, "id", None) in visible_asset_ids else ""
+                item = QtWidgets.QListWidgetItem(
+                    f"{label}{suffix}\n{category.upper()} - {location}"
+                )
+                item.setData(QtCore.Qt.UserRole, f"asset:{getattr(asset, 'id', '')}")
+                self.asset_panel_list.addItem(item)
+        finally:
+            self.asset_panel_list.blockSignals(False)
+
+        self.mission_panel_count.setText(str(len(missions)))
+        self.mission_panel_list.clear()
+        for mission in missions:
+            mission_id = getattr(mission, "id", "")
+            title = str(getattr(mission, "title", "Mission"))
+            status = str(getattr(mission, "status", "")).replace("_", " ").upper()
+            item = QtWidgets.QListWidgetItem(f"{title}\n#{mission_id} - {status}")
+            item.setData(QtCore.Qt.UserRole, f"mission:{mission_id}")
+            self.mission_panel_list.addItem(item)
+
+        self.sitrep_panel_count.setText(str(len(sitreps)))
+        self.sitrep_panel_list.clear()
+        for sitrep in sitreps[:24]:
+            sitrep_id = getattr(sitrep, "id", "")
+            level = str(getattr(sitrep, "level", "SITREP"))
+            body = str(getattr(sitrep, "body", ""))
+            body = body[:72] + ("..." if len(body) > 72 else "")
+            item = QtWidgets.QListWidgetItem(f"{level} #{sitrep_id}\n{body}")
+            item.setData(QtCore.Qt.UserRole, f"sitrep:{sitrep_id}")
+            self.sitrep_panel_list.addItem(item)
+
+    def _zoom_to_selected_asset(self) -> None:
+        item = self.asset_panel_list.currentItem()
+        if item is None:
+            return
+        value = str(item.data(QtCore.Qt.UserRole) or "")
+        if not value.startswith("asset:"):
+            return
+        try:
+            asset_id = int(value.split(":", 1)[1])
+        except ValueError:
+            return
+        self._zoom_to_asset(asset_id)
+
+    def _zoom_to_asset(self, asset_id: int) -> None:
+        if self._map_context is None or self._sitrep_entries is None:
+            return
+        asset = self._asset_by_id(asset_id)
+        if asset is None:
+            return
+        coordinates = self._asset_coordinates(asset)
+        if coordinates is None:
+            self._set_selection_detail(f"Asset #{asset_id}\nNo GPS location.")
+            return
+        lat, lon = coordinates
+        next_bounds = self._asset_focus_bounds(lat, lon)
+        if next_bounds == self._view_bounds:
+            self._select_overlay_by_key(f"asset:{asset_id}")
+            return
+        self._view_bounds = next_bounds
+        self._bundle = self._build_map_overlays(
+            self._map_context,
+            sitrep_entries=self._sitrep_entries,
+            bounds=next_bounds,
+        )
+        self._render_bundle(self._bundle)
+        self._select_overlay_by_key(f"asset:{asset_id}")
+
+    def _asset_by_id(self, asset_id: int) -> object | None:
+        context = self._map_context
+        assets = list(getattr(context, "assets", []) or []) if context is not None else []
+        for asset in assets:
+            try:
+                if int(getattr(asset, "id")) == asset_id:
+                    return asset
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _asset_coordinates(self, asset: object) -> tuple[float, float] | None:
+        lat = getattr(asset, "lat", None)
+        lon = getattr(asset, "lon", None)
+        if lat is None or lon is None:
+            return None
+        try:
+            lat_float = float(lat)
+            lon_float = float(lon)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(lat_float) or not math.isfinite(lon_float):
+            return None
+        return lat_float, lon_float
+
+    def _asset_focus_bounds(self, lat: float, lon: float) -> MapBounds:
+        current = (
+            self._view_bounds
+            or (self._bundle.bounds if self._bundle is not None else None)
+        )
+        current_lat_span = (
+            max(0.0001, abs(current.max_lat - current.min_lat))
+            if current is not None
+            else 1.0
+        )
+        current_lon_span = (
+            max(0.0001, abs(current.max_lon - current.min_lon))
+            if current is not None
+            else 1.0
+        )
+        target_lat_span = min(
+            current_lat_span,
+            max(
+                _ASSET_FOCUS_MIN_LAT_SPAN,
+                min(current_lat_span * 0.25, _ASSET_FOCUS_MAX_LAT_SPAN),
+            ),
+        )
+        aspect = max(0.25, min(4.0, self._scene_width / max(1.0, self._scene_height)))
+        latitude_scale = max(
+            0.25,
+            math.cos(math.radians(max(-80.0, min(80.0, lat)))),
+        )
+        target_lon_span = min(
+            current_lon_span,
+            max(_ASSET_FOCUS_MIN_LAT_SPAN, target_lat_span * aspect / latitude_scale),
+        )
+        return MapBounds(
+            min_lat=self._clamped_lower(lat, target_lat_span, -WEB_MERCATOR_MAX_LAT),
+            max_lat=self._clamped_upper(lat, target_lat_span, WEB_MERCATOR_MAX_LAT),
+            min_lon=self._clamped_lower(lon, target_lon_span, -180.0),
+            max_lon=self._clamped_upper(lon, target_lon_span, 180.0),
+        )
+
+    def _select_overlay_by_key(self, key: str) -> bool:
+        self._scene.clearSelection()
+        for item in self._scene.items():
+            if not (item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
+                continue
+            if str(item.data(0)) == key:
+                item.setSelected(True)
+                return True
+        return False
+
+    @staticmethod
+    def _clamped_lower(center: float, span: float, minimum: float) -> float:
+        return max(minimum, center - (span / 2.0))
+
+    @staticmethod
+    def _clamped_upper(center: float, span: float, maximum: float) -> float:
+        return min(maximum, center + (span / 2.0))
+
+    def _set_selection_detail(self, detail: str) -> None:
+        if not hasattr(self, "selection_detail"):
+            return
+        self.selection_detail.setPlainText(detail or "Select a map item.")
+
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
         _ = action, record_id
         if table in {"assets", "missions", "zones", "waypoints", "sitreps"}:
             self.refresh()
 
-    def _render_bundle(self, bundle: MapOverlayBundle) -> None:
-        self._scene.clear()
+    def _render_bundle(self, bundle: MapOverlayBundle, *, refit: bool = False) -> None:
+        self._tile_generation = self._tile_renderer.begin_frame()
         self._overlay_details.clear()
-        self._tile_generation += 1
+        self._set_selection_detail("")
         self._draw_background()
         self._draw_tile_layer(bundle)
         for zone in bundle.zones:
@@ -188,77 +725,39 @@ class MapPage(QtWidgets.QWidget):
             if self._visible_asset_ids is not None and sitrep.asset_id not in visible_asset_ids:
                 continue
             self._draw_sitrep(sitrep)
-        self._scene.setSceneRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
-        self.view.reset_zoom()
+        self._scene.setSceneRect(0, 0, self._scene_width, self._scene_height)
+        if refit:
+            self.view.reset_zoom()
 
     def _draw_background(self) -> None:
         self._scene.addRect(
             0,
             0,
-            SCENE_WIDTH,
-            SCENE_HEIGHT,
+            self._scene_width,
+            self._scene_height,
             QtGui.QPen(QtGui.QColor("#2f3437")),
             QtGui.QBrush(QtGui.QColor("#111619")),
         ).setZValue(-30)
         grid_pen = QtGui.QPen(QtGui.QColor(236, 240, 241, 34))
-        for x in range(100, int(SCENE_WIDTH), 100):
-            item = self._scene.addLine(x, 0, x, SCENE_HEIGHT, grid_pen)
+        for x in range(100, int(self._scene_width), 100):
+            item = self._scene.addLine(x, 0, x, self._scene_height, grid_pen)
             item.setZValue(-5)
-        for y in range(100, int(SCENE_HEIGHT), 100):
-            item = self._scene.addLine(0, y, SCENE_WIDTH, y, grid_pen)
+        for y in range(100, int(self._scene_height), 100):
+            item = self._scene.addLine(0, y, self._scene_width, y, grid_pen)
             item.setZValue(-5)
 
     def _draw_tile_layer(self, bundle: MapOverlayBundle) -> None:
         layer = TILE_LAYERS_BY_KEY.get(self._active_tile_layer_key, TILE_LAYERS[0])
-        plan = build_tile_plan(layer, bundle.bounds)
+        plan = build_tile_plan(
+            layer,
+            bundle.bounds,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
         self.summary.setToolTip(f"{layer.label} tile zoom: {plan.zoom}")
-        generation = self._tile_generation
-        for request in plan.requests:
-            self._request_tile(request, generation)
+        self._tile_renderer.request_tiles(plan.requests)
         self._draw_attribution(layer.attribution)
-
-    def _request_tile(self, tile: TileRequest, generation: int) -> None:
-        request = QtNetwork.QNetworkRequest(QtCore.QUrl(tile.url))
-        request.setHeader(
-            QtNetwork.QNetworkRequest.UserAgentHeader,
-            "TALON Desktop/0.1 PySide6 map",
-        )
-        reply = self._network.get(request)
-        reply.finished.connect(
-            lambda reply=reply, tile=tile, generation=generation: self._tile_finished(
-                reply,
-                tile,
-                generation,
-            )
-        )
-
-    def _tile_finished(
-        self,
-        reply: QtNetwork.QNetworkReply,
-        tile: TileRequest,
-        generation: int,
-    ) -> None:
-        try:
-            if generation != self._tile_generation:
-                return
-            if reply.error() != QtNetwork.QNetworkReply.NoError:
-                _log.debug("Map tile request failed: %s", reply.errorString())
-                return
-            pixmap = QtGui.QPixmap()
-            if not pixmap.loadFromData(reply.readAll()):
-                return
-            item = self._scene.addPixmap(pixmap)
-            item.setTransformationMode(QtCore.Qt.SmoothTransformation)
-            item.setPos(tile.scene_x, tile.scene_y)
-            item.setTransform(
-                QtGui.QTransform().scale(
-                    tile.scene_width / pixmap.width(),
-                    tile.scene_height / pixmap.height(),
-                )
-            )
-            item.setZValue(-20)
-        finally:
-            reply.deleteLater()
 
     def _draw_attribution(self, text: str) -> None:
         item = self._scene.addText(text)
@@ -266,8 +765,8 @@ class MapPage(QtWidgets.QWidget):
         item.setZValue(30)
         bounds = item.boundingRect()
         item.setPos(
-            SCENE_WIDTH - bounds.width() - 12,
-            SCENE_HEIGHT - bounds.height() - 8,
+            self._scene_width - bounds.width() - 12,
+            self._scene_height - bounds.height() - 8,
         )
 
     def _draw_zone(self, zone: ZoneOverlay) -> None:
@@ -402,11 +901,23 @@ class MapPage(QtWidgets.QWidget):
     def _selection_changed(self) -> None:
         selected = self._scene.selectedItems()
         if not selected:
+            self._set_selection_detail("")
             return
         key = selected[-1].data(0)
         detail = self._overlay_details.get(str(key))
         if detail:
+            self._set_selection_detail(detail)
             _log.debug("Map overlay selected: %s", detail.replace("\n", " | "))
+
+    def _select_overlay_at_scene_point(self, x: float, y: float) -> None:
+        point = QtCore.QPointF(x, y)
+        items = [
+            item for item in self._scene.items(point)
+            if item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable
+        ]
+        self._scene.clearSelection()
+        if items:
+            items[0].setSelected(True)
 
     def _choose_visible_assets(self) -> None:
         if self._bundle is None:
@@ -463,6 +974,7 @@ class MapPage(QtWidgets.QWidget):
         all_ids = {asset.id for asset in self._bundle.assets}
         self._visible_asset_ids = None if selected == all_ids else selected
         self._render_bundle(self._bundle)
+        self._refresh_side_panels()
 
     def _selected_mission_id(self) -> int | None:
         index = self.mission_filter.currentIndex()
@@ -511,11 +1023,44 @@ class MapPage(QtWidgets.QWidget):
             return
         steps = max(-4, min(4, wheel_delta / 120.0))
         factor = 1.75**steps
-        next_bounds = zoom_bounds_around_scene_point(self._view_bounds, x, y, factor)
+        next_bounds = zoom_bounds_around_scene_point(
+            self._view_bounds,
+            x,
+            y,
+            factor,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
         if next_bounds == self._view_bounds:
             return
         self._view_bounds = next_bounds
-        self._bundle = build_map_overlays(
+        self._bundle = self._build_map_overlays(
+            self._map_context,
+            sitrep_entries=self._sitrep_entries,
+            bounds=next_bounds,
+        )
+        self._render_bundle(self._bundle)
+
+    def _pan_by_scene_delta(self, delta_x: float, delta_y: float) -> None:
+        if (
+            self._map_context is None
+            or self._sitrep_entries is None
+            or self._view_bounds is None
+        ):
+            return
+        next_bounds = pan_bounds_by_scene_delta(
+            self._view_bounds,
+            delta_x,
+            delta_y,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
+        if next_bounds == self._view_bounds:
+            return
+        self._view_bounds = next_bounds
+        self._bundle = self._build_map_overlays(
             self._map_context,
             sitrep_entries=self._sitrep_entries,
             bounds=next_bounds,

@@ -313,8 +313,8 @@ class ClientSyncManager:
     def _handle_chunk_data(self, msg: dict) -> typing.Optional[bytes]:
         return self._record_applier.handle_chunk_data(msg)
 
-    def _apply_record(self, table: str, record: dict, *, badge: bool = True) -> None:
-        self._record_applier.apply_record(table, record, badge=badge)
+    def _apply_record(self, table: str, record: dict, *, badge: bool = True) -> bool:
+        return self._record_applier.apply_record(table, record, badge=badge)
 
     def _update_lease_expiry(self, lease_expires_at: typing.Any) -> None:
         self._record_applier.update_lease_expiry(lease_expires_at)

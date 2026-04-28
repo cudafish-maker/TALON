@@ -188,6 +188,39 @@ def _stylesheet(*, theme_key: str = "dark", font_scale: float = 1.0) -> str:
         height: 7px;
     }
 
+    QFrame#mapLeftPanel,
+    QFrame#mapRightPanel {
+        background: #101719;
+        border: 1px solid #253238;
+        border-radius: 6px;
+    }
+
+    QFrame#mapPanelToggleStrip {
+        background: #0a0f11;
+        border: 1px solid #253238;
+        border-radius: 6px;
+    }
+
+    QToolButton#mapPanelToggle {
+        background: #162126;
+        border: 1px solid #31434a;
+        border-radius: 4px;
+        color: #8fbcbb;
+        font-weight: 800;
+    }
+
+    QToolButton#mapPanelToggle:hover {
+        background: #1f2f35;
+        color: #f6fbfb;
+    }
+
+    QListWidget#mapSideList,
+    QTextEdit#mapSelectionDetail {
+        background: #0a0f11;
+        border: 1px solid #253238;
+        border-radius: 4px;
+    }
+
     QListWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit,
     QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
         background: #11181b;

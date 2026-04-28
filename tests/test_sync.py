@@ -12,6 +12,7 @@ from talon.db.connection import close_db, open_db
 from talon.db.migrations import apply_migrations
 from talon.documents import cache_document_download
 from talon.network import protocol as proto
+from talon.network import registry
 from talon.network.client_sync import ClientSyncManager
 from talon.network.sync import SyncEngine, _validated_table
 from talon.server import net_components, net_handler
@@ -727,6 +728,101 @@ class TestServerClientPush:
 
 
 class TestClientServerPushIntegration:
+    def test_sync_response_order_applies_mission_before_linked_asset(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_order.db", test_key)
+        try:
+            manager = _make_client_manager(client_conn, test_key, operator_id=1)
+            records_by_table = {
+                "missions": {
+                    "id": 77,
+                    "title": "Parent Mission",
+                    "status": "active",
+                    "created_by": 1,
+                    "created_at": 1000,
+                    "version": 1,
+                    "description": "",
+                },
+                "assets": {
+                    "id": 1,
+                    "category": "cache",
+                    "label": "Mission Cache",
+                    "description": "",
+                    "lat": None,
+                    "lon": None,
+                    "verified": 0,
+                    "created_by": 1,
+                    "confirmed_by": None,
+                    "created_at": 1001,
+                    "version": 1,
+                    "mission_id": 77,
+                },
+            }
+            sync_done_event = threading.Event()
+
+            for table in registry.SYNC_TABLES:
+                record = records_by_table.get(table)
+                if record is None:
+                    continue
+                manager._handle_incoming(
+                    {
+                        "version": proto.PROTOCOL_VERSION,
+                        "type": proto.MSG_SYNC_RESPONSE,
+                        "table": table,
+                        "record": record,
+                    },
+                    sync_done_event,
+                )
+
+            row = client_conn.execute(
+                "SELECT mission_id FROM assets WHERE id = 1"
+            ).fetchone()
+            assert row == (77,)
+        finally:
+            close_db(client_conn)
+
+    def test_mid_session_fk_failure_requests_followup_sync(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_fk_retry.db", test_key)
+        try:
+            manager = _make_client_manager(client_conn, test_key, operator_id=1)
+            fake_link = object()
+            manager._link = fake_link
+            sync_requests = []
+
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_PUSH_UPDATE,
+                    "table": "assets",
+                    "record": {
+                        "id": 1,
+                        "category": "cache",
+                        "label": "Mission Cache",
+                        "description": "",
+                        "lat": None,
+                        "lon": None,
+                        "verified": 1,
+                        "created_by": 1,
+                        "confirmed_by": 1,
+                        "created_at": 1001,
+                        "version": 2,
+                        "mission_id": 77,
+                    },
+                },
+                threading.Event(),
+                lambda link: sync_requests.append(link),
+            )
+
+            assert sync_requests == [fake_link]
+            assert client_conn.execute(
+                "SELECT 1 FROM assets WHERE id = 1"
+            ).fetchone() is None
+        finally:
+            close_db(client_conn)
+
     def test_public_push_record_pending_delegates_to_outbox(
         self, tmp_path, test_key
     ):

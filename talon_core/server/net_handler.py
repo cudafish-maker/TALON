@@ -280,6 +280,10 @@ class ServerNetHandler:
     def notify_change(self, table: str, record_id: int) -> None:
         self._push_dispatcher.notify_change(table, record_id)
 
+    def flush_pending_changes(self) -> None:
+        """Flush queued push_update records after local server commands commit."""
+        self._push_dispatcher.flush_push_buffer()
+
     def _flush_push_buffer(self) -> None:
         self._push_dispatcher.flush_push_buffer()
 

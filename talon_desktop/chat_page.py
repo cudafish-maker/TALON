@@ -7,6 +7,7 @@ from talon_core import TalonCoreSession
 from talon_core.utils.logging import get_logger
 from talon_desktop.chat import (
     DesktopChannelItem,
+    DesktopGridReferenceItem,
     DesktopMessageItem,
     DesktopOperatorItem,
     build_create_channel_payload,
@@ -14,11 +15,13 @@ from talon_desktop.chat import (
     build_message_payload,
     can_delete_channel,
     can_delete_message,
+    grid_reference_items_from_context,
     items_from_channels,
     items_from_messages,
     items_from_operators,
     operator_lookup_from_items,
 )
+from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.chat")
 
@@ -125,6 +128,151 @@ class DmDialog(QtWidgets.QDialog):
         return int(value)
 
 
+class GridReferenceDialog(QtWidgets.QDialog):
+    """Picker for map-visible locations that can be attached to a chat message."""
+
+    def __init__(
+        self,
+        core: TalonCoreSession,
+        *,
+        current_reference: str = "",
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._core = core
+        self._current_reference = current_reference
+        self._items: list[DesktopGridReferenceItem] = []
+        self._visible_items: list[DesktopGridReferenceItem] = []
+        self._selected_reference = current_reference
+        self.setWindowTitle("Grid Reference")
+        self.setMinimumSize(720, 460)
+
+        self.search_field = QtWidgets.QLineEdit()
+        self.search_field.setPlaceholderText("Search known positions")
+        self.search_field.textChanged.connect(self._populate)
+
+        self.table = QtWidgets.QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(
+            ["Type", "Name", "Latitude", "Longitude", "Detail"]
+        )
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        configure_data_table(self.table)
+        self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.table.itemDoubleClicked.connect(lambda _item: self._attach_selected())
+
+        self.reference_label = QtWidgets.QLabel("")
+        self.reference_label.setWordWrap(True)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
+
+        self.attach_button = QtWidgets.QPushButton("Attach")
+        self.attach_button.clicked.connect(self._attach_selected)
+        self.clear_button = QtWidgets.QPushButton("Clear")
+        self.clear_button.clicked.connect(self._clear_reference)
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(self.clear_button)
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.attach_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.search_field)
+        layout.addWidget(self.table, stretch=1)
+        layout.addWidget(self.reference_label)
+        layout.addWidget(self.status_label)
+        layout.addLayout(button_row)
+
+        self._load()
+
+    def reference(self) -> str:
+        return self._selected_reference
+
+    def _load(self) -> None:
+        try:
+            context = self._core.read_model("map.context")
+            sitreps = self._core.read_model("sitreps.list")
+            self._items = grid_reference_items_from_context(
+                context,
+                sitrep_entries=sitreps,
+            )
+        except Exception as exc:
+            _log.warning("Could not load grid references: %s", exc)
+            self.status_label.setText(f"Unable to load map positions: {exc}")
+            self._items = []
+        self._populate()
+
+    def _populate(self, _text: str = "") -> None:
+        search = self.search_field.text().strip().lower()
+        self._visible_items = [
+            item for item in self._items
+            if not search
+            or search in item.kind.lower()
+            or search in item.label.lower()
+            or search in item.detail.lower()
+            or search in item.reference.lower()
+        ]
+        self.table.setRowCount(0)
+        for item in self._visible_items:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            values = [
+                item.kind,
+                item.label,
+                f"{item.lat:.6f}",
+                f"{item.lon:.6f}",
+                item.detail,
+            ]
+            for column, value in enumerate(values):
+                cell = QtWidgets.QTableWidgetItem(value)
+                cell.setData(QtCore.Qt.UserRole, item.reference)
+                self.table.setItem(row, column, cell)
+            if item.reference == self._current_reference:
+                self.table.selectRow(row)
+
+        if self._visible_items and not self.table.selectedItems():
+            self.table.selectRow(0)
+        self.status_label.setText(
+            f"{len(self._visible_items)} known position(s)."
+            if self._visible_items
+            else "No known positions with coordinates."
+        )
+        self._selection_changed()
+
+    def _selection_changed(self) -> None:
+        item = self._selected_item()
+        if item is None:
+            self.reference_label.clear()
+            self.attach_button.setEnabled(False)
+            return
+        self.reference_label.setText(item.reference)
+        self.attach_button.setEnabled(True)
+
+    def _selected_item(self) -> DesktopGridReferenceItem | None:
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self._visible_items):
+            return None
+        return self._visible_items[row]
+
+    def _attach_selected(self) -> None:
+        item = self._selected_item()
+        if item is None:
+            self.status_label.setText("Select a known position.")
+            return
+        self._selected_reference = item.reference
+        self.accept()
+
+    def _clear_reference(self) -> None:
+        self._selected_reference = ""
+        self.accept()
+
+
 class ChatPage(QtWidgets.QWidget):
     """Desktop chat page backed by talon-core chat commands."""
 
@@ -135,6 +283,7 @@ class ChatPage(QtWidgets.QWidget):
         self._messages: list[DesktopMessageItem] = []
         self._operators: list[DesktopOperatorItem] = []
         self._active_channel_id: int | None = None
+        self._pending_grid_ref = ""
         self._blink_on = False
         self._blink_timer = QtCore.QTimer(self)
         self._blink_timer.timeout.connect(self._blink_urgent_messages)
@@ -146,6 +295,8 @@ class ChatPage(QtWidgets.QWidget):
 
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
+        self.grid_button = QtWidgets.QPushButton("Grid")
+        self.grid_button.clicked.connect(self._open_grid_reference_dialog)
         self.new_channel_button = QtWidgets.QPushButton("New Channel")
         self.new_channel_button.clicked.connect(self._create_channel)
         self.new_dm_button = QtWidgets.QPushButton("Direct Message")
@@ -158,6 +309,7 @@ class ChatPage(QtWidgets.QWidget):
         top_row.addWidget(self.heading)
         top_row.addStretch(1)
         top_row.addWidget(self.refresh_button)
+        top_row.addWidget(self.grid_button)
         top_row.addWidget(self.new_channel_button)
         top_row.addWidget(self.new_dm_button)
         top_row.addWidget(self.delete_channel_button)
@@ -197,11 +349,6 @@ class ChatPage(QtWidgets.QWidget):
         self.body_field.setPlaceholderText("Compose message")
         self.body_field.setFixedHeight(92)
         self.urgent_check = QtWidgets.QCheckBox("Urgent")
-        self.grid_field = QtWidgets.QLineEdit()
-        self.grid_field.setPlaceholderText("Grid reference")
-        self.grid_field.setVisible(False)
-        self.grid_toggle = QtWidgets.QCheckBox("Grid")
-        self.grid_toggle.toggled.connect(self.grid_field.setVisible)
         self.send_button = QtWidgets.QPushButton("Send")
         self.send_button.clicked.connect(self._send_message)
         self.delete_message_button = QtWidgets.QPushButton("Delete Message")
@@ -212,11 +359,9 @@ class ChatPage(QtWidgets.QWidget):
 
         composer_form = QtWidgets.QFormLayout()
         composer_form.addRow("Message", self.body_field)
-        composer_form.addRow("Grid", self.grid_field)
 
         composer_actions = QtWidgets.QHBoxLayout()
         composer_actions.addWidget(self.urgent_check)
-        composer_actions.addWidget(self.grid_toggle)
         composer_actions.addWidget(self.delete_message_button)
         composer_actions.addStretch(1)
         composer_actions.addWidget(self.send_button)
@@ -453,7 +598,7 @@ class ChatPage(QtWidgets.QWidget):
                 channel_id=channel.id,
                 body=self.body_field.toPlainText(),
                 is_urgent=self.urgent_check.isChecked(),
-                grid_ref=self.grid_field.text(),
+                grid_ref=self._pending_grid_ref,
             )
             self._core.command("chat.send_message", payload)
         except Exception as exc:
@@ -462,11 +607,26 @@ class ChatPage(QtWidgets.QWidget):
             return
 
         self.body_field.clear()
-        self.grid_field.clear()
-        self.grid_toggle.setChecked(False)
+        self._pending_grid_ref = ""
         self.urgent_check.setChecked(False)
+        self._sync_grid_button()
         self.status_label.setText("Message sent.")
         self._refresh_messages()
+
+    def _open_grid_reference_dialog(self) -> None:
+        dialog = GridReferenceDialog(
+            self._core,
+            current_reference=self._pending_grid_ref,
+            parent=self,
+        )
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        self._pending_grid_ref = dialog.reference()
+        self._sync_grid_button()
+        if self._pending_grid_ref:
+            self.status_label.setText(f"Grid attached: {self._pending_grid_ref}")
+        else:
+            self.status_label.setText("Grid reference cleared.")
 
     def _delete_channel(self) -> None:
         channel = self._selected_channel()
@@ -545,11 +705,15 @@ class ChatPage(QtWidgets.QWidget):
         message = self._selected_message()
         self.send_button.setEnabled(channel is not None)
         self.body_field.setEnabled(channel is not None)
-        self.grid_field.setEnabled(channel is not None)
-        self.grid_toggle.setEnabled(channel is not None)
+        self.grid_button.setEnabled(channel is not None)
         self.urgent_check.setEnabled(channel is not None)
         self.delete_channel_button.setEnabled(can_delete_channel(self._core.mode, channel))
         self.delete_message_button.setEnabled(can_delete_message(self._core.mode, message))
+        self._sync_grid_button()
+
+    def _sync_grid_button(self) -> None:
+        self.grid_button.setText("Grid Attached" if self._pending_grid_ref else "Grid")
+        self.grid_button.setToolTip(self._pending_grid_ref or "Attach a map position")
 
     def _refresh_side_panel(self) -> None:
         try:

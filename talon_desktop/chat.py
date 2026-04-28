@@ -43,6 +43,16 @@ class DesktopOperatorItem:
     online: bool
 
 
+@dataclasses.dataclass(frozen=True)
+class DesktopGridReferenceItem:
+    kind: str
+    label: str
+    reference: str
+    lat: float
+    lon: float
+    detail: str
+
+
 def item_from_channel(
     channel: object,
     *,
@@ -117,6 +127,92 @@ def items_from_operators(
     operators: typing.Iterable[typing.Mapping[str, object]],
 ) -> list[DesktopOperatorItem]:
     return [operator_item_from_mapping(operator) for operator in operators]
+
+
+def grid_reference_items_from_context(
+    context: object,
+    *,
+    sitrep_entries: typing.Iterable[object] = (),
+) -> list[DesktopGridReferenceItem]:
+    """Build chat-attachable location references from the map read model."""
+    items: list[DesktopGridReferenceItem] = []
+    assets = list(_field(context, "assets", default=[]) or [])
+    asset_locations: dict[int, tuple[float, float, str]] = {}
+    for asset in assets:
+        lat = _optional_float(_field(asset, "lat", default=None))
+        lon = _optional_float(_field(asset, "lon", default=None))
+        if lat is None or lon is None:
+            continue
+        asset_id = int(_field(asset, "id"))
+        label = str(_field(asset, "label", default=f"Asset #{asset_id}"))
+        category = str(_field(asset, "category", default="asset")).replace("_", " ")
+        asset_locations[asset_id] = (lat, lon, label)
+        items.append(
+            _grid_item(
+                "ASSET",
+                label,
+                lat,
+                lon,
+                detail=f"{category.title()} #{asset_id}",
+            )
+        )
+
+    for waypoint in list(_field(context, "waypoints", default=[]) or []):
+        lat = _optional_float(_field(waypoint, "lat", default=None))
+        lon = _optional_float(_field(waypoint, "lon", default=None))
+        if lat is None or lon is None:
+            continue
+        waypoint_id = int(_field(waypoint, "id"))
+        mission_id = int(_field(waypoint, "mission_id"))
+        label = str(_field(waypoint, "label", default=f"Waypoint #{waypoint_id}"))
+        sequence = int(_field(waypoint, "sequence", default=0))
+        items.append(
+            _grid_item(
+                "WAYPOINT",
+                label,
+                lat,
+                lon,
+                detail=f"Mission {mission_id} waypoint {sequence}",
+            )
+        )
+
+    for zone in list(_field(context, "zones", default=[]) or []):
+        centroid = _polygon_centroid(_field(zone, "polygon", default=[]) or [])
+        if centroid is None:
+            continue
+        lat, lon = centroid
+        zone_id = int(_field(zone, "id"))
+        zone_type = str(_field(zone, "zone_type", default="zone"))
+        label = str(_field(zone, "label", default=f"Zone #{zone_id}"))
+        items.append(
+            _grid_item(
+                "ZONE",
+                label,
+                lat,
+                lon,
+                detail=f"{zone_type.title()} centroid #{zone_id}",
+            )
+        )
+
+    for entry in sitrep_entries:
+        sitrep = entry[0] if isinstance(entry, tuple) else entry
+        asset_id = _optional_int(_field(sitrep, "asset_id", default=None))
+        if asset_id is None or asset_id not in asset_locations:
+            continue
+        lat, lon, asset_label = asset_locations[asset_id]
+        sitrep_id = int(_field(sitrep, "id"))
+        level = str(_field(sitrep, "level", default="SITREP"))
+        items.append(
+            _grid_item(
+                "SITREP",
+                f"{level} #{sitrep_id}",
+                lat,
+                lon,
+                detail=f"Linked to {asset_label}",
+            )
+        )
+
+    return sorted(items, key=lambda item: (item.kind, item.label.lower(), item.reference))
 
 
 def build_create_channel_payload(name: str) -> dict[str, object]:
@@ -221,7 +317,56 @@ def _as_text(value: object) -> str:
     return str(value)
 
 
+def _field(obj: object, name: str, *, default: object = None) -> object:
+    if isinstance(obj, dict) and name in obj:
+        return obj[name]
+    if hasattr(obj, name):
+        return getattr(obj, name)
+    return default
+
+
 def _optional_int(value: object) -> int | None:
     if value in (None, ""):
         return None
     return int(typing.cast(int, value))
+
+
+def _optional_float(value: object) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(typing.cast(float, value))
+
+
+def _polygon_centroid(polygon: typing.Iterable[object]) -> tuple[float, float] | None:
+    points: list[tuple[float, float]] = []
+    for point in polygon:
+        try:
+            lat, lon = typing.cast(typing.Sequence[object], point)[:2]
+            points.append((float(lat), float(lon)))
+        except (TypeError, ValueError):
+            continue
+    if not points:
+        return None
+    return (
+        sum(lat for lat, _lon in points) / len(points),
+        sum(lon for _lat, lon in points) / len(points),
+    )
+
+
+def _grid_item(
+    kind: str,
+    label: str,
+    lat: float,
+    lon: float,
+    *,
+    detail: str,
+) -> DesktopGridReferenceItem:
+    reference = f"{kind} {label} {lat:.6f}, {lon:.6f}"
+    return DesktopGridReferenceItem(
+        kind=kind,
+        label=label,
+        reference=reference,
+        lat=lat,
+        lon=lon,
+        detail=detail,
+    )

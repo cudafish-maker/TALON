@@ -92,6 +92,9 @@ def build_map_overlays(
     *,
     sitrep_entries: typing.Iterable[object] = (),
     bounds: MapBounds | None = None,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
 ) -> MapOverlayBundle:
     assets = list(_field(context, "assets", default=[]) or [])
     zones = list(_field(context, "zones", default=[]) or [])
@@ -120,6 +123,9 @@ def build_map_overlays(
                 bounds,
                 float(_field(asset, "lat")),
                 float(_field(asset, "lon")),
+                scene_width=scene_width,
+                scene_height=scene_height,
+                scene_margin=scene_margin,
             ),
         )
         for asset in assets
@@ -133,7 +139,14 @@ def build_map_overlays(
             zone_type=str(_field(zone, "zone_type", default="custom")),
             mission_id=_optional_int(_field(zone, "mission_id", default=None)),
             points=tuple(
-                project_lat_lon(bounds, float(lat), float(lon))
+                project_lat_lon(
+                    bounds,
+                    float(lat),
+                    float(lon),
+                    scene_width=scene_width,
+                    scene_height=scene_height,
+                    scene_margin=scene_margin,
+                )
                 for lat, lon in (_field(zone, "polygon", default=[]) or [])
             ),
         )
@@ -151,6 +164,9 @@ def build_map_overlays(
                 bounds,
                 float(_field(point, "lat")),
                 float(_field(point, "lon")),
+                scene_width=scene_width,
+                scene_height=scene_height,
+                scene_margin=scene_margin,
             ),
         )
         for point in waypoints
@@ -225,10 +241,25 @@ def bounds_for_context(
     )
 
 
-def project_lat_lon(bounds: MapBounds, lat: float, lon: float) -> ProjectedPoint:
+def project_lat_lon(
+    bounds: MapBounds,
+    lat: float,
+    lon: float,
+    *,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
+) -> ProjectedPoint:
     from talon_desktop.map_tiles import scene_point_for_lat_lon
 
-    x, y = scene_point_for_lat_lon(bounds, lat, lon)
+    x, y = scene_point_for_lat_lon(
+        bounds,
+        lat,
+        lon,
+        scene_width=scene_width,
+        scene_height=scene_height,
+        scene_margin=scene_margin,
+    )
     return ProjectedPoint(lat=lat, lon=lon, x=x, y=y)
 
 

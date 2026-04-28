@@ -10,12 +10,120 @@ _Severity: CRITICAL > HIGH > MEDIUM > LOW > NOTE._
 
 | Status | Count |
 |--------|-------|
-| FIXED  | 108   |
+| FIXED  | 113   |
 | CLOSED (non-issue) | 1 |
 
 ---
 
 ## Fixed Issues
+
+### [BUG-095] PySide6 map viewport does not consistently fill available space
+- **File:** `talon_desktop/map_page.py`, `talon_desktop/map_picker.py`,
+  `talon_desktop/map_tiles.py`, `talon_desktop/map_scene_tiles.py`
+- **Severity:** MEDIUM
+- **Category:** Bug / Desktop / Map Rendering
+- **Status:** FIXED 2026-04-28
+- **Description:** The main map rendered a fixed 1000x700 scene with an
+  internal projection margin, then fit that scene into whatever space remained
+  between the side panels. Different window sizes and panel states could leave
+  inconsistent visible map extents inside the same map boundary. Rapid pan/zoom
+  gestures could also still expose dark gaps if a replacement tile frame was
+  incomplete or failed after stale tiles had been promoted.
+- **Fix:** Main map and map picker scenes now resize to the current
+  `QGraphicsView` viewport and use zero internal scene margin for live map
+  rendering. Projection, reverse projection, pan, zoom, and tile planning all
+  accept the active scene geometry, so tile coverage fills the viewport instead
+  of a fixed design rectangle. The tile renderer now keeps stale tile coverage
+  across incomplete replacement frames and trims only the oldest stale tiles.
+  Added regressions for custom-scene tile coverage, custom-scene coordinate
+  round trips, and Qt map scene resize behavior.
+
+---
+
+### [BUG-094] PySide6 server map lacks the left-side map panel
+- **File:** `talon_desktop/map_page.py`, `talon_desktop/theme.py`
+- **Severity:** MEDIUM
+- **Category:** Bug / Desktop / Map Layout
+- **Status:** FIXED 2026-04-28
+- **Description:** The desktop map screen was intended to have the same
+  side-panel structure in server and client modes, but the PySide6 map page did
+  not provide a shared left/right panel layout on the map surface. This left the
+  server map visually out of alignment with the client map design and left no
+  stable side-panel slots for upcoming map workflows.
+- **Fix:** Added mode-independent map side panels to `MapPage`: a left assets
+  panel and a right context panel containing selection details, missions, and
+  recent linked SITREPs. Both panels have persistent edge controls and collapse
+  toward the left/right side respectively. Added a Qt regression that verifies
+  the panel layout and collapse behavior in both client and server modes.
+
+---
+
+### [BUG-093] PySide6 map flickers or blanks during heavy pan and zoom gestures
+- **File:** `talon_desktop/map_page.py`, `talon_desktop/map_picker.py`,
+  `talon_desktop/map_scene_tiles.py`
+- **Severity:** MEDIUM
+- **Category:** Bug / Desktop / Map Rendering
+- **Status:** FIXED 2026-04-28
+- **Description:** The main map and shared coordinate picker cleared the full
+  `QGraphicsScene`, invalidated the current tile generation, and requested a
+  new tile set on every pan or wheel redraw. Large scrolls or rapid drags could
+  leave only the dark background visible until network tile replies completed,
+  and repeated input could also issue redundant tile requests that were already
+  obsolete by the time they returned.
+- **Fix:** Added shared Qt tile-scene rendering that promotes the previous tile
+  layer to a stale backdrop until replacement tiles finish, uses a decoded
+  pixmap LRU cache above Qt's disk cache, requests cached tiles before the
+  network, and aborts superseded replies. Map wheel and drag events now
+  coalesce into short render batches, and geographic pan/zoom redraws no longer
+  refit the graphics view on each frame. Added a Qt regression for stale tile
+  retention.
+
+---
+
+### [BUG-092] PySide6 map click-drag does not pan rendered map widgets
+- **File:** `talon_desktop/map_page.py`, `talon_desktop/map_picker.py`,
+  `talon_desktop/map_tiles.py`
+- **Severity:** MEDIUM
+- **Category:** Bug / Desktop / Map Interaction
+- **Status:** FIXED 2026-04-28
+- **Description:** The PySide6 main map and shared coordinate picker enabled
+  Qt `ScrollHandDrag`, but each graphics view fits a fixed scene to the
+  viewport. As a result, click-drag had no meaningful scrollable surface to
+  move. In the map picker, the left-click handler also consumed the press
+  immediately to add a coordinate, leaving no practical drag gesture.
+- **Fix:** Map drag now emits scene-space pan deltas and moves the active
+  geographic `MapBounds` through the same Web Mercator projection helpers used
+  by wheel zoom. The main map and shared picker rebuild overlays and tile plans
+  for the new bounds after each pan. Single-click selection on the main map and
+  point placement in the picker are preserved on mouse release when no drag
+  threshold was crossed. Added a regression for pan direction and bounds
+  stability.
+
+---
+
+### [BUG-091] Server-local updates can remain buffered or fail FK application while deletes sync immediately
+- **File:** `talon_core/session.py`, `talon_core/server/net_handler.py`,
+  `talon_core/network/registry.py`, `talon_core/network/client_components.py`
+- **Severity:** HIGH
+- **Category:** Bug / Sync / Server-to-client Push
+- **Status:** FIXED 2026-04-28
+- **Description:** Server-authored changes such as chat messages and asset
+  verification updates used the coalesced `push_update` buffer, while server
+  deletes sent `push_delete` synchronously. If the update flush timer did not
+  run promptly, connected clients could miss visible server-origin updates even
+  though deletes appeared immediately and client-origin pushes reached the
+  server. Some asset updates could also reach the client but fail local
+  application with `FOREIGN KEY constraint failed` when a referenced mission or
+  operator row was not present yet.
+- **Fix:** `TalonCoreSession` now flushes queued server `push_update` records
+  after local server command commits. The normal delayed buffer still preserves
+  client-push `push_ack` ordering for records accepted from clients. Sync and
+  coalesced push ordering now sends parent tables before child tables, and a
+  mid-session FK apply miss requests a fresh dependency sync over the active
+  link instead of permanently dropping the update. Added regressions for timer
+  bypass, parent-before-child asset sync, and FK-triggered follow-up sync.
+
+---
 
 ### [BUG-090] PySide6 desktop misses network-applied refresh events
 - **File:** `talon_core/session.py`, `talon_core/services/events.py`, `talon_desktop/qt_events.py`

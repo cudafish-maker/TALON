@@ -57,6 +57,14 @@ package boundary clean and avoiding new UI-to-backend bypasses.
 
 ## Latest Verification
 
+- 2026-04-28: Fixed server-local command push flushing so server-authored chat
+  messages and asset verification updates are sent to connected clients through
+  `push_update` without depending solely on the coalescing timer. Sync and
+  coalesced push order now sends parent tables before child tables, and clients
+  request a fresh dependency sync when a live update hits a local foreign-key
+  gap. Client-push ACK ordering remains delayed. Focused verification
+  `pytest -q tests/test_sync.py tests/test_core_session.py tests/test_registry.py`
+  passed, 71 tests; full `pytest -q` passed, 279 passed and 1 skipped.
 - 2026-04-27: Added the missing public
   `ClientSyncManager.push_record_pending()` wrapper used by
   `TalonCoreSession` client outbox sync side effects, fixing client chat sends
