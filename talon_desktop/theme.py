@@ -332,6 +332,50 @@ def _stylesheet() -> str:
         border-left: 3px solid #8fbcbb;
     }
 
+    QWidget#navRail {
+        background: #0a0f11;
+        border: 0;
+    }
+
+    QWidget#navRailContent {
+        background: #0a0f11;
+        border-right: 1px solid #1f2b30;
+    }
+
+    QToolButton#navRailButton {
+        background: transparent;
+        color: #aebbc2;
+        border: 0;
+        border-left: 3px solid transparent;
+        border-radius: 4px;
+        padding: 8px 10px;
+        text-align: left;
+    }
+
+    QToolButton#navRailButton:hover {
+        background: #151f23;
+        color: #d8dee9;
+    }
+
+    QToolButton#navRailButton:checked {
+        background: #1b2e33;
+        color: #f6fbfb;
+        border-left: 3px solid #8fbcbb;
+    }
+
+    QToolButton#navRailToggle {
+        background: #10181b;
+        color: #8fbcbb;
+        border: 0;
+        border-right: 1px solid #1f2b30;
+        font-weight: 700;
+    }
+
+    QToolButton#navRailToggle:hover {
+        background: #19262b;
+        color: #f6fbfb;
+    }
+
     QTableWidget {
         gridline-color: #253238;
         alternate-background-color: #141d20;

@@ -44,6 +44,7 @@ from talon_desktop.map_tiles import (
     MAX_TILE_REQUESTS,
     TILE_LAYERS_BY_KEY,
     build_tile_plan,
+    lat_lon_for_scene_point,
     scene_point_for_lat_lon,
 )
 from talon_desktop.missions import (
@@ -108,6 +109,11 @@ try:
     ]
     assert actual == expected, (actual, expected)
     assert set(window._pages) == set(expected), (window._pages.keys(), expected)
+    assert window.nav.is_expanded() is True
+    window.nav.toggle()
+    assert window.nav.is_expanded() is False
+    window.nav.toggle()
+    assert window.nav.is_expanded() is True
     if navigate:
         for index, key in enumerate(expected):
             window.nav.setCurrentRow(index)
@@ -855,6 +861,31 @@ def test_map_projection_keeps_coordinates_inside_scene() -> None:
 
     assert 0 <= point.x <= 1000
     assert 0 <= point.y <= 700
+
+
+def test_map_projection_round_trips_scene_points() -> None:
+    context = types.SimpleNamespace(
+        assets=[
+            types.SimpleNamespace(
+                id=1,
+                label="Relay",
+                category="radio",
+                verified=True,
+                mission_id=None,
+                lat=39.953,
+                lon=-75.163,
+            ),
+        ],
+        zones=[],
+        waypoints=[],
+        missions=[],
+    )
+    overlays = build_map_overlays(context)
+    x, y = scene_point_for_lat_lon(overlays.bounds, 39.953, -75.163)
+    lat, lon = lat_lon_for_scene_point(overlays.bounds, x, y)
+
+    assert lat == pytest.approx(39.953, abs=0.000001)
+    assert lon == pytest.approx(-75.163, abs=0.000001)
 
 
 def test_mission_create_payload_parses_assets_ao_and_route() -> None:

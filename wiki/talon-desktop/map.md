@@ -19,17 +19,19 @@ map tiles underneath local operational overlays.
 
 - Mission filter scopes route and AO overlays.
 - OSM, TOPO, and Satellite radio buttons switch the visible base layer.
+- Mouse-wheel scrolling zooms the map in and out around the cursor.
 - Selecting assets, mission routes, zones, waypoints, or asset-linked SITREPs
-  opens context detail.
-- Asset list/map picker controls remain open.
-- Drawing tools for AO polygons, waypoint routes, and asset placement remain
-  open.
+  uses item tooltips/details without a persistent side panel.
+- Asset creation/editing includes an OSM map picker for click-to-place asset
+  coordinates.
+- Drawing tools for AO polygons and waypoint routes remain open.
 
 ## Current Implementation
 
 - `talon_desktop.map_data` provides Qt-free projection and overlay helpers.
 - `talon_desktop.map_tiles` provides Qt-free raster tile layer definitions,
-  Web Mercator projection helpers, and visible-tile planning.
+  Web Mercator projection helpers, reverse click-to-coordinate projection, and
+  visible-tile planning.
 - `talon_desktop.map_page.MapPage` renders a Qt `QGraphicsScene` operational
   surface from `TalonCoreSession.read_model("map.context")`.
 - The page uses Qt network loading for visible OSM, TOPO, and Satellite tiles,

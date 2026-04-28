@@ -129,6 +129,33 @@ def scene_point_for_lat_lon(
     return x, y
 
 
+def lat_lon_for_scene_point(
+    bounds: MapBounds,
+    x: float,
+    y: float,
+    *,
+    zoom: int | None = None,
+) -> tuple[float, float]:
+    bounds = normalise_bounds(bounds)
+    z = zoom if zoom is not None else choose_zoom(bounds)
+    left, top, span_x, span_y = _world_view(bounds, z)
+    usable_width = SCENE_WIDTH - (SCENE_MARGIN * 2)
+    usable_height = SCENE_HEIGHT - (SCENE_MARGIN * 2)
+    ratio_x = max(0.0, min(1.0, (x - SCENE_MARGIN) / usable_width))
+    ratio_y = max(0.0, min(1.0, (y - SCENE_MARGIN) / usable_height))
+    world_x = left + (ratio_x * span_x)
+    world_y = top + (ratio_y * span_y)
+    return lat_lon_for_world_pixel(world_x, world_y, z)
+
+
+def lat_lon_for_world_pixel(x: float, y: float, zoom: int) -> tuple[float, float]:
+    scale = TILE_SIZE * (2**zoom)
+    lon = (x / scale * 360.0) - 180.0
+    mercator = math.pi - ((2.0 * math.pi * y) / scale)
+    lat = math.degrees(math.atan(math.sinh(mercator)))
+    return _clamp_lat(lat), max(-180.0, min(180.0, lon))
+
+
 def build_tile_plan(layer: TileLayer, bounds: MapBounds) -> TilePlan:
     bounds = normalise_bounds(bounds)
     zoom = choose_zoom(bounds, min_zoom=layer.min_zoom, max_zoom=layer.max_zoom)

@@ -12,6 +12,21 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-27: `pytest -q` passed, 274 tests and 1 skipped after adding the
+  asset create/edit OSM map picker and click-to-coordinate projection.
+- 2026-04-27: `pytest -q tests/test_desktop_shell.py -k "asset or map or qt"`
+  passed, 23 tests, covering the new map projection round trip alongside
+  desktop asset/map/Qt smoke coverage.
+- 2026-04-27: `QT_QPA_PLATFORM=offscreen .venv/bin/python -c "...AssetLocationMapDialog..."`
+  passed, confirming the asset map picker constructs and records a selected
+  location under offscreen Qt.
+- 2026-04-27: `pytest -q tests/test_desktop_shell.py -k "qt or theme"` passed,
+  7 tests, after replacing the left text navigation list with a persistent
+  collapsible icon rail.
+- 2026-04-27: `pytest -q` passed, 273 tests and 1 skipped after collapsible
+  icon navigation rail wiring.
+- 2026-04-27: `pytest -q` passed, 273 tests and 1 skipped after removing the
+  persistent map side panel and adding mouse-wheel map zoom.
 - 2026-04-27: `pytest -q` passed, 273 tests and 1 skipped after narrowing
   operator-domain refresh routing while preserving network-applied operator
   refreshes for Chat.

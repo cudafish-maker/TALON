@@ -12,10 +12,11 @@ adapter around `talon-core`. The SITREP page now has a Qt feed, composer
 templates, asset/mission link selectors,
 server-only delete control, opt-in audio state, and a non-modal dashboard alert
 overlay for high-severity reports. The Assets page now has a Qt table, detail
-panel, create/edit dialog, verification controls, client deletion requests, and
-server hard-delete command wiring. The Map page now renders live OSM, TOPO, and
-Satellite raster base layers with radio-button selection plus local operational
-overlays for assets, zones, mission routes/waypoints, and asset-linked SITREPs.
+panel, create/edit dialog, map placement picker, verification controls, client
+deletion requests, and server hard-delete command wiring. The Map page now
+renders live OSM, TOPO, and Satellite raster base layers with radio-button
+selection plus local operational overlays for assets, zones, mission
+routes/waypoints, and asset-linked SITREPs.
 The Missions page now has list/detail, create, requested asset, AO/route input,
 and server lifecycle controls. The Chat page now has channel/message navigation,
 composer, channel creation, direct-message creation, server delete controls,
@@ -28,9 +29,10 @@ key/identity status. After physical split hardening, desktop code imports
 `talon_core` directly instead of legacy `talon/` backend shims. Kivy is retired
 from active desktop CI, dependency extras, and publishing. The new desktop
 client now has a centralized PySide6 dark operational theme for the
-main shell, navigation rail, dialogs, forms, tables, text panels, and status
-surfaces, plus durable local desktop settings for window geometry, splitter
-positions, table layouts, and the last selected section. A session log buffer,
+main shell, collapsible icon navigation rail, dialogs, forms, tables, text
+panels, and status surfaces, plus durable local desktop settings for window
+geometry, splitter positions, table layouts, rail expanded/collapsed state, and
+the last selected section. A session log buffer,
 status-bar Logs affordance, and copyable log dialog now surface current-session
 desktop/core warnings and errors. It has passed Linux Breakpoint A
 development-shell validation:

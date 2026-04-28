@@ -35,6 +35,38 @@ _ZONE_COLORS = {
 }
 
 
+class MapGraphicsView(QtWidgets.QGraphicsView):
+    """Graphics view with standard mouse-wheel zoom behavior."""
+
+    def __init__(self, scene: QtWidgets.QGraphicsScene) -> None:
+        super().__init__(scene)
+        self._zoom_steps = 0
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
+
+    def reset_zoom(self) -> None:
+        self._zoom_steps = 0
+        self.resetTransform()
+        scene = self.scene()
+        if scene is not None:
+            self.fitInView(scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+        delta = event.angleDelta().y()
+        if delta == 0:
+            event.ignore()
+            return
+        direction = 1 if delta > 0 else -1
+        next_steps = max(-8, min(16, self._zoom_steps + direction))
+        if next_steps == self._zoom_steps:
+            event.accept()
+            return
+        factor = 1.2 if direction > 0 else 1 / 1.2
+        self.scale(factor, factor)
+        self._zoom_steps = next_steps
+        event.accept()
+
+
 class MapPage(QtWidgets.QWidget):
     """Rendered operational map driven by core map read models."""
 
@@ -83,27 +115,17 @@ class MapPage(QtWidgets.QWidget):
         top_row.addWidget(self.mission_filter)
         top_row.addWidget(self.refresh_button)
 
-        self.view = QtWidgets.QGraphicsView(self._scene)
+        self.view = MapGraphicsView(self._scene)
         self.view.setRenderHints(
             QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing
         )
-        self.view.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
+        self.view.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
         self.view.setMinimumSize(720, 480)
-
-        self.context_panel = QtWidgets.QTextEdit()
-        self.context_panel.setReadOnly(True)
-        self.context_panel.setMinimumWidth(300)
-
-        body = QtWidgets.QSplitter()
-        body.addWidget(self.view)
-        body.addWidget(self.context_panel)
-        body.setStretchFactor(0, 3)
-        body.setStretchFactor(1, 1)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
         layout.addWidget(self.summary)
-        layout.addWidget(body, stretch=1)
+        layout.addWidget(self.view, stretch=1)
 
     def refresh(self) -> None:
         selected_mission_id = self._selected_mission_id()
@@ -129,7 +151,6 @@ class MapPage(QtWidgets.QWidget):
             f"{len(self._bundle.waypoints)} waypoints, "
             f"{len(self._bundle.sitreps)} linked SITREPs."
         )
-        self.context_panel.setPlainText("Select a map overlay.")
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
         _ = action, record_id
@@ -153,7 +174,7 @@ class MapPage(QtWidgets.QWidget):
         for sitrep in bundle.sitreps:
             self._draw_sitrep(sitrep)
         self._scene.setSceneRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
-        self.view.fitInView(self._scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
+        self.view.reset_zoom()
 
     def _draw_background(self) -> None:
         self._scene.addRect(
@@ -369,7 +390,7 @@ class MapPage(QtWidgets.QWidget):
         key = selected[-1].data(0)
         detail = self._overlay_details.get(str(key))
         if detail:
-            self.context_panel.setPlainText(detail)
+            _log.debug("Map overlay selected: %s", detail.replace("\n", " | "))
 
     def _selected_mission_id(self) -> int | None:
         index = self.mission_filter.currentIndex()

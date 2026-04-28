@@ -40,7 +40,8 @@ The desktop target should keep the current operational density:
   behavior.
 - `talon_desktop.settings` persists desktop-local UI preferences with
   `QSettings`, including main window geometry/state, root and page splitter
-  state, table column/header state, and the last selected navigation section.
+  state, table column/header state, navigation rail expanded/collapsed state,
+  and the last selected navigation section.
 - `talon_desktop.logs` and `talon_desktop.log_view` provide a bounded
   current-session log buffer, a status-bar Logs button with warning/error count,
   and a copyable log dialog for desktop/core runtime diagnostics.
@@ -53,7 +54,8 @@ The desktop target should keep the current operational density:
   and client unlock to the enrollment prompt, including visible client
   Reticulum startup failure surfacing.
 - The main window exposes Dashboard, Map, SITREPs, Assets, Missions, Chat,
-  Documents, Operators, and server-only Enrollment/Clients/Audit/Keys sections.
+  Documents, Operators, and server-only Enrollment/Clients/Audit/Keys sections
+  through a persistent collapsible icon navigation rail.
 - The Dashboard section renders the core `dashboard.summary` and `sync.status`
   read models instead of calculating counts in desktop code.
 - `talon_desktop.qt_events.CoreEventBridge` adapts core domain events into Qt
@@ -67,8 +69,8 @@ The desktop target should keep the current operational density:
   the main content area. FLASH and FLASH_OVERRIDE audio remains gated by the
   persisted core audio opt-in setting.
 - `talon_desktop.asset_page.AssetPage` replaces the generic Assets placeholder
-  with a table, detail panel, create/edit dialog, verification controls, and
-  deletion-request/server-delete command wiring.
+  with a table, detail panel, create/edit dialog, map placement picker,
+  verification controls, and deletion-request/server-delete command wiring.
 - `talon_desktop.map_page.MapPage` replaces the generic Map placeholder with a
   Qt rendered map surface: OSM, TOPO, and Satellite raster base layers selectable
   by radio button, with operational overlays for assets, zones, routes,
@@ -94,8 +96,7 @@ The desktop target should keep the current operational density:
 
 - Major function pages have initial command-backed workflows and offscreen smoke
   coverage; remaining gaps are parity refinements and packaging validation.
-- Map drawing tools for AO polygons, waypoint routes, and asset placement remain
-  open.
+- Map drawing tools for AO polygons and waypoint routes remain open.
 - Linux package validation and Windows package validation are still pending.
 
 ## Migration Rule

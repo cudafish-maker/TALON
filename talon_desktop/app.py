@@ -311,6 +311,155 @@ class DesktopPage(QtWidgets.QWidget):
         return "Core session and operational summary.", rows
 
 
+class _NavItemProxy:
+    def __init__(self, section: DesktopNavItem) -> None:
+        self._section = section
+
+    def data(self, role: int) -> str | None:
+        if role == QtCore.Qt.UserRole:
+            return self._section.key
+        return None
+
+
+class DesktopNavRail(QtWidgets.QWidget):
+    """Persistent collapsible icon rail for primary desktop navigation."""
+
+    currentRowChanged = QtCore.Signal(int)
+
+    _COLLAPSED_WIDTH = 64
+    _EXPANDED_WIDTH = 210
+    _TAB_WIDTH = 16
+
+    def __init__(
+        self,
+        sections: typing.Iterable[DesktopNavItem],
+        *,
+        mode: str,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("navRail")
+        self._sections = tuple(sections)
+        self._items = tuple(_NavItemProxy(section) for section in self._sections)
+        self._buttons: list[QtWidgets.QToolButton] = []
+        self._current_row = -1
+        self._expanded = True
+
+        self._button_group = QtWidgets.QButtonGroup(self)
+        self._button_group.setExclusive(True)
+
+        self._content = QtWidgets.QWidget()
+        self._content.setObjectName("navRailContent")
+        self._content_layout = QtWidgets.QVBoxLayout(self._content)
+        self._content_layout.setContentsMargins(8, 14, 8, 10)
+        self._content_layout.setSpacing(6)
+
+        self._title = QtWidgets.QLabel("T.A.L.O.N.")
+        self._title.setObjectName("sideTitle")
+        self._mode_label = QtWidgets.QLabel(f"{mode.upper()} NODE")
+        self._mode_label.setObjectName("sideMode")
+        self._content_layout.addWidget(self._title)
+        self._content_layout.addWidget(self._mode_label)
+        self._content_layout.addSpacing(12)
+
+        for index, section in enumerate(self._sections):
+            button = QtWidgets.QToolButton()
+            button.setObjectName("navRailButton")
+            button.setCheckable(True)
+            button.setToolTip(section.label)
+            button.setIcon(self._icon_for(section.key))
+            button.setText(section.label)
+            button.setAutoRaise(True)
+            button.clicked.connect(lambda _checked=False, row=index: self.setCurrentRow(row))
+            self._button_group.addButton(button, index)
+            self._buttons.append(button)
+            self._content_layout.addWidget(button)
+
+        self._content_layout.addStretch(1)
+
+        self._toggle_button = QtWidgets.QToolButton()
+        self._toggle_button.setObjectName("navRailToggle")
+        self._toggle_button.setAutoRaise(True)
+        self._toggle_button.clicked.connect(self.toggle)
+
+        root = QtWidgets.QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._content)
+        root.addWidget(self._toggle_button)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
+        self._apply_expanded_state()
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def item(self, index: int) -> _NavItemProxy:
+        return self._items[index]
+
+    def currentItem(self) -> _NavItemProxy | None:
+        if 0 <= self._current_row < len(self._items):
+            return self._items[self._current_row]
+        return None
+
+    def currentRow(self) -> int:
+        return self._current_row
+
+    def is_expanded(self) -> bool:
+        return self._expanded
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._expanded = bool(expanded)
+        self._apply_expanded_state()
+
+    def toggle(self) -> None:
+        self.set_expanded(not self._expanded)
+
+    def setCurrentRow(self, row: int) -> None:
+        if row < 0 or row >= len(self._buttons):
+            return
+        if row == self._current_row:
+            return
+        self._current_row = row
+        self._buttons[row].setChecked(True)
+        self.currentRowChanged.emit(row)
+
+    def _apply_expanded_state(self) -> None:
+        content_width = self._EXPANDED_WIDTH if self._expanded else self._COLLAPSED_WIDTH
+        self._content.setFixedWidth(content_width)
+        self._toggle_button.setFixedWidth(self._TAB_WIDTH)
+        self.setFixedWidth(content_width + self._TAB_WIDTH)
+        self._title.setVisible(self._expanded)
+        self._mode_label.setVisible(self._expanded)
+        self._toggle_button.setText("<" if self._expanded else ">")
+        style = (
+            QtCore.Qt.ToolButtonTextBesideIcon
+            if self._expanded
+            else QtCore.Qt.ToolButtonIconOnly
+        )
+        for button in self._buttons:
+            button.setToolButtonStyle(style)
+            button.setFixedHeight(40)
+            button.setIconSize(QtCore.QSize(22, 22))
+
+    def _icon_for(self, key: str) -> QtGui.QIcon:
+        style = self.style()
+        icons = {
+            "dashboard": QtWidgets.QStyle.SP_ComputerIcon,
+            "map": QtWidgets.QStyle.SP_DialogOpenButton,
+            "sitreps": QtWidgets.QStyle.SP_MessageBoxWarning,
+            "assets": QtWidgets.QStyle.SP_DriveNetIcon,
+            "missions": QtWidgets.QStyle.SP_ArrowForward,
+            "chat": QtWidgets.QStyle.SP_FileDialogDetailedView,
+            "documents": QtWidgets.QStyle.SP_FileIcon,
+            "operators": QtWidgets.QStyle.SP_DirHomeIcon,
+            "enrollment": QtWidgets.QStyle.SP_FileDialogNewFolder,
+            "clients": QtWidgets.QStyle.SP_DirIcon,
+            "audit": QtWidgets.QStyle.SP_FileDialogInfoView,
+            "keys": QtWidgets.QStyle.SP_DialogYesButton,
+        }
+        return style.standardIcon(icons.get(key, QtWidgets.QStyle.SP_FileIcon))
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(
         self,
@@ -333,22 +482,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(f"T.A.L.O.N. Desktop [{core.mode.upper()}]")
         self.resize(1180, 760)
 
-        side_bar = QtWidgets.QWidget()
-        side_bar.setObjectName("sideBar")
-        side_bar.setFixedWidth(210)
-        side_title = QtWidgets.QLabel("T.A.L.O.N.")
-        side_title.setObjectName("sideTitle")
-        side_mode = QtWidgets.QLabel(f"{core.mode.upper()} NODE")
-        side_mode.setObjectName("sideMode")
-
-        self.nav = QtWidgets.QListWidget()
-        self.nav.setObjectName("navigationList")
+        sections = navigation_items(core.mode)
+        self.nav = DesktopNavRail(sections, mode=core.mode)
         self.stack = QtWidgets.QStackedWidget()
 
-        for section in navigation_items(core.mode):
-            item = QtWidgets.QListWidgetItem(section.label)
-            item.setData(QtCore.Qt.UserRole, section.key)
-            self.nav.addItem(item)
+        for section in sections:
             if section.key == "sitreps":
                 page = SitrepPage(core)
             elif section.key == "assets":
@@ -376,17 +514,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._pages[section.key] = page
             self.stack.addWidget(page)
 
-        side_layout = QtWidgets.QVBoxLayout(side_bar)
-        side_layout.setContentsMargins(14, 16, 14, 12)
-        side_layout.setSpacing(8)
-        side_layout.addWidget(side_title)
-        side_layout.addWidget(side_mode)
-        side_layout.addSpacing(8)
-        side_layout.addWidget(self.nav, stretch=1)
-
         self._root_splitter = QtWidgets.QSplitter()
         self._root_splitter.setObjectName("mainSplitter")
-        self._root_splitter.addWidget(side_bar)
+        self._root_splitter.addWidget(self.nav)
         self._root_splitter.addWidget(self.stack)
         self._root_splitter.setStretchFactor(1, 1)
         self.setCentralWidget(self._root_splitter)
@@ -452,6 +582,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._settings,
             self._setting_key("splitters", "main"),
         )
+        self.nav.set_expanded(
+            str(self._settings.value(self._setting_key("nav_expanded"), "true")).lower()
+            != "false"
+        )
         for section_key, page in self._pages.items():
             self._restore_page_state(section_key, page)
 
@@ -462,6 +596,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._root_splitter,
             self._settings,
             self._setting_key("splitters", "main"),
+        )
+        self._settings.setValue(
+            self._setting_key("nav_expanded"),
+            "true" if self.nav.is_expanded() else "false",
         )
         for section_key, page in self._pages.items():
             self._save_page_state(section_key, page)
