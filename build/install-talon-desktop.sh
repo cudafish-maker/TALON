@@ -365,6 +365,44 @@ EOF
     log "Created config: $config_path"
 }
 
+write_default_rns_config() {
+    local rns_dir=$1
+    local role=$2
+    local config_path=$rns_dir/config
+    local enable_transport="False"
+
+    [[ $role == "server" ]] && enable_transport="True"
+
+    mkdir -p "$rns_dir"
+    chmod 700 "$rns_dir"
+
+    if [[ -f $config_path ]]; then
+        log "Keeping existing Reticulum config: $config_path"
+        chmod 600 "$config_path"
+        return 0
+    fi
+
+    cat > "$config_path" <<EOF
+[reticulum]
+  enable_transport = $enable_transport
+  share_instance = No
+
+[logging]
+  loglevel = 4
+
+[interfaces]
+  [[TALON AutoInterface]]
+    type = AutoInterface
+    enabled = Yes
+
+# TCP, Yggdrasil, I2P, and RNode interfaces are deployment-specific.
+# Add matching TCPServerInterface/TCPClientInterface stanzas here when needed.
+EOF
+
+    chmod 600 "$config_path"
+    log "Created Reticulum config: $config_path"
+}
+
 write_launcher_wrapper() {
     local target_dir=$1
     local bin_dir=$2
@@ -833,6 +871,7 @@ fi
 
 TARGET_DIR=$(install_bundle "$SOURCE_BUNDLE_DIR" "$INSTALL_ROOT")
 write_default_config "$CONFIG_PATH" "$ARTIFACT_ROLE" "$DATA_DIR" "$RNS_DIR" "$DOCUMENTS_DIR"
+write_default_rns_config "$RNS_DIR" "$ARTIFACT_ROLE"
 
 if [[ $INSTALL_BIN == "1" ]]; then
     write_launcher_wrapper "$TARGET_DIR" "$BIN_DIR" "$CONFIG_PATH" "$STATE_DIR" "$LAUNCHER_NAME" "$ARTIFACT_ROLE"

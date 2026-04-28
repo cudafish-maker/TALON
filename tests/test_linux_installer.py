@@ -225,6 +225,11 @@ def test_desktop_client_artifact_installs_only_client_launcher_and_entry(tmp_pat
     assert not (tmp_path / "xdg-data" / "applications" / "talon-desktop-server.desktop").exists()
     assert (tmp_path / "home" / ".talon" / "talon.ini").is_file()
     assert "mode = client" in (tmp_path / "home" / ".talon" / "talon.ini").read_text(encoding="utf-8")
+    rns_config = tmp_path / "home" / ".talon" / "reticulum" / "config"
+    assert rns_config.is_file()
+    rns_text = rns_config.read_text(encoding="utf-8")
+    assert "enable_transport = False" in rns_text
+    assert "share_instance = No" in rns_text
     launcher = (tmp_path / "bin" / "talon-desktop-client").read_text(encoding="utf-8")
     assert f"export TALON_CONFIG='{tmp_path / 'home' / '.talon' / 'talon.ini'}'" in launcher
 
@@ -243,6 +248,11 @@ def test_desktop_server_artifact_installs_only_server_launcher_and_entry(tmp_pat
     assert f"Exec={tmp_path / 'bin' / 'talon-desktop-server'}" in text
     assert (tmp_path / "home" / ".talon-server" / "talon.ini").is_file()
     assert "mode = server" in (tmp_path / "home" / ".talon-server" / "talon.ini").read_text(encoding="utf-8")
+    rns_config = tmp_path / "home" / ".talon-server" / "reticulum" / "config"
+    assert rns_config.is_file()
+    rns_text = rns_config.read_text(encoding="utf-8")
+    assert "enable_transport = True" in rns_text
+    assert "share_instance = No" in rns_text
 
 
 def test_desktop_installer_rejects_mode_option(tmp_path):
@@ -263,11 +273,14 @@ def test_desktop_same_role_reinstall_preserves_config_without_confirmation(tmp_p
     bundle = _fake_desktop_bundle(tmp_path, "client")
     _run_desktop_install(tmp_path, bundle, env=env)
     config = tmp_path / "home" / ".talon" / "talon.ini"
+    rns_config = tmp_path / "home" / ".talon" / "reticulum" / "config"
     config.write_text("custom-client-config\n", encoding="utf-8")
+    rns_config.write_text("custom-rns-config\n", encoding="utf-8")
 
     _run_desktop_install(tmp_path, bundle, env=env)
 
     assert config.read_text(encoding="utf-8") == "custom-client-config\n"
+    assert rns_config.read_text(encoding="utf-8") == "custom-rns-config\n"
 
 
 def test_desktop_opposite_role_install_fails_without_confirmation(tmp_path):
@@ -366,3 +379,4 @@ def test_desktop_profile_and_config_permissions_are_restricted(tmp_path):
     assert stat.S_IMODE((profile / "reticulum").stat().st_mode) == 0o700
     assert stat.S_IMODE((profile / "documents").stat().st_mode) == 0o700
     assert stat.S_IMODE(config.stat().st_mode) == 0o600
+    assert stat.S_IMODE((profile / "reticulum" / "config").stat().st_mode) == 0o600
