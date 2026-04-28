@@ -11,6 +11,11 @@ platform split.
 - Enrollment token format: `TOKEN:SERVER_HASH`.
 - Enrollment `rns_hash` validation is bounded to the installed Reticulum
   identity hash length rather than a hard-coded legacy width.
+- Client links call `link.identify(identity)` before sending TALON payloads.
+  The server derives operator authorization from the identified link identity,
+  not from JSON payload identity fields.
+- Enrollment payload `rns_hash` and request `operator_rns_hash` are optional
+  legacy compatibility fields and are ignored for authorization.
 - Persistent broadband link for sync, heartbeat, push, revocation, and document
   requests.
 - LoRa polling fallback at 120 seconds.
@@ -37,6 +42,11 @@ platform split.
   point used by the facade for immediate chat/SITREP/asset push attempts.
 - Tombstone sync for deletes.
 - Client document fetch via `document_request` and resource-backed response.
+- Server-side resource callbacks reject unsolicited resources; clients accept
+  document resources only for pending requests and enforce
+  `MAX_DOCUMENT_SIZE_BYTES` before reading resource data into memory.
+- Shared chunk framing caps encoded chunk size, decoded chunk size, and total
+  reassembled bytes, closing links that exceed protocol budgets.
 
 ## Synced Tables
 
@@ -53,6 +63,22 @@ platform split.
 | `documents` | Metadata | Plaintext fetch requires explicit request |
 | `enrollment_tokens` | No | Server-only |
 | `audit_log` | No | Server-only |
+
+## Client Push Admission
+
+Client push is limited to explicit server validators for `assets`, `sitreps`,
+`missions`, `zones`, and `messages`.
+
+- Server-controlled client payload fields are dropped, including ids,
+  ownership, versions, timestamps, verification state, mission workflow status,
+  and sync state.
+- Ownership is forced from the authenticated operator context.
+- Client-created missions are forced to `pending_approval`.
+- Domain validation covers asset category and coordinates, SITREP level, zone
+  polygons, message body/channel, mission titles, JSON fields, and referenced
+  rows where applicable.
+- Invalid client-push records receive clear `push_ack` rejection entries keyed
+  by their valid UUIDs.
 
 ## Message Families
 

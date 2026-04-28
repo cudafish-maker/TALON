@@ -32,6 +32,7 @@ import RNS
 
 from talon_core.constants import RNS_APP_NAME, RNS_SERVER_ASPECT
 from talon_core.server.net_components import (
+    AuthenticatedOperator,
     ServerActiveClients,
     ServerLinkRouter,
     ServerMessageHandlers,
@@ -143,6 +144,9 @@ class ServerNetHandler:
         # operator_rns_hash → persistent RNS.Link (broadband clients)
         self._active_links: dict[str, RNS.Link] = {}
         self._links_lock = threading.Lock()
+        self._link_identity_hashes: dict[int, str] = {}
+        self._link_auth: dict[int, AuthenticatedOperator] = {}
+        self._auth_lock = threading.Lock()
         self._chunk_reassembler = ChunkReassembler(logger=_log)
         # Compatibility aliases for existing tests and diagnostic inspection.
         self._chunk_buffers = self._chunk_reassembler.buffers
@@ -186,11 +190,11 @@ class ServerNetHandler:
     def start(self) -> None:
         """Create and announce the server destination. Must be called after the DB is open."""
         from talon_core.config import get_data_dir
-        from talon_core.crypto.identity import load_or_create_identity
+        from talon_core.crypto.identity import load_or_create_protected_identity
 
         data_dir = get_data_dir(self._cfg)
         identity_path = data_dir / "server.identity"
-        identity = load_or_create_identity(identity_path)
+        identity = load_or_create_protected_identity(identity_path, self._db_key)
 
         dest = RNS.Destination(
             identity,
@@ -204,7 +208,8 @@ class ServerNetHandler:
         self._destination = dest
 
         dest_hash_hex = dest.hash.hex()
-        _log.info("Server sync destination announced: %s", dest_hash_hex)
+        _log.info("Server sync destination announced: %s", dest_hash_hex[:12])
+        _log.debug("Full server sync destination hash: %s", dest_hash_hex)
 
         try:
             with self._lock:
@@ -219,6 +224,9 @@ class ServerNetHandler:
     def stop(self) -> None:
         """Tear down all active links and deregister the destination."""
         self._active_clients_component.close_all()
+        with self._auth_lock:
+            self._link_identity_hashes.clear()
+            self._link_auth.clear()
         self._destination = None
         _log.info("ServerNetHandler stopped")
 
@@ -244,9 +252,32 @@ class ServerNetHandler:
 
     def _on_link_closed(self, link: RNS.Link) -> None:
         self._link_router.on_link_closed(link)
+        with self._auth_lock:
+            self._link_identity_hashes.pop(id(link), None)
+            self._link_auth.pop(id(link), None)
 
     def _on_packet(self, link: RNS.Link, data: bytes, _packet) -> None:
         self._link_router.on_packet(link, data, _packet)
+
+    def _on_remote_identified(self, link: RNS.Link, identity: RNS.Identity) -> None:
+        self._remember_remote_identity(link, identity)
+
+    def _remember_remote_identity(
+        self,
+        link: RNS.Link,
+        identity: typing.Optional[RNS.Identity],
+    ) -> typing.Optional[str]:
+        if identity is None:
+            return None
+        identity_hash = getattr(identity, "hash", None)
+        if not isinstance(identity_hash, (bytes, bytearray)):
+            return None
+        rns_hash = bytes(identity_hash).hex()
+        with self._auth_lock:
+            self._link_identity_hashes[id(link)] = rns_hash
+            self._link_auth.pop(id(link), None)
+        _log.debug("Client link identified as %s", rns_hash[:12])
+        return rns_hash
 
     # ------------------------------------------------------------------
     # Message handlers
@@ -315,6 +346,74 @@ class ServerNetHandler:
 
     def _operator_active(self, rns_hash: str) -> bool:
         return self._sync_repository.operator_active(rns_hash)
+
+    def _identified_rns_hash(self, link: RNS.Link) -> typing.Optional[str]:
+        link_key = id(link)
+        with self._auth_lock:
+            cached = self._link_identity_hashes.get(link_key)
+        if cached:
+            return cached
+        get_remote_identity = getattr(link, "get_remote_identity", None)
+        if not callable(get_remote_identity):
+            return None
+        try:
+            identity = get_remote_identity()
+        except Exception:
+            return None
+        return self._remember_remote_identity(link, identity)
+
+    def _authenticated_operator(
+        self,
+        link: RNS.Link,
+    ) -> typing.Optional[AuthenticatedOperator]:
+        link_key = id(link)
+        with self._auth_lock:
+            cached = self._link_auth.get(link_key)
+        if cached is not None:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT lease_expires_at, revoked FROM operators WHERE id = ?",
+                    (cached.operator_id,),
+                ).fetchone()
+            if row is not None and not bool(row[1]):
+                refreshed = AuthenticatedOperator(
+                    operator_id=cached.operator_id,
+                    callsign=cached.callsign,
+                    rns_hash=cached.rns_hash,
+                    lease_expires_at=int(row[0]),
+                )
+                with self._auth_lock:
+                    self._link_auth[link_key] = refreshed
+                return refreshed
+            with self._auth_lock:
+                self._link_auth.pop(link_key, None)
+            return None
+
+        rns_hash = self._identified_rns_hash(link)
+        if not rns_hash:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, callsign, lease_expires_at, revoked "
+                "FROM operators WHERE rns_hash = ?",
+                (rns_hash,),
+            ).fetchone()
+        if row is None or bool(row[3]):
+            return None
+        auth = AuthenticatedOperator(
+            operator_id=int(row[0]),
+            callsign=str(row[1]),
+            rns_hash=rns_hash,
+            lease_expires_at=int(row[2]),
+        )
+        with self._auth_lock:
+            self._link_auth[link_key] = auth
+        return auth
+
+    def _cached_link_operator_id(self, link: RNS.Link) -> typing.Optional[int]:
+        with self._auth_lock:
+            auth = self._link_auth.get(id(link))
+        return auth.operator_id if auth is not None else None
 
     def _build_delta(self, table: str, client_versions: dict) -> list:
         return self._sync_repository.build_delta(table, client_versions)

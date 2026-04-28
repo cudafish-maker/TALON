@@ -8,6 +8,22 @@ from talon.network import registry
 from talon.server import net_handler
 
 
+class _FakeIdentity:
+    def __init__(self, hash_hex: str) -> None:
+        self.hash = bytes.fromhex(hash_hex)
+
+
+class _FakeLink:
+    def __init__(self, hash_hex: str) -> None:
+        self._identity = _FakeIdentity(hash_hex)
+
+    def get_remote_identity(self):
+        return self._identity
+
+    def teardown(self) -> None:
+        return None
+
+
 def test_registry_exposes_current_sync_sets():
     assert registry.SYNC_TABLES == (
         "operators",
@@ -122,7 +138,13 @@ def test_registry_wire_transforms_encode_message_body_for_client_store(test_key)
 def test_registry_wire_transforms_encode_message_body_for_server_store(test_key):
     stored = registry.prepare_client_push_record_for_server_store(
         "messages",
-        {"id": 4, "uuid": "a" * 32, "body": "plain text", "sender_id": 999},
+        {
+            "id": 4,
+            "uuid": "a" * 32,
+            "channel_id": 10,
+            "body": "plain text",
+            "sender_id": 999,
+        },
         uuid_value="a" * 32,
         operator_id=7,
         db_key=test_key,
@@ -170,8 +192,7 @@ def test_server_client_push_rejects_syncable_but_not_client_pushable_table(
     handler.notify_change = lambda _table, _record_id: None
 
     channel_uuid = uuid.uuid4().hex
-    handler._handle_client_push(object(), {
-        "operator_rns_hash": operator_hash,
+    handler._handle_client_push(_FakeLink(operator_hash), {
         "records": {
             "channels": [{
                 "uuid": channel_uuid,

@@ -30,6 +30,29 @@ _SERVER_OPERATOR_FK_TABLES = frozenset(
 )
 
 
+def _identify_link(link: RNS.Link, identity: typing.Optional[RNS.Identity]) -> None:
+    """Reveal the client identity to the server over an established RNS link."""
+    if identity is None:
+        raise RuntimeError("Client RNS identity is not loaded.")
+    identify = getattr(link, "identify", None)
+    if callable(identify):
+        identify(identity)
+
+
+def _resource_data_size(resource) -> typing.Optional[int]:
+    get_data_size = getattr(resource, "get_data_size", None)
+    if callable(get_data_size):
+        try:
+            return int(get_data_size())
+        except (TypeError, ValueError):
+            return None
+    size = getattr(resource, "total_size", None)
+    try:
+        return int(size) if size is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _ensure_server_operator_sentinel(conn) -> None:
     row = conn.execute(
         "SELECT 1 FROM operators WHERE id = ?",
@@ -151,14 +174,12 @@ class ClientDocumentTransfers:
                 should_send = False
 
         if should_send:
-            my_rns_hash = manager._identity.hash.hex() if manager._identity else ""
             try:
                 self._smart_send(
                     link,
                     proto.encode(
                         {
                             "type": proto.MSG_DOCUMENT_REQUEST,
-                            "operator_rns_hash": my_rns_hash,
                             "document_id": doc_id,
                         }
                     ),
@@ -220,6 +241,16 @@ class ClientDocumentTransfers:
                 self._log.debug("Ignoring unsolicited document resource id=%s", doc_id)
                 return
 
+        from talon_core.constants import MAX_DOCUMENT_SIZE_BYTES
+
+        advertised_size = _resource_data_size(resource)
+        if advertised_size is not None and advertised_size > MAX_DOCUMENT_SIZE_BYTES:
+            self._resolve_request(
+                doc_id,
+                error="Document transfer exceeds the maximum allowed size.",
+            )
+            return
+
         if resource.status != RNS.Resource.COMPLETE:
             self._resolve_request(
                 doc_id,
@@ -233,6 +264,12 @@ class ClientDocumentTransfers:
             self._resolve_request(
                 doc_id,
                 error=f"Could not read document transfer: {exc}",
+            )
+            return
+        if len(plaintext) > MAX_DOCUMENT_SIZE_BYTES:
+            self._resolve_request(
+                doc_id,
+                error="Document transfer exceeds the maximum allowed size.",
             )
             return
 
@@ -259,6 +296,27 @@ class ClientDocumentTransfers:
 
         self._log.info("Document received from server: id=%s bytes=%d", doc_id, len(plaintext))
         self._resolve_request(doc_id, payload=bytes(plaintext))
+
+    def accept_resource(self, resource) -> bool:
+        metadata = getattr(resource, "metadata", None)
+        if not isinstance(metadata, dict):
+            return False
+        if metadata.get("type") != proto.MSG_DOCUMENT_RESPONSE:
+            return False
+        record = metadata.get("record")
+        if not isinstance(record, dict):
+            return False
+        try:
+            doc_id = int(record.get("id"))
+        except (TypeError, ValueError):
+            return False
+        with self._manager._document_request_lock:
+            if doc_id not in self._manager._pending_document_requests:
+                return False
+        from talon_core.constants import MAX_DOCUMENT_SIZE_BYTES
+
+        advertised_size = _resource_data_size(resource)
+        return advertised_size is None or advertised_size <= MAX_DOCUMENT_SIZE_BYTES
 
     def invalidate_for_record(self, record: dict) -> None:
         manager = self._manager
@@ -458,6 +516,7 @@ class ClientRecordApplier:
         if op_id == manager._operator_id and not was_revoked:
             self._log.warning("Local operator revoked by server: id=%s", op_id)
             manager._trigger_local_lock_check()
+            self._burn_self_revocation(op_id)
 
     def apply_record(self, table: str, record: dict, *, badge: bool = True) -> bool:
         manager = self._manager
@@ -539,8 +598,50 @@ class ClientRecordApplier:
                     manager._operator_id,
                 )
                 manager._trigger_local_lock_check()
+                self._burn_self_revocation(int(manager._operator_id))
 
         return applied
+
+    def _burn_self_revocation(self, operator_id: int) -> None:
+        manager = self._manager
+        manager._stop_event.set()
+        link = manager._link
+        if link is not None:
+            try:
+                link.teardown()
+            except Exception:
+                pass
+            manager._link = None
+        try:
+            from talon_core.config import get_data_dir
+            from talon_core.crypto.identity import destroy_identity
+
+            destroy_identity(get_data_dir(manager._cfg) / "client.identity")
+        except Exception as exc:
+            self._log.warning("Could not destroy client identity after revocation: %s", exc)
+
+        with manager._lock:
+            try:
+                for table in OFFLINE_TABLES:
+                    manager._conn.execute(
+                        f"UPDATE {_validated_table(table)} "
+                        "SET sync_status = 'revoked' WHERE sync_status = 'pending'"
+                    )
+                manager._conn.execute(
+                    "UPDATE meta SET value = '' "
+                    "WHERE key IN ('server_rns_hash', 'my_operator_id')"
+                )
+                manager._conn.commit()
+            except Exception as exc:
+                self._log.warning(
+                    "Could not clear enrollment metadata after revocation id=%s: %s",
+                    operator_id,
+                    exc,
+                )
+        manager._identity = None
+        manager._server_hash = None
+        manager._operator_id = None
+        self._log.warning("Client identity burned after self-revocation id=%s", operator_id)
 
     def apply_delete(
         self,
@@ -814,13 +915,11 @@ class ClientOutbox:
         if not outbox:
             return
 
-        my_rns_hash = manager._identity.hash.hex() if manager._identity else ""
         self._smart_send(
             link,
             proto.encode(
                 {
                     "type": proto.MSG_CLIENT_PUSH_RECORDS,
-                    "operator_rns_hash": my_rns_hash,
                     "records": outbox,
                 }
             ),
@@ -856,12 +955,15 @@ class ClientEnrollment:
     def load_identity(self) -> None:
         manager = self._manager
         from talon_core.config import get_data_dir
-        from talon_core.crypto.identity import load_or_create_identity
+        from talon_core.crypto.identity import load_or_create_protected_identity
 
         data_dir = get_data_dir(manager._cfg)
         identity_path = data_dir / "client.identity"
-        manager._identity = load_or_create_identity(identity_path)
-        self._log.info("Client identity loaded: %s", manager._identity.hash.hex())
+        manager._identity = load_or_create_protected_identity(
+            identity_path,
+            manager._db_key,
+        )
+        self._log.info("Client identity loaded: %s", manager._identity.hash.hex()[:12])
 
     def restore_meta(self) -> None:
         manager = self._manager
@@ -938,15 +1040,20 @@ class ClientEnrollment:
 
         result: dict[str, typing.Any] = {}
         event = threading.Event()
-        my_rns_hash = manager._identity.hash.hex() if manager._identity else ""
 
         def _on_established(link: RNS.Link) -> None:
+            try:
+                _identify_link(link, manager._identity)
+            except Exception as exc:
+                result["error"] = f"Failed to identify client link: {exc}"
+                event.set()
+                self._teardown(link)
+                return
             pkt = proto.encode(
                 {
                     "type": proto.MSG_ENROLL_REQUEST,
                     "token": token,
                     "callsign": callsign,
-                    "rns_hash": my_rns_hash,
                 }
             )
             try:
@@ -1076,7 +1183,6 @@ class ClientLinkLifecycle:
         manager = self._manager
         session_ended = threading.Event()
         sync_done_event = threading.Event()
-        my_rns_hash = manager._identity.hash.hex() if manager._identity else ""
 
         def _send_sync_request(link: RNS.Link) -> None:
             with manager._lock:
@@ -1094,7 +1200,6 @@ class ClientLinkLifecycle:
                 proto.encode(
                     {
                         "type": proto.MSG_SYNC_REQUEST,
-                        "operator_rns_hash": my_rns_hash,
                         "version_map": wire_vm,
                         "last_sync_at": manager._last_sync_at,
                     }
@@ -1114,6 +1219,8 @@ class ClientLinkLifecycle:
                     return
                 reassembled = manager._handle_chunk_data(msg)
                 if reassembled is None:
+                    if manager._chunk_reassembler.last_rejected:
+                        self._teardown(manager._link or link)
                     return
                 try:
                     msg = proto.decode(reassembled)
@@ -1130,6 +1237,14 @@ class ClientLinkLifecycle:
                 _process_data(resource.data.read())
 
         def _on_established(link: RNS.Link) -> None:
+            try:
+                _identify_link(link, manager._identity)
+            except Exception as exc:
+                self._log.warning("Could not identify persistent link: %s", exc)
+                self._teardown(link)
+                session_ended.set()
+                sync_done_event.set()
+                return
             manager._link = link
             outbox = manager._collect_outbox()
             if outbox:
@@ -1142,7 +1257,6 @@ class ClientLinkLifecycle:
                     proto.encode(
                         {
                             "type": proto.MSG_CLIENT_PUSH_RECORDS,
-                            "operator_rns_hash": my_rns_hash,
                             "records": outbox,
                         }
                     ),
@@ -1166,7 +1280,7 @@ class ClientLinkLifecycle:
         link = RNS.Link(dest)
         link.set_link_established_callback(_on_established)
         link.set_packet_callback(lambda data, _pkt: _process_data(data))
-        link.set_resource_callback(lambda _resource: True)
+        link.set_resource_callback(manager._accept_resource)
         link.set_resource_concluded_callback(_process_resource)
         link.set_link_closed_callback(_on_closed)
 
@@ -1197,7 +1311,6 @@ class ClientLinkLifecycle:
                     proto.encode(
                         {
                             "type": proto.MSG_HEARTBEAT,
-                            "operator_rns_hash": my_rns_hash,
                         }
                     ),
                 )
@@ -1219,13 +1332,12 @@ class ClientLinkLifecycle:
         if dest is None:
             self._log.warning("Server not in announce table - skipping LoRa cycle")
             return
-        my_rns_hash = manager._identity.hash.hex() if manager._identity else ""
-        self.lora_push_outbox(dest, my_rns_hash)
-        self.lora_sync(dest, my_rns_hash)
-        self.lora_heartbeat(dest, my_rns_hash)
+        self.lora_push_outbox(dest)
+        self.lora_sync(dest)
+        self.lora_heartbeat(dest)
         manager._gc_chunk_buffers()
 
-    def lora_push_outbox(self, dest: RNS.Destination, my_rns_hash: str) -> None:
+    def lora_push_outbox(self, dest: RNS.Destination, _my_rns_hash: str = "") -> None:
         manager = self._manager
         outbox = manager._collect_outbox()
         if not outbox:
@@ -1235,12 +1347,18 @@ class ClientLinkLifecycle:
         event = threading.Event()
 
         def _on_established(link: RNS.Link) -> None:
+            try:
+                _identify_link(link, manager._identity)
+            except Exception as exc:
+                result["error"] = f"identify failed: {exc}"
+                event.set()
+                self._teardown(link)
+                return
             self._smart_send(
                 link,
                 proto.encode(
                     {
                         "type": proto.MSG_CLIENT_PUSH_RECORDS,
-                        "operator_rns_hash": my_rns_hash,
                         "records": outbox,
                     }
                 ),
@@ -1293,7 +1411,7 @@ class ClientLinkLifecycle:
 
         self._teardown(link)
 
-    def lora_sync(self, dest: RNS.Destination, my_rns_hash: str) -> None:
+    def lora_sync(self, dest: RNS.Destination, _my_rns_hash: str = "") -> None:
         manager = self._manager
         with manager._lock:
             version_map = SyncEngine.build_version_map(manager._conn)
@@ -1325,6 +1443,8 @@ class ClientLinkLifecycle:
                     return
                 reassembled = manager._handle_chunk_data(msg)
                 if reassembled is None:
+                    if manager._chunk_reassembler.last_rejected:
+                        self._teardown(link)
                     return
                 try:
                     msg = proto.decode(reassembled)
@@ -1350,12 +1470,18 @@ class ClientLinkLifecycle:
                 event.set()
 
         def _on_established(link: RNS.Link) -> None:
+            try:
+                _identify_link(link, manager._identity)
+            except Exception as exc:
+                result["error"] = f"identify failed: {exc}"
+                event.set()
+                self._teardown(link)
+                return
             self._smart_send(
                 link,
                 proto.encode(
                     {
                         "type": proto.MSG_SYNC_REQUEST,
-                        "operator_rns_hash": my_rns_hash,
                         "version_map": wire_vm,
                         "last_sync_at": manager._last_sync_at,
                     }
@@ -1365,7 +1491,7 @@ class ClientLinkLifecycle:
         link = RNS.Link(dest)
         link.set_link_established_callback(_on_established)
         link.set_packet_callback(lambda data, _pkt: _process(data))
-        link.set_resource_callback(lambda _resource: True)
+        link.set_resource_callback(manager._accept_resource)
         link.set_resource_concluded_callback(
             lambda resource: _process(resource.data.read())
             if resource.status == RNS.Resource.COMPLETE
@@ -1410,18 +1536,24 @@ class ClientLinkLifecycle:
             self._log.info("LoRa sync applied %d record(s)", applied)
         self._teardown(link)
 
-    def lora_heartbeat(self, dest: RNS.Destination, my_rns_hash: str) -> None:
+    def lora_heartbeat(self, dest: RNS.Destination, _my_rns_hash: str = "") -> None:
         manager = self._manager
         result: dict[str, typing.Any] = {"msg": None, "error": None}
         event = threading.Event()
 
         def _on_established(link: RNS.Link) -> None:
+            try:
+                _identify_link(link, manager._identity)
+            except Exception as exc:
+                result["error"] = f"identify failed: {exc}"
+                event.set()
+                self._teardown(link)
+                return
             self._smart_send(
                 link,
                 proto.encode(
                     {
                         "type": proto.MSG_HEARTBEAT,
-                        "operator_rns_hash": my_rns_hash,
                     }
                 ),
             )

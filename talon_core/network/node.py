@@ -11,6 +11,7 @@ Call shutdown_reticulum() on app exit.
 import pathlib
 import typing
 import importlib
+import os
 
 import RNS
 
@@ -60,7 +61,11 @@ def init_reticulum(
               "client" enables transport only if enable_transport=True (RNode present).
         enable_transport: For client mode — set True when an RNode interface is available.
     """
-    config_dir.mkdir(parents=True, exist_ok=True)
+    config_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(config_dir, 0o700)
+    except PermissionError as exc:
+        raise RuntimeError(f"Could not secure Reticulum config directory {config_dir}") from exc
     _ensure_rns_interface_globals()
     reticulum = RNS.Reticulum(configdir=str(config_dir))
 
@@ -99,7 +104,9 @@ def make_destination(
 def announce(destination: RNS.Destination, app_data: typing.Optional[bytes] = None) -> None:
     """Announce this node's presence on the network."""
     destination.announce(app_data=app_data)
-    _log.info("Announced destination %s", RNS.prettyhexrep(destination.hash))
+    full_hash = destination.hash.hex()
+    _log.info("Announced destination %s", full_hash[:12])
+    _log.debug("Full announced destination hash: %s", RNS.prettyhexrep(destination.hash))
 
 
 def shutdown_reticulum() -> None:

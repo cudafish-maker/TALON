@@ -27,6 +27,9 @@ CHUNK_SIZE = 200
 CHUNK_BUFFER_TTL_S = 60.0
 CHUNK_MAX_TOTAL = 4096
 CHUNK_MAX_BUFFERS = 50
+CHUNK_MAX_ENCODED_SIZE = 512
+CHUNK_MAX_DECODED_SIZE = CHUNK_SIZE
+CHUNK_MAX_REASSEMBLED_BYTES = CHUNK_SIZE * CHUNK_MAX_TOTAL
 
 
 def smart_send(link: RNS.Link, data: bytes, *, logger=None) -> None:
@@ -72,16 +75,23 @@ class ChunkReassembler:
         ttl_s: float = CHUNK_BUFFER_TTL_S,
         max_total: int = CHUNK_MAX_TOTAL,
         max_buffers: int = CHUNK_MAX_BUFFERS,
+        max_encoded_size: int = CHUNK_MAX_ENCODED_SIZE,
+        max_decoded_size: int = CHUNK_MAX_DECODED_SIZE,
+        max_reassembled_bytes: int = CHUNK_MAX_REASSEMBLED_BYTES,
         time_func: typing.Callable[[], float] = time.time,
         logger=None,
     ) -> None:
         self.ttl_s = ttl_s
         self.max_total = max_total
         self.max_buffers = max_buffers
+        self.max_encoded_size = max_encoded_size
+        self.max_decoded_size = max_decoded_size
+        self.max_reassembled_bytes = max_reassembled_bytes
         self._time = time_func
         self._log = logger or _log
         self.buffers: dict[str, dict[str, typing.Any]] = {}
         self.lock = threading.Lock()
+        self.last_rejected = False
 
     def gc(self) -> int:
         """Discard stale incomplete reassemblies and return the count removed."""
@@ -107,7 +117,9 @@ class ChunkReassembler:
         msg_id = msg.get("id", "")
         seq = msg.get("seq")
         total = msg.get("total")
+        self.last_rejected = False
         if not isinstance(msg_id, str) or not msg_id or len(msg_id) > 128:
+            self.last_rejected = True
             return None
         try:
             seq = int(seq)
@@ -119,6 +131,7 @@ class ChunkReassembler:
                 msg.get("seq"),
                 msg.get("total"),
             )
+            self.last_rejected = True
             return None
         if total < 1 or total > self.max_total or seq < 0 or seq >= total:
             self._log.warning(
@@ -127,11 +140,36 @@ class ChunkReassembler:
                 seq,
                 total,
             )
+            self.last_rejected = True
+            return None
+        if total * self.max_decoded_size > self.max_reassembled_bytes:
+            self._log.warning(
+                "Chunk message too large id=%s total=%s max_bytes=%s",
+                msg_id,
+                total,
+                self.max_reassembled_bytes,
+            )
+            self.last_rejected = True
+            return None
+        encoded_data = msg.get("data", "")
+        if not isinstance(encoded_data, str) or len(encoded_data) > self.max_encoded_size:
+            self._log.warning("Chunk data too large id=%s seq=%s", msg_id, seq)
+            self.last_rejected = True
             return None
         try:
-            chunk_bytes = base64.b64decode(msg.get("data", ""), validate=True)
+            chunk_bytes = base64.b64decode(encoded_data, validate=True)
         except Exception:
             self._log.warning("Invalid base64 in chunk id=%s seq=%s", msg_id, seq)
+            self.last_rejected = True
+            return None
+        if len(chunk_bytes) > self.max_decoded_size:
+            self._log.warning(
+                "Decoded chunk too large id=%s seq=%s bytes=%d",
+                msg_id,
+                seq,
+                len(chunk_bytes),
+            )
+            self.last_rejected = True
             return None
 
         with self.lock:
@@ -155,6 +193,7 @@ class ChunkReassembler:
             if state.get("total") != total:
                 del self.buffers[msg_id]
                 self._log.warning("Chunk total changed mid-stream id=%s", msg_id)
+                self.last_rejected = True
                 return None
             buf = state["seqs"]
             if seq in buf:

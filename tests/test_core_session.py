@@ -94,10 +94,10 @@ def test_core_session_unlock_derives_key_from_passphrase(
     monkeypatch.setattr(session_module, "derive_key", _fake_derive)
 
     session = TalonCoreSession(config_path=config_path).start()
-    result = session.unlock("operator-passphrase", install_audit=False)
+    result = session.unlock("OperatorPass-1", install_audit=False)
 
     assert result.mode == "client"
-    assert calls == [("operator-passphrase", b"0" * 16)]
+    assert calls == [("OperatorPass-1", b"0" * 16)]
     assert session.is_unlocked is True
 
     session.close()

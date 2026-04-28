@@ -57,6 +57,18 @@ package boundary clean and avoiding new UI-to-backend bypasses.
 
 ## Latest Verification
 
+- 2026-04-28: Completed Reticulum security remediation for authenticated RNS
+  link authorization, encrypted identity storage, client-push validators,
+  packet/resource budgets, destructive client self-revocation, passphrase
+  policy/change support, INFO hash redaction, and private FLASH alert temp
+  files. H-3 remains documented as accepted all-active dataset visibility for
+  authenticated active operators. Verification:
+  `python -m py_compile talon_core/network/protocol.py talon_core/server/net_components.py talon_core/server/net_handler.py talon_core/network/client_components.py talon_core/network/client_sync.py talon_core/network/framing.py talon_core/crypto/identity.py talon_core/crypto/passphrase.py talon_core/db/connection.py talon_core/network/node.py talon_core/session.py talon/audio_alerts.py`
+  passed; focused
+  `pytest -q tests/test_protocol.py tests/test_sync.py tests/test_registry.py tests/test_revocation.py tests/test_audio_alerts.py tests/test_crypto.py`
+  passed, 116 tests; full `pytest -q` passed, 298 passed and 1 skipped; same-machine
+  Reticulum loopback `python -m talon_desktop.main --loopback-smoke` passed with
+  `TALON_PACKAGE_LOOPBACK_OK`.
 - 2026-04-28: Fixed client sync preservation of the local `SERVER` operator
   sentinel. Initial reconcile/tombstone cleanup no longer deletes
   `operators.id=1`, and clients repair it before applying server-origin records

@@ -207,7 +207,8 @@ def _is_list(value: typing.Any) -> bool:
 def _validate_enroll_request(msg: dict) -> None:
     _require(msg, "token", _is_str, "a string")
     _require(msg, "callsign", _is_str, "a string")
-    _require(msg, "rns_hash", _is_str, "a string")
+    if "rns_hash" in msg and not _is_str(msg.get("rns_hash")):
+        raise ProtocolValidationError("enroll_request: rns_hash must be a string")
 
 
 def _validate_enroll_response(msg: dict) -> None:
@@ -225,7 +226,10 @@ def _validate_enroll_response(msg: dict) -> None:
 
 
 def _validate_sync_request(msg: dict) -> None:
-    _require(msg, "operator_rns_hash", _is_str, "a string")
+    if "operator_rns_hash" in msg and not _is_str(msg.get("operator_rns_hash")):
+        raise ProtocolValidationError(
+            "sync_request: operator_rns_hash must be a string"
+        )
     version_map = _require(msg, "version_map", _is_dict, "an object")
     for table, versions in version_map.items():
         if not isinstance(table, str):
@@ -270,7 +274,10 @@ def _validate_sync_done(msg: dict) -> None:
 
 
 def _validate_heartbeat(msg: dict) -> None:
-    _require(msg, "operator_rns_hash", _is_str, "a string")
+    if "operator_rns_hash" in msg and not _is_str(msg.get("operator_rns_hash")):
+        raise ProtocolValidationError(
+            "heartbeat: operator_rns_hash must be a string"
+        )
 
 
 def _validate_heartbeat_ack(msg: dict) -> None:
@@ -279,7 +286,10 @@ def _validate_heartbeat_ack(msg: dict) -> None:
 
 
 def _validate_document_request(msg: dict) -> None:
-    _require(msg, "operator_rns_hash", _is_str, "a string")
+    if "operator_rns_hash" in msg and not _is_str(msg.get("operator_rns_hash")):
+        raise ProtocolValidationError(
+            "document_request: operator_rns_hash must be a string"
+        )
     _require(msg, "document_id", _is_int, "an integer")
 
 
@@ -295,7 +305,10 @@ def _validate_document_response(msg: dict) -> None:
 
 
 def _validate_client_push_records(msg: dict) -> None:
-    _require(msg, "operator_rns_hash", _is_str, "a string")
+    if "operator_rns_hash" in msg and not _is_str(msg.get("operator_rns_hash")):
+        raise ProtocolValidationError(
+            "client_push_records: operator_rns_hash must be a string"
+        )
     records_by_table = _require(msg, "records", _is_dict, "an object")
     for table, records in records_by_table.items():
         if not isinstance(table, str):

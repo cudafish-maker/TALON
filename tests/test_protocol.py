@@ -1,4 +1,5 @@
 """Tests for TALON wire protocol versioning and validation."""
+import base64
 import configparser
 import threading
 
@@ -6,6 +7,11 @@ import pytest
 
 from talon.network import protocol as proto
 from talon.network.client_sync import ClientSyncManager
+from talon.network.framing import (
+    CHUNK_MAX_DECODED_SIZE,
+    CHUNK_MAX_ENCODED_SIZE,
+    ChunkReassembler,
+)
 from talon.server.enrollment import generate_enrollment_token
 from talon.server.net_components import rns_hash_hex_length
 from talon.server import net_handler
@@ -15,10 +21,26 @@ def _base(msg_type):
     return {"version": proto.PROTOCOL_VERSION, "type": msg_type}
 
 
+class _FakeIdentity:
+    def __init__(self, hash_hex: str) -> None:
+        self.hash = bytes.fromhex(hash_hex)
+
+
+class _FakeLink:
+    def __init__(self, hash_hex: str) -> None:
+        self._identity = _FakeIdentity(hash_hex)
+        self.torn_down = False
+
+    def get_remote_identity(self):
+        return self._identity
+
+    def teardown(self) -> None:
+        self.torn_down = True
+
+
 def test_encode_injects_protocol_version():
     msg = proto.decode(proto.encode({
         "type": proto.MSG_HEARTBEAT,
-        "operator_rns_hash": "abc",
     }))
 
     assert msg["version"] == proto.PROTOCOL_VERSION
@@ -68,7 +90,6 @@ def test_rejects_malformed_sync_request(msg):
     "msg",
     [
         {**_base(proto.MSG_HEARTBEAT), "operator_rns_hash": 123},
-        {**_base(proto.MSG_HEARTBEAT)},
     ],
 )
 def test_rejects_malformed_heartbeat(msg):
@@ -145,7 +166,8 @@ def test_server_rejects_invalid_payload_before_handler_dispatch(tmp_db, test_key
     called = threading.Event()
     errors = []
     teardowns = []
-    link = object()
+    client_hash = "a" * rns_hash_hex_length()
+    link = _FakeLink(client_hash)
 
     monkeypatch.setattr(handler, "_handle_enroll", lambda *_args: called.set())
     monkeypatch.setattr(net_handler, "_send_error", lambda _link, message: errors.append(message))
@@ -173,8 +195,8 @@ def test_server_accepts_installed_reticulum_hash_length_for_enrollment(tmp_db, t
     handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
     sent = []
     teardowns = []
-    link = object()
     client_hash = "a" * rns_hash_hex_length()
+    link = _FakeLink(client_hash)
 
     handler._message_handlers._smart_send = (
         lambda _link, data: sent.append(proto.decode(data))
@@ -186,7 +208,7 @@ def test_server_accepts_installed_reticulum_hash_length_for_enrollment(tmp_db, t
         {
             "token": token,
             "callsign": "SMOKE",
-            "rns_hash": client_hash,
+            "rns_hash": "f" * rns_hash_hex_length(),
         },
     )
 
@@ -218,3 +240,59 @@ def test_client_rejects_invalid_payload_before_handler_dispatch(tmp_db, test_key
     )
 
     assert not called.is_set()
+
+
+def test_chunk_reassembler_rejects_oversized_encoded_chunk():
+    reassembler = ChunkReassembler()
+
+    result = reassembler.handle(
+        {
+            "id": "too-large",
+            "seq": 0,
+            "total": 1,
+            "data": "A" * (CHUNK_MAX_ENCODED_SIZE + 1),
+        }
+    )
+
+    assert result is None
+    assert reassembler.buffers == {}
+
+
+def test_chunk_reassembler_rejects_oversized_decoded_chunk():
+    reassembler = ChunkReassembler()
+
+    result = reassembler.handle(
+        {
+            "id": "too-large-decoded",
+            "seq": 0,
+            "total": 1,
+            "data": base64.b64encode(b"x" * (CHUNK_MAX_DECODED_SIZE + 1)).decode(),
+        }
+    )
+
+    assert result is None
+    assert reassembler.buffers == {}
+
+
+def test_server_tears_down_link_on_oversized_chunk(tmp_db, test_key):
+    conn, _ = tmp_db
+    handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+    link = _FakeLink("a" * rns_hash_hex_length())
+    teardowns = []
+    handler._teardown_link = lambda closed: teardowns.append(closed)
+
+    handler._on_packet(
+        link,
+        proto.encode(
+            {
+                "type": proto.MSG_CHUNK,
+                "id": "oversized",
+                "seq": 0,
+                "total": 1,
+                "data": "A" * (CHUNK_MAX_ENCODED_SIZE + 1),
+            }
+        ),
+        None,
+    )
+
+    assert teardowns == [link]

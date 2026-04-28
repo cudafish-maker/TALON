@@ -11,6 +11,16 @@ also be reflected in the relevant project wiki.
 | Open | 1 |
 | Fixed/archive | See [archive/fixed_bugs.md](archive/fixed_bugs.md) |
 
+## Recent Security Remediation
+
+- 2026-04-28: Reticulum security review remediation completed for C-1, H-1,
+  H-2, M-1, M-2, M-3, L-1, L-2, and L-3. H-3 remains an accepted release risk:
+  authenticated active operators intentionally have full shared dataset
+  visibility. Detailed state is recorded in
+  [talon-core/security.md](talon-core/security.md),
+  [talon-core/reticulum.md](talon-core/reticulum.md), and
+  [talon-core/sync_protocol.md](talon-core/sync_protocol.md).
+
 ## Open Issues
 
 ### BUG-085: Documents screen is registered but not reachable from the desktop dashboard

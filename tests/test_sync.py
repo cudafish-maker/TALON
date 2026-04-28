@@ -18,7 +18,11 @@ from talon.network.sync import SyncEngine, _validated_table
 from talon.server import net_components, net_handler
 from talon.services.assets import request_asset_deletion_command, verify_asset_command
 from talon.services.operators import revoke_operator_command
-from talon.constants import HEARTBEAT_BROADBAND_S, HEARTBEAT_LORA_S
+from talon.constants import (
+    HEARTBEAT_BROADBAND_S,
+    HEARTBEAT_LORA_S,
+    MAX_DOCUMENT_SIZE_BYTES,
+)
 
 
 class _NoOpTimer:
@@ -27,6 +31,35 @@ class _NoOpTimer:
 
     def start(self) -> None:
         return None
+
+
+class _FakeIdentity:
+    def __init__(self, hash_hex: str) -> None:
+        self.hash = bytes.fromhex(hash_hex)
+
+
+class _FakeLink:
+    def __init__(self, hash_hex: str) -> None:
+        self._identity = _FakeIdentity(hash_hex)
+        self.torn_down = False
+
+    def get_remote_identity(self):
+        return self._identity
+
+    def teardown(self) -> None:
+        self.torn_down = True
+
+
+class _FakeResource:
+    def __init__(self, doc_id: int, size: int) -> None:
+        self.metadata = {
+            "type": proto.MSG_DOCUMENT_RESPONSE,
+            "record": {"id": doc_id},
+        }
+        self._size = size
+
+    def get_data_size(self) -> int:
+        return self._size
 
 
 def _open_test_db(tmp_path, name: str, key: bytes):
@@ -597,8 +630,7 @@ class TestServerClientPush:
         handler.notify_change = lambda table, record_id: notified.append((table, record_id))
         pushed_uuid = uuid.uuid4().hex
 
-        handler._handle_client_push(object(), {
-            "operator_rns_hash": operator_hash,
+        handler._handle_client_push(_FakeLink(operator_hash), {
             "records": {
                 "messages": [{
                     "id": 1,
@@ -654,8 +686,8 @@ class TestServerClientPush:
         handler.notify_change = lambda table, record_id: notified.append((table, record_id))
         pushed_uuid = uuid.uuid4().hex
 
-        handler._handle_client_push(object(), {
-            "operator_rns_hash": operator_hash,
+        handler._handle_client_push(_FakeLink(operator_hash), {
+            "operator_rns_hash": "f" * 64,
             "records": {
                 "assets": [{
                     "id": 1,
@@ -707,8 +739,7 @@ class TestServerClientPush:
         handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
         handler.notify_change = lambda _table, _record_id: None
 
-        handler._handle_client_push(object(), {
-            "operator_rns_hash": operator_hash,
+        handler._handle_client_push(_FakeLink(operator_hash), {
             "records": {
                 "assets": [{
                     "uuid": "not-a-uuid",
@@ -850,6 +881,26 @@ class TestClientServerPushIntegration:
             assert client_conn.execute(
                 "SELECT callsign FROM operators WHERE id = 1"
             ).fetchone() == ("SERVER",)
+        finally:
+            close_db(client_conn)
+
+    def test_client_accepts_only_pending_document_resources(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_resource_budget.db", test_key)
+        try:
+            manager = _make_client_manager(client_conn, test_key, operator_id=2)
+
+            assert manager._accept_resource(_FakeResource(5, 10)) is False
+
+            manager._pending_document_requests[5] = {"event": threading.Event()}
+            assert manager._accept_resource(_FakeResource(5, 10)) is True
+            assert (
+                manager._accept_resource(
+                    _FakeResource(5, MAX_DOCUMENT_SIZE_BYTES + 1)
+                )
+                is False
+            )
         finally:
             close_db(client_conn)
 
@@ -1012,7 +1063,7 @@ class TestClientServerPushIntegration:
             client_conn.commit()
 
             sent = []
-            fake_link = object()
+            fake_link = _FakeLink(operator_hash)
             monkeypatch.setattr(
                 net_handler,
                 "_smart_send",
@@ -1031,7 +1082,6 @@ class TestClientServerPushIntegration:
             handler._handle_client_push(
                 fake_link,
                 {
-                    "operator_rns_hash": operator_hash,
                     "records": outbox,
                 },
             )
@@ -1084,7 +1134,7 @@ class TestClientServerPushIntegration:
             verify_asset_command(client_conn, 5, verified=True, confirmer_id=30)
 
             sent = []
-            fake_link = object()
+            fake_link = _FakeLink(operator_hash)
             monkeypatch.setattr(
                 net_handler,
                 "_smart_send",
@@ -1104,7 +1154,6 @@ class TestClientServerPushIntegration:
             handler._handle_client_push(
                 fake_link,
                 {
-                    "operator_rns_hash": operator_hash,
                     "records": outbox,
                 },
             )
@@ -1157,7 +1206,7 @@ class TestClientServerPushIntegration:
             request_asset_deletion_command(client_conn, 6)
 
             sent = []
-            fake_link = object()
+            fake_link = _FakeLink(operator_hash)
             monkeypatch.setattr(
                 net_handler,
                 "_smart_send",
@@ -1177,7 +1226,6 @@ class TestClientServerPushIntegration:
             handler._handle_client_push(
                 fake_link,
                 {
-                    "operator_rns_hash": operator_hash,
                     "records": outbox,
                 },
             )
@@ -1217,7 +1265,7 @@ class TestClientServerPushIntegration:
             client_conn.commit()
 
             sent = []
-            fake_link = object()
+            fake_link = _FakeLink(operator_hash)
             monkeypatch.setattr(
                 net_handler,
                 "_smart_send",

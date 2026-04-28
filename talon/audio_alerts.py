@@ -16,6 +16,7 @@ at DEBUG level and silently swallowed so a missing audio backend never
 disrupts operations.
 """
 import math
+import os
 import pathlib
 import struct
 import tempfile
@@ -30,6 +31,7 @@ _META_KEY = "audio_alerts_enabled"
 
 # Module-level path cache so the WAV is generated at most once per process.
 _ALERT_SOUND_PATH: typing.Optional[pathlib.Path] = None
+_ALERT_SOUND_DIR: typing.Optional[pathlib.Path] = None
 
 
 # ---------------------------------------------------------------------------
@@ -89,12 +91,16 @@ def play_alert() -> None:
 
 def _get_or_create_alert_sound() -> typing.Optional[pathlib.Path]:
     """Return the cached WAV path, generating it if not yet created."""
-    global _ALERT_SOUND_PATH
+    global _ALERT_SOUND_PATH, _ALERT_SOUND_DIR
     if _ALERT_SOUND_PATH is not None and _ALERT_SOUND_PATH.exists():
         return _ALERT_SOUND_PATH
     try:
-        path = pathlib.Path(tempfile.gettempdir()) / "talon_flash_alert.wav"
+        if _ALERT_SOUND_DIR is None:
+            _ALERT_SOUND_DIR = pathlib.Path(tempfile.mkdtemp(prefix="talon-audio-"))
+            os.chmod(_ALERT_SOUND_DIR, 0o700)
+        path = _ALERT_SOUND_DIR / "flash_alert.wav"
         _generate_alert_wav(path)
+        os.chmod(path, 0o600)
         _ALERT_SOUND_PATH = path
         _log.debug("Alert sound generated: %s", path)
         return path

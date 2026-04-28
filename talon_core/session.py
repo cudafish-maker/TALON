@@ -20,6 +20,7 @@ from talon_core.config import (
     load_config,
 )
 from talon_core.crypto.keystore import derive_key, load_or_create_salt
+from talon_core.crypto.passphrase import validate_passphrase_policy
 from talon_core.db.connection import close_db, open_db
 from talon_core.db.migrations import apply_migrations
 from talon_core.operators import (
@@ -236,6 +237,8 @@ class TalonCoreSession:
             raise CoreSessionError("Core session is already unlocked.")
 
         paths = self.paths
+        if not paths.db_path.exists():
+            validate_passphrase_policy(passphrase)
         salt = load_or_create_salt(paths.salt_path)
         key = derive_key(passphrase, salt)
         audit_key: typing.Optional[bytes] = None
@@ -1045,6 +1048,8 @@ class TalonCoreSession:
             enabled = bool(payload["enabled"])
             set_audio_enabled(self._conn, enabled)
             return RecordCommandResult("meta", 0, ())
+        if name == "settings.change_passphrase":
+            return self._change_passphrase(**payload)
 
         if name == "documents.upload":
             return self._documents_upload(**payload)
@@ -1433,6 +1438,36 @@ class TalonCoreSession:
             (key, str(value)),
         )
         self._conn.commit()
+        return RecordCommandResult("meta", 0, ())
+
+    def _change_passphrase(self, *, new_passphrase: str) -> RecordCommandResult:
+        self._require_unlocked()
+        validate_passphrase_policy(new_passphrase)
+        salt = load_or_create_salt(self.paths.salt_path)
+        new_key = derive_key(new_passphrase, salt)
+        new_audit_key = (
+            derive_key(new_passphrase + ":audit", salt)
+            if self.mode == "server"
+            else None
+        )
+        new_passphrase = "\x00" * len(new_passphrase)
+        del new_passphrase
+
+        old_key = self._require_db_key()
+        hex_key = new_key.hex()
+        self._conn.execute(f"PRAGMA rekey = \"x'{hex_key}'\"")
+        self._conn.commit()
+
+        from talon_core.crypto.identity import reencrypt_protected_identity
+
+        identity_name = "server.identity" if self.mode == "server" else "client.identity"
+        reencrypt_protected_identity(
+            self.paths.data_dir / identity_name,
+            old_key,
+            new_key,
+        )
+        self._db_key = new_key
+        self._audit_key = new_audit_key
         return RecordCommandResult("meta", 0, ())
 
     def _ensure_asset_verification_allowed(

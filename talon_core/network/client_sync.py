@@ -325,6 +325,9 @@ class ClientSyncManager:
     def _handle_document_resource(self, resource) -> None:
         self._document_transfers.handle_resource(resource)
 
+    def _accept_resource(self, resource) -> bool:
+        return self._document_transfers.accept_resource(resource)
+
     def _fail_pending_document_requests(self, message: str) -> None:
         self._document_transfers.fail_all_pending(message)
 

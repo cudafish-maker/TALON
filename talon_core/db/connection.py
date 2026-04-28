@@ -10,6 +10,7 @@ Android APK packaging without special Buildozer datas configuration.
 import contextlib
 import itertools
 import logging
+import os
 import pathlib
 import re
 import threading
@@ -319,7 +320,11 @@ def open_db(path: pathlib.Path, key: bytes) -> Connection:
     Applies WAL journal mode for reliability and wraps the raw connection in a
     small serializer that owns write transactions and shutdown.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except PermissionError as exc:
+        raise RuntimeError(f"Could not secure database directory {path.parent}") from exc
     # check_same_thread=False: the connection is opened in the login background
     # thread then used from the Kivy UI thread.  SQLite runs in serialized mode
     # (thread-safe internally); this only disables Python's own redundant check.
@@ -339,6 +344,11 @@ def open_db(path: pathlib.Path, key: bytes) -> Connection:
         )
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    try:
+        if path.exists():
+            os.chmod(path, 0o600)
+    except PermissionError:
+        _log.warning("Could not chmod database file %s to 0600", path)
     return DbConnection(conn)
 
 

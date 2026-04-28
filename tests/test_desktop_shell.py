@@ -162,7 +162,7 @@ try:
     def _show_main(*, sync_warning=""):
         runtime.main_window = MainWindow(core, runtime.event_bridge)
     runtime.show_main = _show_main
-    runtime.unlock("desktop-smoke-passphrase")
+    runtime.unlock("DesktopSmoke-1")
     deadline = time.time() + 15.0
     result = None
     while time.time() < deadline:
@@ -215,7 +215,7 @@ try:
         raise RuntimeError("rns unavailable")
     core.start_reticulum = _fail_reticulum
     runtime.login_window = LoginWindow(core.mode)
-    runtime.unlock("desktop-smoke-passphrase")
+    runtime.unlock("DesktopSmoke-1")
     deadline = time.time() + 5.0
     while time.time() < deadline:
         app.processEvents()

@@ -1,6 +1,7 @@
 """Server sync helper components used by ServerNetHandler."""
 from __future__ import annotations
 
+import dataclasses
 import threading
 import time
 import typing
@@ -15,12 +16,22 @@ from talon_core.network.registry import (
     is_syncable,
     prepare_client_push_record_for_server_store,
 )
-from talon_core.network.sync import SyncEngine, _validated_table
+from talon_core.network.sync import _validated_table
 
 
 def rns_hash_hex_length() -> int:
     """Return the installed Reticulum identity hash length in hex characters."""
     return RNS.Identity.TRUNCATED_HASHLENGTH // 4
+
+
+@dataclasses.dataclass(frozen=True)
+class AuthenticatedOperator:
+    """Operator identity proven by Reticulum link identification."""
+
+    operator_id: int
+    callsign: str
+    rns_hash: str
+    lease_expires_at: int
 
 
 class ServerUiDispatcher:
@@ -63,6 +74,9 @@ class ServerActiveClients:
             to_remove = [key for key, value in handler._active_links.items() if value is link]
             for key in to_remove:
                 del handler._active_links[key]
+        with handler._auth_lock:
+            handler._link_identity_hashes.pop(id(link), None)
+            handler._link_auth.pop(id(link), None)
         return to_remove[0] if to_remove else None
 
     def snapshot_links(self) -> list[RNS.Link]:
@@ -225,8 +239,11 @@ class ServerLinkRouter:
     def on_link_established(self, link: RNS.Link) -> None:
         handler = self._handler
         self._log.debug("Incoming client link established")
+        set_identified = getattr(link, "set_remote_identified_callback", None)
+        if callable(set_identified):
+            set_identified(handler._on_remote_identified)
         link.set_packet_callback(lambda data, pkt: handler._on_packet(link, data, pkt))
-        link.set_resource_callback(lambda _resource: True)
+        link.set_resource_callback(lambda _resource: False)
         link.set_resource_concluded_callback(
             lambda resource: handler._on_resource(link, resource)
         )
@@ -266,6 +283,12 @@ class ServerLinkRouter:
                 self._handler._send_error(link, str(exc))
                 return
             reassembled = self._handler._handle_chunk_data(msg)
+            if (
+                reassembled is None
+                and self._handler._chunk_reassembler.last_rejected
+            ):
+                self._handler._teardown_link(link)
+                return
             if reassembled is not None:
                 self._handler._on_packet(link, reassembled, packet)
             return
@@ -375,6 +398,9 @@ class ServerPushDispatcher:
                         self._smart_send(link, data)
                         if revoked_data is not None:
                             self._smart_send(link, revoked_data)
+                            if handler._cached_link_operator_id(link) == int(record_id):
+                                self._active_clients.remove_link(link)
+                                handler._teardown_link(link)
                     self._log.debug(
                         "push_update sent: table=%s id=%s to %d client(s)",
                         table,
@@ -451,12 +477,40 @@ class ServerMessageHandlers:
         self._normalise_uuid = normalise_uuid
         self._log = logger
 
+    def _send_unauthenticated(
+        self,
+        link: RNS.Link,
+        message: str = "RNS identity is required",
+        *,
+        code: typing.Optional[str] = None,
+    ) -> None:
+        self._handler._send_error(link, message, code=code)
+        self._handler._teardown_link(link)
+
+    def _require_authenticated_operator(
+        self,
+        link: RNS.Link,
+    ) -> typing.Optional[AuthenticatedOperator]:
+        handler = self._handler
+        auth = handler._authenticated_operator(link)
+        if auth is not None:
+            return auth
+        if handler._identified_rns_hash(link):
+            self._send_unauthenticated(
+                link,
+                "Operator not found or revoked",
+                code=proto.ERROR_OPERATOR_INACTIVE,
+            )
+        else:
+            self._send_unauthenticated(link)
+        return None
+
     def handle_enroll(self, link: RNS.Link, msg: dict) -> None:
         token = msg.get("token", "").strip()
         callsign = msg.get("callsign", "").strip()
-        rns_hash = msg.get("rns_hash", "").strip()
+        rns_hash = self._handler._identified_rns_hash(link)
 
-        if not token or not callsign or not rns_hash:
+        if rns_hash is None:
             self._smart_send(
                 link,
                 proto.encode(
@@ -466,7 +520,24 @@ class ServerMessageHandlers:
                         "operator_id": None,
                         "callsign": callsign,
                         "lease_expires_at": None,
-                        "error": "enroll_request missing required fields",
+                        "error": "enroll_request requires an identified RNS link",
+                    }
+                ),
+            )
+            self._handler._teardown_link(link)
+            return
+
+        if not token or not callsign:
+            self._smart_send(
+                link,
+                proto.encode(
+                    {
+                        "type": proto.MSG_ENROLL_RESPONSE,
+                        "ok": False,
+                        "operator_id": None,
+                        "callsign": callsign,
+                        "lease_expires_at": None,
+                        "error": "enroll_request missing token or callsign",
                     }
                 ),
             )
@@ -560,7 +631,10 @@ class ServerMessageHandlers:
 
     def handle_sync(self, link: RNS.Link, msg: dict) -> None:
         handler = self._handler
-        operator_rns_hash = msg.get("operator_rns_hash", "").strip()
+        auth = self._require_authenticated_operator(link)
+        if auth is None:
+            return
+        operator_rns_hash = auth.rns_hash
         version_map: dict = msg.get("version_map") or {}
         try:
             last_sync_at = int(msg.get("last_sync_at", 0))
@@ -572,15 +646,6 @@ class ServerMessageHandlers:
             last_sync_at = 0
 
         with handler._lock:
-            if not handler._operator_active(operator_rns_hash):
-                handler._send_error(
-                    link,
-                    "Operator not found or revoked",
-                    code=proto.ERROR_OPERATOR_INACTIVE,
-                )
-                handler._teardown_link(link)
-                return
-
             for table in SYNC_TABLES:
                 if not is_syncable(table):
                     continue
@@ -621,14 +686,16 @@ class ServerMessageHandlers:
 
     def handle_heartbeat(self, link: RNS.Link, msg: dict) -> None:
         handler = self._handler
-        operator_rns_hash = msg.get("operator_rns_hash", "").strip()
+        auth = self._require_authenticated_operator(link)
+        if auth is None:
+            return
         now = int(time.time())
         renewed_operator_id: typing.Optional[int] = None
 
         with handler._lock:
             row = handler._conn.execute(
-                "SELECT id, lease_expires_at, revoked FROM operators WHERE rns_hash = ?",
-                (operator_rns_hash,),
+                "SELECT id, lease_expires_at, revoked FROM operators WHERE id = ?",
+                (auth.operator_id,),
             ).fetchone()
 
             if row is None or row[2]:
@@ -668,32 +735,12 @@ class ServerMessageHandlers:
         from talon_core.documents import DocumentError, download_document
 
         handler = self._handler
-        operator_rns_hash = msg.get("operator_rns_hash", "").strip()
+        auth = self._require_authenticated_operator(link)
+        if auth is None:
+            return
         document_id = int(msg.get("document_id"))
 
         with handler._lock:
-            if not handler._operator_active(operator_rns_hash):
-                handler._send_error(
-                    link,
-                    "Operator not found or revoked",
-                    code=proto.ERROR_OPERATOR_INACTIVE,
-                )
-                handler._teardown_link(link)
-                return
-
-            op_row = handler._conn.execute(
-                "SELECT id FROM operators WHERE rns_hash = ?",
-                (operator_rns_hash,),
-            ).fetchone()
-            if op_row is None:
-                handler._send_error(
-                    link,
-                    "Operator not found or revoked",
-                    code=proto.ERROR_OPERATOR_INACTIVE,
-                )
-                handler._teardown_link(link)
-                return
-
             storage_root = get_document_storage_path(handler._cfg)
             try:
                 record = handler._fetch_record("documents", document_id)
@@ -704,7 +751,7 @@ class ServerMessageHandlers:
                     handler._db_key,
                     storage_root,
                     document_id,
-                    downloader_id=op_row[0],
+                    downloader_id=auth.operator_id,
                 )
             except DocumentError as exc:
                 self._smart_send(
@@ -720,6 +767,22 @@ class ServerMessageHandlers:
                 )
                 return
 
+        from talon_core.constants import MAX_DOCUMENT_SIZE_BYTES
+
+        if len(plaintext) > MAX_DOCUMENT_SIZE_BYTES:
+            self._smart_send(
+                link,
+                proto.encode(
+                    {
+                        "type": proto.MSG_DOCUMENT_RESPONSE,
+                        "ok": False,
+                        "document_id": document_id,
+                        "error": "Document exceeds the maximum transfer size.",
+                    }
+                ),
+            )
+            return
+
         try:
             RNS.Resource(
                 plaintext,
@@ -732,7 +795,7 @@ class ServerMessageHandlers:
             self._log.info(
                 "Document transfer started: id=%s operator_id=%s bytes=%d",
                 document_id,
-                op_row[0],
+                auth.operator_id,
                 len(plaintext),
             )
         except Exception as exc:
@@ -755,21 +818,10 @@ class ServerMessageHandlers:
 
     def handle_client_push(self, link: RNS.Link, msg: dict) -> None:
         handler = self._handler
-        operator_rns_hash = msg.get("operator_rns_hash", "").strip()
-        with handler._lock:
-            if not handler._operator_active(operator_rns_hash):
-                handler._send_error(
-                    link,
-                    "Operator not found or revoked",
-                    code=proto.ERROR_OPERATOR_INACTIVE,
-                )
-                handler._teardown_link(link)
-                return
-            op_row = handler._conn.execute(
-                "SELECT id FROM operators WHERE rns_hash = ?",
-                (operator_rns_hash,),
-            ).fetchone()
-            pushing_operator_id = op_row[0] if op_row else None
+        auth = self._require_authenticated_operator(link)
+        if auth is None:
+            return
+        pushing_operator_id = auth.operator_id
 
         records_by_table: dict = msg.get("records") or {}
         accepted_uuids: list[str] = []
@@ -816,26 +868,35 @@ class ServerMessageHandlers:
                         uuid_value=uuid_val,
                         operator_id=pushing_operator_id,
                         db_key=handler._db_key,
+                        conn=handler._conn,
                         logger=self._log,
                     )
                     if clean is None:
+                        rejected_items.append(
+                            {
+                                "uuid": uuid_val,
+                                "table": table,
+                                "client_record": record,
+                                "server_record": None,
+                                "error": "invalid client-push record",
+                            }
+                        )
                         continue
                     try:
                         with handler._lock:
-                            SyncEngine._upsert_record(handler._conn, table, clean)
-                            new_id = handler._conn.execute(
-                                f"SELECT id FROM {_validated_table(table)} WHERE uuid = ?",
-                                (uuid_val,),
-                            ).fetchone()
-                        if new_id:
+                            new_record_id = self._insert_client_push_record(
+                                table,
+                                clean,
+                            )
+                        if new_record_id is not None:
                             accepted_uuids.append(uuid_val)
                             self._log.info(
                                 "Client push accepted: table=%s uuid=%s new_id=%s",
                                 table,
                                 uuid_val,
-                                new_id[0],
+                                new_record_id,
                             )
-                            handler.notify_change(table, new_id[0])
+                            handler.notify_change(table, new_record_id)
                             self._ui_dispatcher.notify(table)
                     except Exception as exc:
                         self._log.warning(
@@ -843,6 +904,15 @@ class ServerMessageHandlers:
                             table,
                             uuid_val,
                             exc,
+                        )
+                        rejected_items.append(
+                            {
+                                "uuid": uuid_val,
+                                "table": table,
+                                "client_record": record,
+                                "server_record": None,
+                                "error": str(exc),
+                            }
                         )
                 else:
                     server_id, _server_ver = existing
@@ -957,6 +1027,29 @@ class ServerMessageHandlers:
                 exc,
             )
             return False
+
+    def _insert_client_push_record(
+        self,
+        table: str,
+        record: dict,
+    ) -> typing.Optional[int]:
+        table_name = _validated_table(table)
+        if "id" in record or "sync_status" in record:
+            raise ValueError("server-controlled columns are not accepted")
+        cursor = self._handler._conn.execute(f"PRAGMA table_info({table_name})")
+        live_columns = {row[1] for row in cursor.fetchall()}
+        cols = [key for key in record if key in live_columns]
+        if not cols:
+            raise ValueError(f"{table}: no valid columns to insert")
+        placeholders = ",".join("?" for _ in cols)
+        column_sql = ", ".join(cols)
+        values = [record[key] for key in cols]
+        insert_cursor = self._handler._conn.execute(
+            f"INSERT INTO {table_name} ({column_sql}) VALUES ({placeholders})",
+            values,
+        )
+        self._handler._conn.commit()
+        return int(insert_cursor.lastrowid)
 
     @staticmethod
     def _is_asset_verification_update(
