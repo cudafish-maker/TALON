@@ -1,4 +1,5 @@
 import pathlib
+import stat
 import time
 
 import pytest
@@ -574,6 +575,187 @@ def test_core_session_dashboard_and_sync_status_read_models(
     assert sync_status.sync_started is False
     assert sync_status.pending_outbox_count == 1
     assert sync_status.active_client_count == 0
+
+    session.close()
+
+
+def test_core_reticulum_config_apis_require_unlock(tmp_path: pathlib.Path) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+
+    with pytest.raises(CoreSessionError):
+        session.reticulum_config_status()
+    with pytest.raises(CoreSessionError):
+        session.load_reticulum_config_text()
+    with pytest.raises(CoreSessionError):
+        session.validate_reticulum_config_text("[reticulum]\n")
+    with pytest.raises(CoreSessionError):
+        session.save_reticulum_config_text("[reticulum]\n")
+    with pytest.raises(CoreSessionError):
+        session.import_default_reticulum_config()
+    with pytest.raises(CoreSessionError):
+        session.start_reticulum()
+
+    session.close()
+
+
+def test_core_reticulum_missing_config_returns_default_after_unlock(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    status = session.reticulum_config_status()
+    text = session.load_reticulum_config_text()
+
+    assert status.exists is False
+    assert status.valid is True
+    assert status.needs_setup is True
+    assert "[reticulum]" in text
+    assert "share_instance = No" in text
+    assert "TALON AutoInterface" in text
+    with pytest.raises(CoreSessionError, match="Reticulum config is missing"):
+        session.start_reticulum()
+
+    session.close()
+
+
+def test_core_reticulum_invalid_config_returns_blocking_errors(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    validation = session.validate_reticulum_config_text("[reticulum\n  broken = yes\n")
+
+    assert validation.valid is False
+    assert validation.errors
+
+    session.close()
+
+
+def test_core_reticulum_save_writes_private_permissions_and_backup(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    first_text = session.load_reticulum_config_text()
+
+    first = session.save_reticulum_config_text(first_text)
+    second_text = first_text.replace("loglevel = 4", "loglevel = 3")
+    second = session.save_reticulum_config_text(second_text)
+
+    assert first.path == session.paths.rns_config_dir / "config"
+    assert first.backup_path is None
+    assert second.backup_path is not None
+    assert second.backup_path.read_text(encoding="utf-8") == first_text
+    assert stat.S_IMODE(session.paths.rns_config_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(first.path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(second.backup_path.stat().st_mode) == 0o600
+
+    session.close()
+
+
+def test_core_reticulum_import_default_requires_explicit_unlocked_call(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    default_dir = home / ".reticulum"
+    default_dir.mkdir(parents=True)
+    default_text = (
+        "[reticulum]\n"
+        "  enable_transport = False\n"
+        "  share_instance = No\n"
+        "\n"
+        "[interfaces]\n"
+        "  [[Default TCP Client]]\n"
+        "    type = TCPClientInterface\n"
+        "    enabled = Yes\n"
+        "    target_host = server.lan\n"
+        "    target_port = 4242\n"
+    )
+    (default_dir / "config").write_text(default_text, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    with pytest.raises(CoreSessionError):
+        session.import_default_reticulum_config()
+
+    session.unlock_with_key(TEST_KEY)
+    result = session.import_default_reticulum_config()
+
+    assert result.path.read_text(encoding="utf-8") == default_text
+    assert "server.lan" in session.load_reticulum_config_text()
+
+    session.close()
+
+
+def test_core_reticulum_validation_reports_talon_warnings(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    risky = (
+        "[reticulum]\n"
+        "  enable_transport = False\n"
+        "  share_instance = Yes\n"
+        "\n"
+        "[interfaces]\n"
+        "  [[Local Server]]\n"
+        "    type = TCPServerInterface\n"
+        "    enabled = Yes\n"
+        "    listen_ip = 127.0.0.1\n"
+        "    listen_port = 4242\n"
+        "  [[Local Client]]\n"
+        "    type = TCPClientInterface\n"
+        "    enabled = Yes\n"
+        "    target_host = localhost\n"
+    )
+    warnings = "\n".join(session.validate_reticulum_config_text(risky).warnings)
+
+    assert "share_instance is enabled" in warnings
+    assert "Server transport is disabled" in warnings
+    assert "Local Server listens on localhost" in warnings
+    assert "Local Client targets localhost" in warnings
+    assert "Local Client has no target_port" in warnings
+
+    no_enabled = (
+        "[reticulum]\n"
+        "  enable_transport = True\n"
+        "  share_instance = No\n"
+        "\n"
+        "[interfaces]\n"
+        "  [[Disabled Auto]]\n"
+        "    type = AutoInterface\n"
+        "    enabled = No\n"
+    )
+    no_enabled_warnings = "\n".join(
+        session.validate_reticulum_config_text(no_enabled).warnings
+    )
+    assert "No enabled Reticulum interfaces" in no_enabled_warnings
+
+    missing_target = (
+        "[reticulum]\n"
+        "  enable_transport = False\n"
+        "  share_instance = No\n"
+        "\n"
+        "[interfaces]\n"
+        "  [[Missing Target]]\n"
+        "    type = TCPClientInterface\n"
+        "    enabled = Yes\n"
+        "    target_port = 4242\n"
+    )
+    missing_target_warnings = "\n".join(
+        session.validate_reticulum_config_text(missing_target).warnings
+    )
+    assert "Missing Target has no target_host" in missing_target_warnings
 
     session.close()
 

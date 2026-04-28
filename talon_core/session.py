@@ -23,6 +23,11 @@ from talon_core.crypto.keystore import derive_key, load_or_create_salt
 from talon_core.crypto.passphrase import validate_passphrase_policy
 from talon_core.db.connection import close_db, open_db
 from talon_core.db.migrations import apply_migrations
+from talon_core.network.rns_config import (
+    ReticulumConfigSaveResult,
+    ReticulumConfigStatus,
+    ReticulumConfigValidation,
+)
 from talon_core.operators import (
     list_operators,
     require_local_operator_id,
@@ -313,13 +318,69 @@ class TalonCoreSession:
 
     def start_reticulum(self) -> None:
         """Initialize Reticulum through the existing core-owned network module."""
-        self._require_started()
+        self._require_unlocked()
         if self._reticulum_started:
             return
+        status = self.reticulum_config_status()
+        if not status.exists:
+            raise CoreSessionError(
+                f"Reticulum config is missing: {status.path}. "
+                "Unlock TALON and complete Reticulum setup before network startup."
+            )
+        if not status.valid:
+            raise CoreSessionError("; ".join(status.errors))
         from talon_core.network.node import init_reticulum
 
         init_reticulum(self.paths.rns_config_dir, mode=self.mode)
         self._reticulum_started = True
+
+    def reticulum_config_status(self) -> ReticulumConfigStatus:
+        """Return the TALON-owned Reticulum config status after DB unlock."""
+        self._require_unlocked()
+        from talon_core.network.rns_config import reticulum_config_status
+
+        return reticulum_config_status(
+            self.paths.rns_config_dir,
+            mode=self.mode,
+            reticulum_started=self._reticulum_started,
+        )
+
+    def load_reticulum_config_text(self) -> str:
+        """Load the TALON-owned Reticulum config text, or an editable default."""
+        self._require_unlocked()
+        from talon_core.network.rns_config import load_reticulum_config_text
+
+        return load_reticulum_config_text(self.paths.rns_config_dir, mode=self.mode)
+
+    def validate_reticulum_config_text(self, text: str) -> ReticulumConfigValidation:
+        """Validate Reticulum config text without starting Reticulum."""
+        self._require_unlocked()
+        from talon_core.network.rns_config import validate_reticulum_config_text
+
+        return validate_reticulum_config_text(text, mode=self.mode)
+
+    def save_reticulum_config_text(self, text: str) -> ReticulumConfigSaveResult:
+        """Persist Reticulum config text privately with backup semantics."""
+        self._require_unlocked()
+        from talon_core.network.rns_config import save_reticulum_config_text
+
+        return save_reticulum_config_text(
+            self.paths.rns_config_dir,
+            text,
+            mode=self.mode,
+            reticulum_started=self._reticulum_started,
+        )
+
+    def import_default_reticulum_config(self) -> ReticulumConfigSaveResult:
+        """Import ~/.reticulum/config into the TALON-owned RNS config path."""
+        self._require_unlocked()
+        from talon_core.network.rns_config import import_default_reticulum_config
+
+        return import_default_reticulum_config(
+            self.paths.rns_config_dir,
+            mode=self.mode,
+            reticulum_started=self._reticulum_started,
+        )
 
     def start_lease_monitor(self) -> None:
         """Start the lease heartbeat monitor without starting RNS sync."""

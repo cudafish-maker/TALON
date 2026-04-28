@@ -47,15 +47,6 @@ class LoginScreen(MDScreen):
         self.ids.error_label.text = "Deriving key\u2026"
         self.ids.unlock_button.disabled = True
 
-        # Initialise Reticulum here on the main thread — RNS.Reticulum() installs
-        # signal handlers (SIGINT etc.) which Python only permits on the main thread.
-        # Safe to call on re-login; RNS treats it as a singleton internally.
-        app = App.get_running_app()
-        try:
-            app.core_session.start_reticulum()
-        except Exception as exc:
-            _log.warning("Reticulum init warning: %s", exc)
-
         threading.Thread(
             target=self._do_login, args=(passphrase,), daemon=True
         ).start()
@@ -77,8 +68,7 @@ class LoginScreen(MDScreen):
             # Start network sync through core.
             # ----------------------------------------------------------
             try:
-                # Reticulum was initialized on the main thread before this
-                # background unlock worker started.
+                self._start_reticulum_on_ui_thread()
                 app.core_session.start_sync(init_reticulum=False)
             except Exception as exc:
                 if app.mode == "server":
@@ -111,6 +101,24 @@ class LoginScreen(MDScreen):
                 _log.debug("Could not close core session after login failure: %s", close_exc)
             err_msg = str(exc)  # BUG-016: capture before exc is deleted by PEP 3110
             Clock.schedule_once(lambda dt: self._on_error(err_msg))
+
+    def _start_reticulum_on_ui_thread(self) -> None:
+        app = App.get_running_app()
+        done = threading.Event()
+        result: dict[str, Exception] = {}
+
+        def _run(_dt) -> None:
+            try:
+                app.core_session.start_reticulum()
+            except Exception as exc:
+                result["error"] = exc
+            finally:
+                done.set()
+
+        Clock.schedule_once(_run, 0)
+        done.wait()
+        if "error" in result:
+            raise result["error"]
 
     # ------------------------------------------------------------------
     # UI thread callbacks

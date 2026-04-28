@@ -24,6 +24,7 @@ from talon_desktop.mission_page import MissionPage
 from talon_desktop.navigation import DesktopNavItem, navigation_items
 from talon_desktop.operator_page import AuditPage, EnrollmentPage, KeysPage, OperatorPage
 from talon_desktop.qt_events import CoreEventBridge
+from talon_desktop.reticulum_config_dialog import ReticulumConfigDialog
 from talon_desktop.settings import (
     desktop_settings,
     restore_header_state,
@@ -73,6 +74,11 @@ class LoginWindow(QtWidgets.QWidget):
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setWordWrap(True)
         self.status_label.setObjectName("statusLabel")
+        self.network_status_label = QtWidgets.QLabel(
+            "Network setup is available after unlock."
+        )
+        self.network_status_label.setWordWrap(True)
+        self.network_status_label.setObjectName("statusLabel")
 
         form = QtWidgets.QFormLayout()
         form.addRow("Passphrase", self.passphrase)
@@ -102,6 +108,7 @@ class LoginWindow(QtWidgets.QWidget):
         layout.addLayout(form)
         layout.addWidget(self.unlock_button)
         layout.addWidget(self.status_label)
+        layout.addWidget(self.network_status_label)
         layout.addWidget(self.enrollment_group)
 
     def set_busy(self, busy: bool, message: str = "") -> None:
@@ -899,17 +906,6 @@ class DesktopRuntime(QtCore.QObject):
     def unlock(self, passphrase: str) -> None:
         assert self.login_window is not None
         self.login_window.set_busy(True, "Unlocking database...")
-        reticulum_warning = ""
-        try:
-            self.core.start_reticulum()
-        except Exception as exc:
-            reticulum_warning = str(exc)
-            _log.warning("Reticulum init warning: %s", exc)
-            if self.start_sync and self.core.mode == "client":
-                self.login_window.show_error(
-                    f"Reticulum failed to start: {reticulum_warning}"
-                )
-                return
 
         signals = _WorkerSignals()
         self._workers.append(signals)
@@ -923,22 +919,7 @@ class DesktopRuntime(QtCore.QObject):
                     start_lease_monitor=True,
                     install_audit=True,
                 )
-                sync_warning = ""
-                if self.start_sync:
-                    if self.core.mode == "client" and not self.core.reticulum_started:
-                        raise RuntimeError(
-                            reticulum_warning
-                            or "Reticulum did not start; sync cannot run."
-                        )
-                    try:
-                        self.core.start_sync(init_reticulum=False)
-                    except Exception as exc:
-                        if self.core.mode == "server":
-                            sync_warning = str(exc)
-                            _log.warning("Server sync failed to start: %s", exc)
-                        else:
-                            raise
-                signals.succeeded.emit((result, sync_warning))
+                signals.succeeded.emit(result)
             except Exception as exc:
                 _log.warning("Desktop unlock failed: %s", exc)
                 self.core.close()
@@ -948,13 +929,73 @@ class DesktopRuntime(QtCore.QObject):
 
     @QtCore.Slot(object)
     def _unlock_succeeded(self, payload: object) -> None:
-        result, sync_warning = typing.cast(tuple[object, str], payload)
+        result = payload
+        sync_warning = ""
+        if self.start_sync:
+            assert self.login_window is not None
+            self.login_window.set_busy(True, "Checking Reticulum configuration...")
+            if not self._ensure_reticulum_config_ready():
+                return
+            self.login_window.set_busy(True, "Starting Reticulum...")
+            try:
+                self.core.start_reticulum()
+            except Exception as exc:
+                _log.warning("Reticulum failed to start: %s", exc)
+                self.login_window.show_error(f"Reticulum failed to start: {exc}")
+                return
+            self.login_window.set_busy(True, "Starting sync...")
+            try:
+                self.core.start_sync(init_reticulum=False)
+            except Exception as exc:
+                if self.core.mode == "server":
+                    sync_warning = str(exc)
+                    _log.warning("Server sync failed to start: %s", exc)
+                else:
+                    _log.warning("Client sync failed to start: %s", exc)
+                    self.login_window.show_error(f"Sync failed to start: {exc}")
+                    return
         if self.login_window is not None and self.core.mode == "client":
             operator_id = getattr(result, "operator_id", None)
             if operator_id is None:
                 self.login_window.show_enrollment()
                 return
         self.show_main(sync_warning=sync_warning)
+
+    def _ensure_reticulum_config_ready(self) -> bool:
+        assert self.login_window is not None
+        try:
+            status = self.core.reticulum_config_status()
+        except Exception as exc:
+            self.login_window.show_error(f"Reticulum setup failed: {exc}")
+            return False
+        if status.needs_setup:
+            try:
+                dialog = ReticulumConfigDialog(self.core, self.login_window)
+                accepted = dialog.exec() == QtWidgets.QDialog.Accepted
+            except Exception as exc:
+                self.login_window.show_error(f"Reticulum setup failed: {exc}")
+                return False
+            if not accepted:
+                self.login_window.show_error(
+                    "Reticulum setup is required before network startup."
+                )
+                return False
+            try:
+                status = self.core.reticulum_config_status()
+            except Exception as exc:
+                self.login_window.show_error(f"Reticulum setup failed: {exc}")
+                return False
+        if not status.exists:
+            self.login_window.show_error(
+                f"Reticulum config is missing: {status.path}"
+            )
+            return False
+        if not status.valid:
+            self.login_window.show_error(
+                "Reticulum config is invalid: " + "; ".join(status.errors)
+            )
+            return False
+        return True
 
     @QtCore.Slot(str)
     def _unlock_failed(self, message: str) -> None:
