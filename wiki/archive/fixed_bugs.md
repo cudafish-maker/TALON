@@ -10,12 +10,34 @@ _Severity: CRITICAL > HIGH > MEDIUM > LOW > NOTE._
 
 | Status | Count |
 |--------|-------|
-| FIXED  | 113   |
+| FIXED  | 114   |
 | CLOSED (non-issue) | 1 |
 
 ---
 
 ## Fixed Issues
+
+### [BUG-096] Client reconcile deletes SERVER sentinel, causing server messages to fail FK apply
+- **File:** `talon_core/network/client_components.py`, `tests/test_sync.py`
+- **Severity:** HIGH
+- **Category:** Bug / Sync / Server-to-client Push
+- **Status:** FIXED 2026-04-28
+- **Description:** Client initial sync reconciliation compared local operator
+  ids against the server-provided operator id set. The server intentionally
+  excludes the local `SERVER` sentinel row (`operators.id=1`) from normal
+  operator deltas and id sets, so clients treated that row as an orphan and
+  deleted it. Later server-authored rows such as chat messages still reference
+  `sender_id=1`, causing `FOREIGN KEY constraint failed`; the dependency sync
+  retry could not fix it because the server also excludes the sentinel from
+  fetched operator records.
+- **Fix:** Client tombstone and reconcile handling now protect
+  `operators.id=1`, and applying server-origin records with operator foreign
+  keys repairs the sentinel locally before upsert. The sentinel repair commits
+  immediately so expected FK failures for other missing dependencies still roll
+  back cleanly. Added regressions for reconcile preservation, delete protection,
+  and repairing a missing sentinel before applying a server-authored message.
+
+---
 
 ### [BUG-095] PySide6 map viewport does not consistently fill available space
 - **File:** `talon_desktop/map_page.py`, `talon_desktop/map_picker.py`,

@@ -57,6 +57,14 @@ package boundary clean and avoiding new UI-to-backend bypasses.
 
 ## Latest Verification
 
+- 2026-04-28: Fixed client sync preservation of the local `SERVER` operator
+  sentinel. Initial reconcile/tombstone cleanup no longer deletes
+  `operators.id=1`, and clients repair it before applying server-origin records
+  with operator foreign keys so server-authored chat/messages do not fail FK
+  application after reconnect. Verification:
+  `python -m py_compile talon_core/network/client_components.py tests/test_sync.py`
+  passed with the project venv interpreter, and `pytest -q tests/test_sync.py`
+  passed, 47 tests.
 - 2026-04-28: Fixed server-local command push flushing so server-authored chat
   messages and asset verification updates are sent to connected clients through
   `push_update` without depending solely on the coalescing timer. Sync and

@@ -29,6 +29,10 @@ platform split.
 - If a mid-session `push_update` cannot apply because a referenced row is
   missing locally, the client requests a fresh dependency sync over the active
   link instead of permanently dropping the update.
+- Clients keep the local `SERVER` operator sentinel (`operators.id=1`)
+  protected during tombstone/reconcile cleanup and recreate it before applying
+  server-origin records with operator foreign keys. The server excludes this
+  sentinel from normal operator sync.
 - `ClientSyncManager.push_record_pending()` is the public client outbox entry
   point used by the facade for immediate chat/SITREP/asset push attempts.
 - Tombstone sync for deletes.
@@ -38,7 +42,7 @@ platform split.
 
 | Table | Sync | Notes |
 |-------|------|-------|
-| `operators` | Yes | Server sentinel excluded from normal client list |
+| `operators` | Yes | Server sentinel excluded from normal sync and protected locally |
 | `assets` | Yes | Client-pushable with server-side ownership checks |
 | `sitreps` | Yes | Body decrypted for wire, re-encrypted locally |
 | `missions` | Yes | Linked records versioned with lifecycle changes |

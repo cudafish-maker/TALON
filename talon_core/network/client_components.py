@@ -21,6 +21,32 @@ from talon_core.network.registry import (
     predelete_sql,
 )
 from talon_core.network.sync import SyncEngine, _validated_table
+from talon_core.operators import SERVER_OPERATOR_ID
+
+
+_SERVER_OPERATOR_UUID = "00000000000000000000000000000001"
+_SERVER_OPERATOR_FK_TABLES = frozenset(
+    {"assets", "sitreps", "missions", "zones", "messages", "documents"}
+)
+
+
+def _ensure_server_operator_sentinel(conn) -> None:
+    row = conn.execute(
+        "SELECT 1 FROM operators WHERE id = ?",
+        (SERVER_OPERATOR_ID,),
+    ).fetchone()
+    if row is not None:
+        return
+
+    conn.execute(
+        "INSERT OR IGNORE INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, "
+        "lease_expires_at, revoked, version, uuid) "
+        "VALUES (?, 'SERVER', 'server-identity-sentinel', '[]', '{}', "
+        "0, 9999999999, 0, 1, ?)",
+        (SERVER_OPERATOR_ID, _SERVER_OPERATOR_UUID),
+    )
+    conn.commit()
 
 
 class ClientUiDispatcher:
@@ -454,6 +480,15 @@ class ClientRecordApplier:
         applied = False
         local_operator_was_revoked = False
         with manager._lock:
+            if table in _SERVER_OPERATOR_FK_TABLES:
+                try:
+                    _ensure_server_operator_sentinel(manager._conn)
+                except Exception as exc:
+                    self._log.warning(
+                        "Could not ensure SERVER operator sentinel: %s",
+                        exc,
+                    )
+
             try:
                 row = manager._conn.execute(
                     f"SELECT version FROM {_validated_table(table)} WHERE id = ?",
@@ -521,6 +556,8 @@ class ClientRecordApplier:
             rid = int(record_id)
         except (ValueError, TypeError):
             self._log.warning("Invalid record_id in delete: %r", record_id)
+            return
+        if table == "operators" and rid == SERVER_OPERATOR_ID:
             return
 
         deleted = False
@@ -603,6 +640,8 @@ class ClientTombstoneReconciler:
                             f"SELECT id FROM {_validated_table(table)}"
                         ).fetchall()
                     for (record_id,) in rows:
+                        if table == "operators" and record_id == SERVER_OPERATOR_ID:
+                            continue
                         if record_id not in server_id_set:
                             orphans.append((table, record_id))
                 except Exception as exc:

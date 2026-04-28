@@ -10,6 +10,8 @@ revocation.
 - Operator rows carry RNS identity hash and lease state.
 - Clients use `my_operator_id` metadata after enrollment.
 - Server sentinel `id=1` exists only to support current server-authored rows.
+- Clients protect and locally repair the server sentinel because it is excluded
+  from normal server operator sync.
 
 ## Service Rules
 

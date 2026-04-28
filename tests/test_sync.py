@@ -823,6 +823,76 @@ class TestClientServerPushIntegration:
         finally:
             close_db(client_conn)
 
+    def test_reconcile_preserves_server_operator_sentinel(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_sentinel_reconcile.db", test_key)
+        try:
+            manager = _make_client_manager(client_conn, test_key, operator_id=2)
+
+            manager._reconcile_with_server({"operators": [2]}, badge=False)
+
+            assert client_conn.execute(
+                "SELECT callsign FROM operators WHERE id = 1"
+            ).fetchone() == ("SERVER",)
+        finally:
+            close_db(client_conn)
+
+    def test_operator_delete_ignores_server_operator_sentinel(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_sentinel_delete.db", test_key)
+        try:
+            manager = _make_client_manager(client_conn, test_key, operator_id=2)
+
+            manager._apply_delete("operators", 1)
+
+            assert client_conn.execute(
+                "SELECT callsign FROM operators WHERE id = 1"
+            ).fetchone() == ("SERVER",)
+        finally:
+            close_db(client_conn)
+
+    def test_server_message_repairs_missing_server_operator_sentinel(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_sentinel_message.db", test_key)
+        try:
+            client_conn.execute("DELETE FROM operators WHERE id = 1")
+            client_conn.execute(
+                "INSERT INTO channels (id, name, mission_id, is_dm, version, group_type) "
+                "VALUES (10, '#general', NULL, 0, 1, 'allhands')"
+            )
+            client_conn.commit()
+            manager = _make_client_manager(client_conn, test_key, operator_id=2)
+
+            applied = manager._apply_record(
+                "messages",
+                {
+                    "id": 2,
+                    "channel_id": 10,
+                    "sender_id": 1,
+                    "body": "server hello",
+                    "sent_at": 1001,
+                    "version": 1,
+                    "uuid": "f" * 32,
+                    "sync_status": "synced",
+                },
+                badge=False,
+            )
+
+            assert applied is True
+            assert client_conn.execute(
+                "SELECT callsign FROM operators WHERE id = 1"
+            ).fetchone() == ("SERVER",)
+            row = client_conn.execute(
+                "SELECT sender_id, body FROM messages WHERE id = 2"
+            ).fetchone()
+            assert row[0] == 1
+            assert bytes(row[1]) == b"server hello"
+        finally:
+            close_db(client_conn)
+
     def test_public_push_record_pending_delegates_to_outbox(
         self, tmp_path, test_key
     ):
