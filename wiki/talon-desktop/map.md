@@ -23,10 +23,14 @@ map tiles underneath local operational overlays.
   then requests fresh raster tiles for the updated geographic bounds so zoomed
   views resolve to higher tile resolution instead of scaling the old image.
 - Selecting assets, mission routes, zones, waypoints, or asset-linked SITREPs
-  writes full overlay details into the persistent side panel.
+  keeps details in item tooltip/debug metadata without reserving map width for
+  a persistent side panel.
 - Asset visibility can be scoped through an all/none/apply picker.
 - Asset creation/editing and mission workflows use the shared map picker with
   operational overlays and OSM/TOPO/Satellite base-layer selection.
+- Shared map pickers update geographic bounds and request a fresh tile plan on
+  wheel zoom, matching the main map instead of scaling the initially loaded
+  pixmaps.
 - Drawing tools for AO polygons and waypoint routes are implemented.
 
 ## Current Implementation

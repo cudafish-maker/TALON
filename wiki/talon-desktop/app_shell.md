@@ -56,10 +56,9 @@ The desktop target should keep the current operational density:
 - The main window exposes Dashboard, Map, SITREPs, Assets, Missions, Chat,
   Documents, Operators, and server-only Enrollment/Clients/Audit/Keys sections
   through a persistent collapsible icon navigation rail.
-- The Dashboard section renders an integrated command surface with asset list,
-  live map, mission/SITREP panels, active mission status, Zulu clock, quick
-  navigation actions, and collapsible side panels while still consuming core
-  read models.
+- The Dashboard section renders the generic information page for core session
+  state: mode, unlock/operator state, sync status, local paths, and current
+  record counts from `dashboard.summary`.
 - The navigation rail tracks per-section update badges and clears them when
   the operator opens the section.
 - `talon_desktop.qt_events.CoreEventBridge` adapts core domain events into Qt

@@ -88,7 +88,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore, QtWidgets
 
 from talon_core import TalonCoreSession
-from talon_desktop.app import MainWindow
+from talon_desktop.app import DesktopPage, MainWindow
+from talon_desktop.map_page import MapPage
 from talon_desktop.navigation import navigation_items
 from talon_desktop.qt_events import CoreEventBridge
 
@@ -110,6 +111,12 @@ try:
     ]
     assert actual == expected, (actual, expected)
     assert set(window._pages) == set(expected), (window._pages.keys(), expected)
+    dashboard = window._pages["dashboard"]
+    assert isinstance(dashboard, DesktopPage)
+    assert not isinstance(dashboard, MapPage)
+    assert dashboard.heading.text() == "Dashboard"
+    assert dashboard.summary.text() == "Core session and operational summary."
+    assert dashboard.findChildren(MapPage) == []
     assert window.nav.is_expanded() is True
     window.nav.toggle()
     assert window.nav.is_expanded() is False
@@ -282,6 +289,38 @@ finally:
     app.processEvents()
 """
 
+_QT_PICKER_ZOOM_SCRIPT = r"""
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_desktop.map_picker import MapCoordinateDialog
+from talon_desktop.map_tiles import TILE_LAYERS_BY_KEY, build_tile_plan
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+dialog = MapCoordinateDialog(core=None, title="Picker", mode="point")
+try:
+    before = dialog._bounds
+    before_generation = dialog._tile_generation
+    before_plan = build_tile_plan(TILE_LAYERS_BY_KEY["osm"], before)
+    dialog._zoom_at_scene_point(500.0, 350.0, 480)
+    after = dialog._bounds
+    after_plan = build_tile_plan(TILE_LAYERS_BY_KEY["osm"], after)
+
+    assert dialog._tile_generation == before_generation + 1
+    assert after.max_lat - after.min_lat < before.max_lat - before.min_lat
+    assert after.max_lon - after.min_lon < before.max_lon - before.min_lon
+    assert after_plan.zoom >= before_plan.zoom
+    assert dialog.view.transform().m11() > 0
+    print("picker-zoom-refresh-ok")
+finally:
+    dialog.close()
+    app.processEvents()
+"""
+
 
 def test_desktop_navigation_includes_documents_for_client_and_server() -> None:
     for mode in ("client", "server"):
@@ -406,6 +445,18 @@ def test_qt_smoke_persists_desktop_window_and_view_settings(
     )
 
     assert "settings-ok" in result.stdout
+
+
+def test_qt_picker_zoom_refreshes_tiles_and_bounds(tmp_path: pathlib.Path) -> None:
+    result = _run_qt_subprocess(
+        _QT_PICKER_ZOOM_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="picker-zoom",
+        timeout=30,
+    )
+
+    assert "picker-zoom-refresh-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))

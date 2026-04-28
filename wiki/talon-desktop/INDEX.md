@@ -8,18 +8,17 @@ plus PySide6/Qt importing `talon-core` directly.
 The active desktop release path is now PySide6. The repo contains a
 `talon_desktop` PySide6 shell with login/unlock, client enrollment prompt,
 lease/revocation lock dialog, main navigation, read-model pages, and a Qt event
-adapter around `talon-core`. The Dashboard now restores the dense command
-surface with assets, live map, mission/SITREP panels, active mission, Zulu
-clock, quick navigation, update badges, and collapsible side panels. The SITREP
-page now has a Qt feed, composer templates, asset/mission link selectors,
+adapter around `talon-core`. The Dashboard is a compact information page backed
+by the core session summary, sync status, local paths, and record counts. The
+SITREP page now has a Qt feed, composer templates, asset/mission link selectors,
 server-only delete control, opt-in audio state, and dashboard overlays for all
 severities with lower-severity auto-dismiss. The Assets page now has a Qt
 table, detail panel, create/edit dialog, shared operational map placement
 picker, verification controls, client deletion requests, and server hard-delete
 command wiring. The Map page now renders live OSM, TOPO, and Satellite raster
 base layers with radio-button selection plus local operational overlays for
-assets, zones, mission routes/waypoints, and asset-linked SITREPs, a persistent
-overlay detail panel, and an asset visibility picker.
+assets, zones, mission routes/waypoints, and asset-linked SITREPs, plus an
+asset visibility picker.
 The Missions page now has list/detail, extended create workflow, requested
 asset selection, AO/route map drawing, point pickers, approval allocation
 review, and server lifecycle controls. The Chat page now has searchable/grouped

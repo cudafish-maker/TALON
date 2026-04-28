@@ -22,6 +22,7 @@ from talon_desktop.map_tiles import (
     build_tile_plan,
     lat_lon_for_scene_point,
     scene_point_for_lat_lon,
+    zoom_bounds_around_scene_point,
 )
 
 _log = get_logger("desktop.map_picker")
@@ -31,11 +32,11 @@ class MapPickView(QtWidgets.QGraphicsView):
     """Graphics view that emits latitude/longitude clicks."""
 
     locationClicked = QtCore.Signal(float, float)
+    zoomRequested = QtCore.Signal(float, float, int)
 
     def __init__(self, scene: QtWidgets.QGraphicsScene, bounds: MapBounds) -> None:
         super().__init__(scene)
         self._bounds = bounds
-        self._zoom_steps = 0
         self.setCursor(QtCore.Qt.CrossCursor)
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
@@ -45,7 +46,6 @@ class MapPickView(QtWidgets.QGraphicsView):
         self._bounds = bounds
 
     def reset_zoom(self) -> None:
-        self._zoom_steps = 0
         self.resetTransform()
         scene = self.scene()
         if scene is not None:
@@ -65,14 +65,8 @@ class MapPickView(QtWidgets.QGraphicsView):
         if delta == 0:
             event.ignore()
             return
-        direction = 1 if delta > 0 else -1
-        next_steps = max(-8, min(16, self._zoom_steps + direction))
-        if next_steps == self._zoom_steps:
-            event.accept()
-            return
-        factor = 1.18 if direction > 0 else 1 / 1.18
-        self.scale(factor, factor)
-        self._zoom_steps = next_steps
+        point = self.mapToScene(event.position().toPoint())
+        self.zoomRequested.emit(point.x(), point.y(), delta)
         event.accept()
 
 
@@ -116,6 +110,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         )
         self.view.setMinimumSize(760, 460)
         self.view.locationClicked.connect(self._add_point)
+        self.view.zoomRequested.connect(self._zoom_at_scene_point)
 
         self.layer_group = QtWidgets.QButtonGroup(self)
         self.layer_buttons: dict[str, QtWidgets.QRadioButton] = {}
@@ -414,6 +409,17 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             return
         self._active_tile_layer_key = key
         self._render()
+
+    def _zoom_at_scene_point(self, x: float, y: float, wheel_delta: int) -> None:
+        steps = max(-4, min(4, wheel_delta / 120.0))
+        factor = 1.75**steps
+        next_bounds = zoom_bounds_around_scene_point(self._bounds, x, y, factor)
+        if next_bounds == self._bounds:
+            return
+        self._bounds = next_bounds
+        self.view.set_bounds(next_bounds)
+        self._render()
+        self.view.reset_zoom()
 
     def _sync_status(self) -> None:
         count = len(self._points)

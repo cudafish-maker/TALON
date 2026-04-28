@@ -126,21 +126,10 @@ class MapPage(QtWidgets.QWidget):
         self.view.setMinimumSize(720, 480)
         self.view.zoomRequested.connect(self._zoom_at_scene_point)
 
-        self.detail = QtWidgets.QTextEdit()
-        self.detail.setReadOnly(True)
-        self.detail.setMinimumWidth(300)
-        self.detail.setPlaceholderText("Select a map overlay.")
-
-        body = QtWidgets.QSplitter()
-        body.addWidget(self.view)
-        body.addWidget(self.detail)
-        body.setStretchFactor(0, 4)
-        body.setStretchFactor(1, 1)
-
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
         layout.addWidget(self.summary)
-        layout.addWidget(body, stretch=1)
+        layout.addWidget(self.view, stretch=1)
 
     def refresh(self) -> None:
         selected_mission_id = self._selected_mission_id()
@@ -413,12 +402,10 @@ class MapPage(QtWidgets.QWidget):
     def _selection_changed(self) -> None:
         selected = self._scene.selectedItems()
         if not selected:
-            self.detail.clear()
             return
         key = selected[-1].data(0)
         detail = self._overlay_details.get(str(key))
         if detail:
-            self.detail.setPlainText(detail)
             _log.debug("Map overlay selected: %s", detail.replace("\n", " | "))
 
     def _choose_visible_assets(self) -> None:

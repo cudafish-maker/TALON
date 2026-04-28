@@ -12,6 +12,19 @@ acceptance workflows.
 
 ## Latest PySide6 Shell Verification
 
+- 2026-04-28: `python -m compileall talon_desktop/app.py
+  tests/test_desktop_shell.py`, `pytest -q tests/test_desktop_shell.py -k
+  "qt or dashboard or map"` with 20 passed, and `pytest -q
+  tests/test_desktop_shell.py tests/test_core_session.py` with 68 passed, and
+  `pytest -q` with 276 passed and 1 skipped after reverting Dashboard to the
+  generic information page.
+- 2026-04-28: `pytest -q tests/test_desktop_shell.py -k "map or qt"` passed,
+  20 tests, after removing the Map page right-side overlay detail panel.
+- 2026-04-28: `python -m compileall talon_desktop/asset_page.py
+  talon_desktop/map_picker.py` passed after consolidating map picker behavior.
+- 2026-04-28: `pytest -q tests/test_desktop_shell.py -k "picker_zoom or map"`
+  passed after changing shared pickers to update bounds and request fresh tiles
+  on wheel zoom.
 - 2026-04-28: `python -m compileall talon_desktop talon_core`, `pytest -q
   tests/test_desktop_shell.py tests/test_core_session.py`, and `pytest -q`
   passed after desktop parity polish for mission map pickers, dashboard,
