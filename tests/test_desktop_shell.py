@@ -843,6 +843,71 @@ finally:
     app.processEvents()
 """
 
+_QT_WINDOW_BOUNDARY_SCRIPT = r"""
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtCore, QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_desktop.app import CurrentPageStack, MainWindow
+from talon_desktop.qt_events import CoreEventBridge
+
+config_path = sys.argv[1]
+settings_path = sys.argv[4]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path, mode="server").start()
+first = None
+second = None
+try:
+    core.unlock_with_key(bytes(range(32)))
+    settings = QtCore.QSettings(settings_path, QtCore.QSettings.IniFormat)
+    first = MainWindow(core, CoreEventBridge(), settings=settings)
+    first.resize(2000, 1400)
+    first.move(-300, -200)
+    first.close()
+    app.processEvents()
+
+    second = MainWindow(core, CoreEventBridge(), settings=settings)
+    assert isinstance(second.stack, CurrentPageStack)
+    assert second.stack.minimumSizeHint() == second._pages["dashboard"].minimumSizeHint()
+    assert second.stack.minimumSizeHint().height() < second._pages["sitreps"].minimumSizeHint().height()
+
+    map_row = None
+    for index in range(second.nav.count()):
+        if second.nav.item(index).data(QtCore.Qt.UserRole) == "map":
+            map_row = index
+            break
+    assert map_row is not None
+    second.nav.setCurrentRow(map_row)
+    app.processEvents()
+    assert second.stack.minimumSizeHint() == second._pages["map"].minimumSizeHint()
+    assert second.minimumSizeHint().height() < second._pages["sitreps"].minimumSizeHint().height()
+
+    second.nav.setCurrentRow(0)
+    second.show()
+    app.processEvents()
+    available = app.primaryScreen().availableGeometry()
+    assert second.width() <= available.width()
+    assert second.height() <= available.height()
+    assert second.x() >= available.x()
+    assert second.y() >= available.y()
+    print("window-boundary-ok")
+finally:
+    if second is not None:
+        second.close()
+    if first is not None:
+        first.close()
+    core.close()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
 _QT_PICKER_ZOOM_SCRIPT = r"""
 import os
 import sys
@@ -1381,6 +1446,20 @@ def test_qt_smoke_persists_desktop_window_and_view_settings(
     )
 
     assert "settings-ok" in result.stdout
+
+
+def test_qt_main_window_stays_within_available_screen(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_WINDOW_BOUNDARY_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="window-boundary",
+        timeout=30,
+    )
+
+    assert "window-boundary-ok" in result.stdout
 
 
 def test_qt_picker_zoom_refreshes_tiles_and_bounds(tmp_path: pathlib.Path) -> None:

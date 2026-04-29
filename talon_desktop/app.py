@@ -532,6 +532,30 @@ class DesktopNavRail(QtWidgets.QWidget):
         return style.standardIcon(icons.get(key, QtWidgets.QStyle.SP_FileIcon))
 
 
+class CurrentPageStack(QtWidgets.QStackedWidget):
+    """Stack that sizes the shell from the visible page, not hidden pages."""
+
+    def sizeHint(self) -> QtCore.QSize:
+        current = self.currentWidget()
+        if current is not None:
+            return current.sizeHint()
+        return super().sizeHint()
+
+    def minimumSizeHint(self) -> QtCore.QSize:
+        current = self.currentWidget()
+        if current is not None:
+            return current.minimumSizeHint()
+        return QtCore.QSize(0, 0)
+
+    def setCurrentIndex(self, index: int) -> None:
+        super().setCurrentIndex(index)
+        self.updateGeometry()
+
+    def setCurrentWidget(self, widget: QtWidgets.QWidget) -> None:
+        super().setCurrentWidget(widget)
+        self.updateGeometry()
+
+
 class MainWindow(QtWidgets.QMainWindow):
     networkSetupRequested = QtCore.Signal()
 
@@ -558,11 +582,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._font_scale = self._read_font_scale()
         self._apply_visual_preferences()
         self.setWindowTitle(f"T.A.L.O.N. Desktop [{core.mode.upper()}]")
-        self.resize(1180, 760)
+        self.resize(self._bounded_initial_size(1180, 760))
 
         sections = navigation_items(core.mode)
         self.nav = DesktopNavRail(sections, mode=core.mode)
-        self.stack = QtWidgets.QStackedWidget()
+        self.stack = CurrentPageStack()
 
         for section in sections:
             if section.key == "sitreps":
@@ -677,6 +701,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, "_sitrep_alert_overlay"):
             self._sitrep_alert_overlay.reposition()
 
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._fit_to_available_geometry)
+
     def _restore_desktop_state(self) -> None:
         geometry = settings_byte_array(self._settings.value(self._setting_key("geometry")))
         if geometry is not None:
@@ -695,6 +723,7 @@ class MainWindow(QtWidgets.QMainWindow):
             str(self._settings.value(self._setting_key("nav_expanded"), "true")).lower()
             != "false"
         )
+        self._fit_to_available_geometry()
         for section_key, page in self._pages.items():
             self._restore_page_state(section_key, page)
 
@@ -759,6 +788,49 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _setting_key(self, *parts: str) -> str:
         return "/".join((self._settings_prefix, *parts))
+
+    def _bounded_initial_size(self, width: int, height: int) -> QtCore.QSize:
+        available = self._available_geometry()
+        if available is None:
+            return QtCore.QSize(width, height)
+        return QtCore.QSize(
+            min(width, max(320, available.width())),
+            min(height, max(240, available.height())),
+        )
+
+    def _fit_to_available_geometry(self) -> None:
+        if self.isFullScreen() or self.isMaximized():
+            return
+        available = self._available_geometry()
+        if available is None:
+            return
+
+        bounded_width = min(self.width(), max(320, available.width()))
+        bounded_height = min(self.height(), max(240, available.height()))
+        if bounded_width != self.width() or bounded_height != self.height():
+            self.resize(bounded_width, bounded_height)
+
+        geometry = self.geometry()
+        left = available.left()
+        top = available.top()
+        right = available.x() + available.width()
+        bottom = available.y() + available.height()
+        if geometry.width() <= available.width():
+            left = min(max(geometry.x(), left), right - geometry.width())
+        if geometry.height() <= available.height():
+            top = min(max(geometry.y(), top), bottom - geometry.height())
+        if geometry.x() != left or geometry.y() != top:
+            self.move(left, top)
+
+    def _available_geometry(self) -> QtCore.QRect | None:
+        screen = QtGui.QGuiApplication.screenAt(self.geometry().center())
+        if screen is None:
+            screen = self.screen()
+        if screen is None:
+            screen = QtGui.QGuiApplication.primaryScreen()
+        if screen is None:
+            return None
+        return screen.availableGeometry()
 
     def _read_font_scale(self) -> float:
         try:
