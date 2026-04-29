@@ -908,6 +908,78 @@ sys.stderr.flush()
 os._exit(0)
 """
 
+_QT_SITREP_COMPOSER_SWITCH_SCRIPT = r"""
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtCore, QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_desktop.app import CurrentPageStack, MainWindow
+from talon_desktop.qt_events import CoreEventBridge
+from talon_desktop.sitrep_page import SitrepPage
+
+config_path = sys.argv[1]
+settings_path = sys.argv[4]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path, mode="server").start()
+window = None
+
+def row_for(window, key):
+    for index in range(window.nav.count()):
+        if window.nav.item(index).data(QtCore.Qt.UserRole) == key:
+            return index
+    raise AssertionError(f"missing nav row {key}")
+
+try:
+    core.unlock_with_key(bytes(range(32)))
+    settings = QtCore.QSettings(settings_path, QtCore.QSettings.IniFormat)
+    window = MainWindow(core, CoreEventBridge(), settings=settings)
+    window.show()
+    app.processEvents()
+
+    assert isinstance(window.stack, CurrentPageStack)
+    assert window.stack.objectName() == "pageStack"
+
+    sitrep_row = row_for(window, "sitreps")
+    map_row = row_for(window, "map")
+    window.nav.setCurrentRow(sitrep_row)
+    app.processEvents()
+    sitrep_page = window._pages["sitreps"]
+    assert isinstance(sitrep_page, SitrepPage)
+    assert window.stack.currentWidget() is sitrep_page
+    assert not sitrep_page.isHidden()
+    assert sitrep_page.template_combo.isVisibleTo(sitrep_page)
+    assert sitrep_page.apply_template_button.text() == "Apply"
+    assert not sitrep_page.findChildren(QtWidgets.QPushButton, "sitrepTemplateButton")
+    assert sitrep_page.pick_location_button.text() == "Map"
+    assert sitrep_page.pick_location_button.toolTip() == "Pick on Map"
+
+    index = sitrep_page.template_combo.findData("need_support")
+    assert index >= 0
+    sitrep_page.template_combo.setCurrentIndex(index)
+    sitrep_page.apply_template_button.click()
+    assert "Acknowledgement needed:" in sitrep_page.body_field.toPlainText()
+
+    window.nav.setCurrentRow(map_row)
+    app.processEvents()
+    assert window.stack.currentWidget() is window._pages["map"]
+    assert not window._pages["map"].isHidden()
+    assert sitrep_page.isHidden()
+    print("sitrep-composer-switch-ok")
+finally:
+    if window is not None:
+        window.close()
+    core.close()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
 _QT_PICKER_ZOOM_SCRIPT = r"""
 import os
 import sys
@@ -1510,6 +1582,20 @@ def test_qt_main_window_stays_within_available_screen(
     )
 
     assert "window-boundary-ok" in result.stdout
+
+
+def test_qt_sitrep_composer_template_row_and_page_switch_repaint(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_SITREP_COMPOSER_SWITCH_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="sitrep-composer-switch",
+        timeout=30,
+    )
+
+    assert "sitrep-composer-switch-ok" in result.stdout
 
 
 def test_qt_picker_zoom_refreshes_tiles_and_bounds(tmp_path: pathlib.Path) -> None:

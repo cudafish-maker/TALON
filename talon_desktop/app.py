@@ -535,6 +535,12 @@ class DesktopNavRail(QtWidgets.QWidget):
 class CurrentPageStack(QtWidgets.QStackedWidget):
     """Stack that sizes the shell from the visible page, not hidden pages."""
 
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("pageStack")
+        self.setAutoFillBackground(True)
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+
     def sizeHint(self) -> QtCore.QSize:
         current = self.currentWidget()
         if current is not None:
@@ -547,13 +553,36 @@ class CurrentPageStack(QtWidgets.QStackedWidget):
             return current.minimumSizeHint()
         return QtCore.QSize(0, 0)
 
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        painter = QtGui.QPainter(self)
+        painter.fillRect(self.rect(), self.palette().window())
+        painter.end()
+        super().paintEvent(event)
+
     def setCurrentIndex(self, index: int) -> None:
+        previous = self.currentWidget()
         super().setCurrentIndex(index)
-        self.updateGeometry()
+        self._sync_current_page(previous)
 
     def setCurrentWidget(self, widget: QtWidgets.QWidget) -> None:
+        previous = self.currentWidget()
         super().setCurrentWidget(widget)
+        self._sync_current_page(previous)
+
+    def _sync_current_page(self, previous: QtWidgets.QWidget | None) -> None:
+        if previous is not None and previous is not self.currentWidget():
+            previous.hide()
+            previous.update()
+        current = self.currentWidget()
+        if current is not None:
+            current.setAutoFillBackground(True)
+            current.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+            current.show()
+            current.raise_()
+            current.update()
         self.updateGeometry()
+        self.update()
+        self.repaint()
 
 
 class MainWindow(QtWidgets.QMainWindow):

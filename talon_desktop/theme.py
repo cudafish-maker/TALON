@@ -88,6 +88,10 @@ def _stylesheet(*, theme_key: str = "dark", font_scale: float = 1.0) -> str:
         background: #0d1214;
     }
 
+    QStackedWidget#pageStack {
+        background: #0d1214;
+    }
+
     QLabel {
         background: transparent;
         color: #d8dee9;

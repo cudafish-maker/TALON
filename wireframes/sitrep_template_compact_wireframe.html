@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON SITREP Template Control Wireframe</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1214;
+      --shell: #080d0f;
+      --panel: #101719;
+      --panel-2: #141f22;
+      --panel-3: #1a2529;
+      --line: #253238;
+      --line-strong: #35484f;
+      --text: #d8dee9;
+      --text-strong: #f6fbfb;
+      --muted: #93a1a8;
+      --teal: #8fbcbb;
+      --yellow: #d6b85a;
+      --orange: #f28c28;
+      --red: #ff5555;
+      --blue: #6aa3d8;
+      --shadow: rgba(0, 0, 0, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, "Noto Sans", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .page {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 28px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--text-strong);
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 850;
+    }
+
+    h2 {
+      font-size: 20px;
+      line-height: 1.2;
+      font-weight: 850;
+    }
+
+    h3 {
+      font-size: 21px;
+      line-height: 1.1;
+      font-weight: 850;
+    }
+
+    p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      max-width: 88ch;
+    }
+
+    .approval {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 16px 38px var(--shadow);
+    }
+
+    .approval h2 {
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+
+    .approval ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .approval li + li { margin-top: 4px; }
+
+    .screen {
+      margin-bottom: 34px;
+    }
+
+    .screen-title {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+
+    .screen-title span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .desktop-frame {
+      overflow: hidden;
+      min-height: 760px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) 34px;
+    }
+
+    .nav {
+      grid-row: 1 / span 2;
+      background: var(--shell);
+      border-right: 1px solid var(--line);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .brand {
+      padding: 8px 10px 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+    }
+
+    .brand .name {
+      color: var(--text-strong);
+      font-size: 18px;
+      font-weight: 850;
+    }
+
+    .brand .mode {
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .nav-item {
+      min-height: 34px;
+      padding: 8px 10px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 750;
+    }
+
+    .nav-item.active {
+      color: var(--text-strong);
+      background: #1f2f35;
+      border-color: #31434a;
+    }
+
+    .content {
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .topbar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar h3 { flex: 1; }
+
+    .control,
+    button.control {
+      min-height: 34px;
+      padding: 7px 10px;
+      background: #162126;
+      color: var(--text);
+      border: 1px solid #31434a;
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .control.primary {
+      color: #071012;
+      background: var(--teal);
+      border-color: var(--teal);
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(112px, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      min-height: 72px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .metric .value {
+      margin-top: 4px;
+      color: var(--text-strong);
+      font-size: 24px;
+      font-weight: 850;
+    }
+
+    .metric .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric.warn {
+      border-color: #6a4e1d;
+      background: #201b10;
+    }
+
+    .metric.alert {
+      border-color: #74323a;
+      background: #211318;
+    }
+
+    .main-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(390px, 1fr) minmax(340px, 0.74fr) minmax(310px, 0.68fr);
+      gap: 10px;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      min-height: 42px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-head strong {
+      color: var(--text-strong);
+      font-size: 14px;
+      font-weight: 850;
+      flex: 1;
+    }
+
+    .panel-body {
+      min-height: 0;
+      padding: 10px;
+      overflow: hidden;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      color: var(--text);
+      background: #162126;
+      font-size: 11px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .tag.blue {
+      color: #07111a;
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .tag.orange {
+      color: #1f1000;
+      background: var(--orange);
+      border-color: var(--orange);
+    }
+
+    .tag.red {
+      color: #fff4f5;
+      background: #8b2630;
+      border-color: #b33642;
+    }
+
+    .filter-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .filter {
+      min-height: 30px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .feed-empty {
+      min-height: 580px;
+      padding: 88px 22px;
+      background: #0b1012;
+      color: var(--text);
+      border: 1px solid #1c282c;
+      border-radius: 6px;
+    }
+
+    .detail-empty {
+      min-height: 230px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0b1012;
+      padding: 18px;
+    }
+
+    .detail-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .meta-box {
+      min-height: 58px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #101719;
+    }
+
+    .meta-box strong {
+      display: block;
+      color: var(--text-strong);
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+
+    .meta-box span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .wide { grid-column: 1 / -1; }
+
+    label.field {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .input,
+    .select {
+      min-height: 36px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #0a0f11;
+      color: var(--text);
+      padding: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .select {
+      position: relative;
+      padding-right: 28px;
+    }
+
+    .select::after {
+      content: "v";
+      position: absolute;
+      right: 10px;
+      top: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .textarea {
+      min-height: 94px;
+      white-space: normal;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      min-width: 0;
+      align-items: stretch;
+    }
+
+    .row .input,
+    .row .select {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .row .control {
+      flex: 0 0 auto;
+    }
+
+    .template-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 76px;
+      gap: 8px;
+    }
+
+    .template-preview {
+      min-height: 58px;
+      border: 1px solid #2f4047;
+      border-radius: 6px;
+      background: #0b1012;
+      padding: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .template-preview strong {
+      display: block;
+      color: var(--yellow);
+      margin-bottom: 3px;
+      font-size: 12px;
+    }
+
+    .map-button-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 58px;
+      gap: 8px;
+    }
+
+    .action-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
+    .statusbar {
+      grid-column: 2;
+      background: var(--shell);
+      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .statusbar span:last-child {
+      margin-left: auto;
+    }
+
+    .zoom-wrap {
+      display: grid;
+      grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .composer-zoom {
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 22px 58px var(--shadow);
+      overflow: hidden;
+    }
+
+    .notes {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px 16px;
+    }
+
+    .notes h3 {
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .notes ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .notes li + li {
+      margin-top: 6px;
+    }
+
+    @media (max-width: 1150px) {
+      .brief,
+      .main-grid,
+      .zoom-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .desktop-frame {
+        grid-template-columns: 64px minmax(0, 1fr);
+      }
+
+      .nav-item span.label,
+      .brand .mode {
+        display: none;
+      }
+
+      .metric-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brief">
+      <div>
+        <h1>SITREP Template Control Wireframe</h1>
+        <p>
+          This mockup replaces the crowded template button grid with a compact
+          template selector and Apply action. It keeps the composer column narrow
+          enough for smaller physical screens while preventing clipped template
+          labels and the clipped Pick on Map button.
+        </p>
+      </div>
+      <aside class="approval">
+        <h2>Approval Target</h2>
+        <ul>
+          <li>Template selection becomes a combo box plus Apply button.</li>
+          <li>The selected template gets a short preview below the selector.</li>
+          <li>Lat/Lon keeps two coordinate fields plus a short Map button.</li>
+          <li>No app code changes are included in this wireframe.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>Desktop SITREP Screen</h2>
+        <span>Same three-column screen, compact composer controls</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">T.A.L.O.N.</div>
+            <div class="mode">SERVER NODE</div>
+          </div>
+          <div class="nav-item"><span class="label">Dashboard</span></div>
+          <div class="nav-item"><span class="label">Map</span></div>
+          <div class="nav-item active"><span class="label">SITREPs</span></div>
+          <div class="nav-item"><span class="label">Assets</span></div>
+          <div class="nav-item"><span class="label">Missions</span></div>
+          <div class="nav-item"><span class="label">Assignments</span></div>
+          <div class="nav-item"><span class="label">Incidents</span></div>
+          <div class="nav-item"><span class="label">Chat</span></div>
+          <div class="nav-item"><span class="label">Documents</span></div>
+          <div class="nav-item"><span class="label">Operators</span></div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h3>SITREPs</h3>
+            <button class="control">Refresh</button>
+            <button class="control">Audio</button>
+            <button class="control primary">New SITREP</button>
+          </div>
+          <div class="metric-row">
+            <div class="metric"><div class="label">Total</div><div class="value">0</div><div class="sub">Current feed</div></div>
+            <div class="metric warn"><div class="label">Unresolved</div><div class="value">0</div><div class="sub">Needs action</div></div>
+            <div class="metric alert"><div class="label">Emergency</div><div class="value">0</div><div class="sub">Flash active</div></div>
+            <div class="metric"><div class="label">With Location</div><div class="value">0</div><div class="sub">Native or linked</div></div>
+            <div class="metric"><div class="label">Pending Sync</div><div class="value">0</div><div class="sub">Queued over RNS</div></div>
+            <div class="metric"><div class="label">Attachments</div><div class="value">0</div><div class="sub">Linked docs</div></div>
+          </div>
+
+          <div class="main-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Operational Feed</strong>
+                <span class="tag red">FLASH</span>
+                <span class="tag orange">IMMEDIATE</span>
+              </div>
+              <div class="panel-body">
+                <div class="filter-wrap">
+                  <span class="filter">All severities</span>
+                  <span class="filter">All statuses</span>
+                  <span class="filter">Unresolved</span>
+                  <span class="filter">Located</span>
+                  <span class="filter">Pending</span>
+                </div>
+                <div class="feed-empty">No SITREPs logged.</div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Composer</strong>
+                <span class="tag blue">Location Native</span>
+              </div>
+              <div class="panel-body">
+                <div class="form-grid">
+                  <label class="field">Severity<div class="select">ROUTINE</div></label>
+                  <label class="field">Status<div class="select">Open</div></label>
+                  <label class="field">Mission<div class="select">None</div></label>
+                  <label class="field">Assignment<div class="select">None</div></label>
+                  <label class="field">Asset<div class="select">None</div></label>
+                  <label class="field">Location<div class="input">Location label</div></label>
+
+                  <label class="field wide">Lat / Lon
+                    <div class="map-button-row">
+                      <div class="input">Latitude</div>
+                      <div class="input">Longitude</div>
+                      <button class="control">Map</button>
+                    </div>
+                  </label>
+
+                  <label class="field wide">Location Meta
+                    <div class="row">
+                      <div class="select">None</div>
+                      <div class="select">None</div>
+                    </div>
+                  </label>
+
+                  <label class="field wide">Template
+                    <div class="template-row">
+                      <div class="select">Need Support</div>
+                      <button class="control">Apply</button>
+                    </div>
+                  </label>
+
+                  <div class="template-preview wide">
+                    <strong>Need Support</strong>
+                    Inserts a concise support-request structure into the body
+                    without occupying the composer with a grid of buttons.
+                  </div>
+
+                  <label class="field wide">Body
+                    <div class="input textarea">Compose situation report</div>
+                  </label>
+                  <label class="field">Attachment
+                    <div class="input">Link document after send</div>
+                  </label>
+                  <label class="field">Privacy<div class="select">Team</div></label>
+                  <div class="action-row">
+                    <button class="control">Clear</button>
+                    <button class="control">Delete</button>
+                    <button class="control primary">Send</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Selected Detail</strong>
+                <span class="tag red">Open</span>
+              </div>
+              <div class="panel-body">
+                <div class="detail-empty">
+                  <h3>Select a SITREP</h3>
+                  <div class="detail-meta">
+                    <div class="meta-box"><strong>Age</strong><span>-</span></div>
+                    <div class="meta-box"><strong>Ack</strong><span>-</span></div>
+                    <div class="meta-box"><strong>Handler</strong><span>-</span></div>
+                  </div>
+                  <div class="action-row">
+                    <button class="control">Acknowledge</button>
+                    <button class="control">Assign</button>
+                    <button class="control">Close</button>
+                    <button class="control">Create Incident</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+        <footer class="statusbar">
+          <span>Core unlocked.</span>
+          <span>Connected via Yggdrasil</span>
+        </footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>Composer Detail</h2>
+        <span>Narrow-column view of the changed controls</span>
+      </div>
+      <div class="zoom-wrap">
+        <section class="composer-zoom">
+          <div class="panel-head">
+            <strong>Composer</strong>
+            <span class="tag blue">Location Native</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <label class="field">Severity<div class="select">ROUTINE</div></label>
+              <label class="field">Status<div class="select">Open</div></label>
+              <label class="field">Mission<div class="select">None</div></label>
+              <label class="field">Assignment<div class="select">None</div></label>
+              <label class="field">Asset<div class="select">None</div></label>
+              <label class="field">Location<div class="input">Location label</div></label>
+              <label class="field wide">Lat / Lon
+                <div class="map-button-row">
+                  <div class="input">Latitude</div>
+                  <div class="input">Longitude</div>
+                  <button class="control">Map</button>
+                </div>
+              </label>
+              <label class="field wide">Template
+                <div class="template-row">
+                  <div class="select">Unsafe Area</div>
+                  <button class="control">Apply</button>
+                </div>
+              </label>
+              <div class="template-preview wide">
+                <strong>Unsafe Area</strong>
+                Template preview can stay one or two lines and never expands the
+                composer width.
+              </div>
+              <label class="field wide">Body
+                <div class="input textarea">Compose situation report</div>
+              </label>
+              <div class="action-row">
+                <button class="control">Clear</button>
+                <button class="control primary">Send</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="notes">
+          <h3>Why This Fix</h3>
+          <ul>
+            <li>The template control is an option set, so a combo box is a better fit than many command buttons.</li>
+            <li>The composer keeps the narrower minimum widths that prevent the overall window from exceeding physical screens.</li>
+            <li>The selected template remains visible, and the Apply action is explicit.</li>
+            <li>The Map button is short enough to fit beside Latitude and Longitude without truncating.</li>
+            <li>The preview gives confidence about the template without requiring a large button grid.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

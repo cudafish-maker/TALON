@@ -108,17 +108,19 @@ class SitrepPage(QtWidgets.QWidget):
         self.mission_combo = QtWidgets.QComboBox()
         self.assignment_combo = QtWidgets.QComboBox()
         self.template_combo = QtWidgets.QComboBox()
-        self.template_combo.setVisible(False)
         for template in SITREP_TEMPLATES:
             self.template_combo.addItem(template.label, template.key)
-        self._template_buttons: dict[str, QtWidgets.QPushButton] = {}
+        self.apply_template_button = QtWidgets.QPushButton("Apply")
+        self.apply_template_button.clicked.connect(self._apply_template)
+        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
         self.location_label_field = QtWidgets.QLineEdit()
         self.location_label_field.setPlaceholderText("Location label")
         self.lat_field = QtWidgets.QLineEdit()
         self.lat_field.setPlaceholderText("Latitude")
         self.lon_field = QtWidgets.QLineEdit()
         self.lon_field.setPlaceholderText("Longitude")
-        self.pick_location_button = QtWidgets.QPushButton("Pick on Map")
+        self.pick_location_button = QtWidgets.QPushButton("Map")
+        self.pick_location_button.setToolTip("Pick on Map")
         self.pick_location_button.clicked.connect(self._pick_location)
         self.location_precision_combo = QtWidgets.QComboBox()
         for label in ("", "general", "approximate", "exact"):
@@ -226,23 +228,22 @@ class SitrepPage(QtWidgets.QWidget):
         coord_layout.addWidget(self.lat_field)
         coord_layout.addWidget(self.lon_field)
         coord_layout.addWidget(self.pick_location_button)
-        form.addWidget(_field_widget("Lat / Lon", coord_row), 3, 0)
+        form.addWidget(_field_widget("Lat / Lon", coord_row), 3, 0, 1, 2)
         location_meta_row = QtWidgets.QWidget()
         location_meta_layout = QtWidgets.QHBoxLayout(location_meta_row)
         location_meta_layout.setContentsMargins(0, 0, 0, 0)
         location_meta_layout.setSpacing(8)
         location_meta_layout.addWidget(self.location_precision_combo)
         location_meta_layout.addWidget(self.location_source_combo)
-        form.addWidget(_field_widget("Location Meta", location_meta_row), 3, 1)
-        template_grid = self._template_grid()
-        form.addWidget(_field_widget("Template", template_grid), 4, 0, 1, 2)
-        form.addWidget(_field_widget("Body", self.body_field), 5, 0, 1, 2)
+        form.addWidget(_field_widget("Location Meta", location_meta_row), 4, 0, 1, 2)
+        form.addWidget(_field_widget("Template", self._template_row()), 5, 0, 1, 2)
+        form.addWidget(_field_widget("Body", self.body_field), 6, 0, 1, 2)
         attachment_hint = QtWidgets.QLabel("Link a document after selecting a sent SITREP")
         attachment_hint.setObjectName("sitrepMutedLabel")
         attachment_hint.setWordWrap(True)
-        form.addWidget(_field_widget("Attachment", attachment_hint), 6, 0)
-        form.addWidget(_field_widget("Privacy", self.sensitivity_combo), 6, 1)
-        form.addWidget(self.status_label, 7, 0, 1, 2)
+        form.addWidget(_field_widget("Attachment", attachment_hint), 7, 0)
+        form.addWidget(_field_widget("Privacy", self.sensitivity_combo), 7, 1)
+        form.addWidget(self.status_label, 8, 0, 1, 2)
         action_row = QtWidgets.QHBoxLayout()
         action_row.addWidget(self.clear_button)
         action_row.addWidget(self.delete_button)
@@ -250,7 +251,7 @@ class SitrepPage(QtWidgets.QWidget):
         action_row.addWidget(self.send_button)
         action_holder = QtWidgets.QWidget()
         action_holder.setLayout(action_row)
-        form.addWidget(action_holder, 8, 0, 1, 2)
+        form.addWidget(action_holder, 9, 0, 1, 2)
         composer_panel = _panel("Composer", composer, ("Location Native",))
         composer_panel.setMinimumWidth(260)
 
@@ -487,27 +488,13 @@ class SitrepPage(QtWidgets.QWidget):
     def _focus_composer(self) -> None:
         self.body_field.setFocus(QtCore.Qt.OtherFocusReason)
 
-    def _template_grid(self) -> QtWidgets.QWidget:
+    def _template_row(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
-        layout = QtWidgets.QGridLayout(widget)
+        layout = QtWidgets.QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(8)
-        for index, template in enumerate(SITREP_TEMPLATES):
-            button = QtWidgets.QPushButton(template.label)
-            button.setObjectName("sitrepTemplateButton")
-            button.setCheckable(True)
-            button.setMinimumWidth(0)
-            button.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding,
-                QtWidgets.QSizePolicy.Preferred,
-            )
-            button.clicked.connect(
-                lambda _checked=False, key=template.key: self._apply_template_key(key)
-            )
-            self._template_buttons[template.key] = button
-            layout.addWidget(button, index // 2, index % 2)
-        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
+        layout.setSpacing(8)
+        layout.addWidget(self.template_combo, stretch=1)
+        layout.addWidget(self.apply_template_button)
         return widget
 
     def _apply_template_key(self, key: str) -> None:
@@ -517,9 +504,6 @@ class SitrepPage(QtWidgets.QWidget):
     def _set_template_selection(self, key: str) -> None:
         index = self.template_combo.findData(key)
         self.template_combo.setCurrentIndex(index if index >= 0 else 0)
-        selected = self._selected_template_id()
-        for button_key, button in self._template_buttons.items():
-            button.setChecked(button_key == selected)
 
     def _apply_template(self) -> None:
         key = self._selected_template_id()
