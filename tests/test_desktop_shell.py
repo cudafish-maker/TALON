@@ -203,6 +203,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtWidgets
 
 from talon_core import TalonCoreSession
+from talon_core.network.rns_config import save_reticulum_config_text
 from talon_desktop.app import DesktopRuntime, LoginWindow
 
 config_path = sys.argv[1]
@@ -211,8 +212,8 @@ app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 core = TalonCoreSession(config_path=config_path).start()
 runtime = DesktopRuntime(core, start_sync=True)
 try:
-    core.paths.rns_config_dir.mkdir(parents=True, exist_ok=True)
-    (core.paths.rns_config_dir / "config").write_text(
+    save_reticulum_config_text(
+        core.paths.rns_config_dir,
         "[reticulum]\n"
         "  enable_transport = False\n"
         "  share_instance = No\n"
@@ -221,7 +222,7 @@ try:
         "  [[TALON AutoInterface]]\n"
         "    type = AutoInterface\n"
         "    enabled = Yes\n",
-        encoding="utf-8",
+        mode=core.mode,
     )
     def _fail_reticulum():
         raise RuntimeError("rns unavailable")
@@ -258,6 +259,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtWidgets
 
 from talon_core import TalonCoreSession
+from talon_core.network.rns_config import save_reticulum_config_text
 from talon_desktop.app import DesktopRuntime, LoginWindow, MainWindow
 
 config_path = sys.argv[1]
@@ -268,8 +270,8 @@ core = TalonCoreSession(config_path=config_path).start()
 runtime = DesktopRuntime(core, start_sync=True)
 calls = []
 try:
-    core.paths.rns_config_dir.mkdir(parents=True, exist_ok=True)
-    (core.paths.rns_config_dir / "config").write_text(
+    save_reticulum_config_text(
+        core.paths.rns_config_dir,
         "[reticulum]\n"
         "  enable_transport = True\n"
         "  share_instance = No\n"
@@ -278,7 +280,7 @@ try:
         "  [[TALON AutoInterface]]\n"
         "    type = AutoInterface\n"
         "    enabled = Yes\n",
-        encoding="utf-8",
+        mode=core.mode,
     )
     def _start_reticulum():
         calls.append(("reticulum", core.is_unlocked))
@@ -438,6 +440,76 @@ finally:
     if runtime.login_window is not None:
         runtime.login_window.close()
     core._reticulum_started = False
+    runtime.shutdown()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
+_QT_UNACCEPTED_CONFIG_GATE_SCRIPT = r"""
+import os
+import sys
+import time
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_core.network.rns_config import default_reticulum_config
+import talon_desktop.app as app_module
+from talon_desktop.app import DesktopRuntime, LoginWindow, MainWindow
+
+config_path = sys.argv[1]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+runtime = DesktopRuntime(core, start_sync=True)
+try:
+    core.paths.rns_config_dir.mkdir(parents=True, exist_ok=True)
+    (core.paths.rns_config_dir / "config").write_text(
+        default_reticulum_config(core.mode),
+        encoding="utf-8",
+    )
+    class FakeReticulumConfigDialog:
+        def __init__(self, core, parent=None):
+            self.core = core
+            status = core.reticulum_config_status()
+            assert status.exists is True
+            assert status.accepted is False
+            print("config-dialog-opened")
+        def exec(self):
+            self.core.save_reticulum_config_text(self.core.load_reticulum_config_text())
+            print("config-dialog-accepted")
+            return QtWidgets.QDialog.Accepted
+    app_module.ReticulumConfigDialog = FakeReticulumConfigDialog
+    def _start_reticulum():
+        assert core.reticulum_config_status().accepted is True
+        core._reticulum_started = True
+    def _start_sync(*, init_reticulum=True):
+        assert init_reticulum is False
+    core.start_reticulum = _start_reticulum
+    core.start_sync = _start_sync
+    runtime.login_window = LoginWindow(core.mode)
+    def _show_main(*, sync_warning=""):
+        runtime.main_window = MainWindow(core, runtime.event_bridge)
+    runtime.show_main = _show_main
+    runtime.unlock("DesktopSmoke-1")
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        app.processEvents()
+        if runtime.main_window is not None:
+            print("unaccepted-config-gate-continued")
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(runtime.login_window.status_label.text())
+finally:
+    if runtime.main_window is not None:
+        runtime.main_window.close()
+    if runtime.login_window is not None:
+        runtime.login_window.close()
     runtime.shutdown()
     app.processEvents()
 sys.stdout.flush()
@@ -858,6 +930,22 @@ def test_qt_missing_reticulum_config_opens_setup_before_network_start(
 
     assert "config-dialog-opened" in result.stdout
     assert "config-gate-rejected" in result.stdout
+
+
+def test_qt_unaccepted_reticulum_config_opens_setup_before_network_start(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_UNACCEPTED_CONFIG_GATE_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="config-gate-unaccepted",
+        timeout=30,
+    )
+
+    assert "config-dialog-opened" in result.stdout
+    assert "config-dialog-accepted" in result.stdout
+    assert "unaccepted-config-gate-continued" in result.stdout
 
 
 @pytest.mark.parametrize(

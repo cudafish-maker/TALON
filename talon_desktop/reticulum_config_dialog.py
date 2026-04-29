@@ -146,6 +146,15 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         if not status.exists:
             self.save_button.setFocus()
             return
+        if not status.accepted:
+            try:
+                result = self._core.save_reticulum_config_text(self.editor.toPlainText())
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Reticulum Configuration", str(exc))
+                self._validate_current_text()
+                return
+            self._render_validation(result.validation)
+            self._saved_text = self.editor.toPlainText()
         self.accept()
 
     def _import_default_config(self) -> None:

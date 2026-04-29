@@ -9,6 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from talon_core import TalonCoreSession
+from talon_core.network.rns_config import reticulum_acceptance_path
+
 
 pytestmark = pytest.mark.skipif(
     sys.platform.startswith("win") or shutil.which("bash") is None,
@@ -256,6 +259,7 @@ def test_desktop_client_artifact_installs_only_client_launcher_and_entry(tmp_pat
     rns_text = rns_config.read_text(encoding="utf-8")
     assert "enable_transport = False" in rns_text
     assert "share_instance = No" in rns_text
+    assert not reticulum_acceptance_path(rns_config.parent).exists()
     launcher = (tmp_path / "bin" / "talon-desktop-client").read_text(encoding="utf-8")
     assert f"export TALON_CONFIG='{tmp_path / 'home' / '.talon' / 'talon.ini'}'" in launcher
 
@@ -279,6 +283,25 @@ def test_desktop_server_artifact_installs_only_server_launcher_and_entry(tmp_pat
     rns_text = rns_config.read_text(encoding="utf-8")
     assert "enable_transport = True" in rns_text
     assert "share_instance = No" in rns_text
+    assert not reticulum_acceptance_path(rns_config.parent).exists()
+
+
+def test_desktop_fresh_installer_rns_config_requires_first_launch_acceptance(tmp_path):
+    env = _desktop_env(tmp_path)
+    _run_desktop_install(tmp_path, _fake_desktop_bundle(tmp_path, "server"), env=env)
+
+    config = tmp_path / "home" / ".talon-server" / "talon.ini"
+    session = TalonCoreSession(config_path=config).start()
+    try:
+        session.unlock_with_key(bytes(range(32)))
+        status = session.reticulum_config_status()
+    finally:
+        session.close()
+
+    assert status.exists is True
+    assert status.valid is True
+    assert status.accepted is False
+    assert status.needs_setup is True
 
 
 def test_desktop_installer_rejects_mode_option(tmp_path):

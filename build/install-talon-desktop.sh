@@ -1037,4 +1037,4 @@ if [[ $INSTALL_BIN == "1" ]]; then
     log "Launcher: $LAUNCHER_PATH"
 fi
 log ""
-log "Reticulum interface setup is deployment-specific. Configure $RNS_DIR/config for TCP, Yggdrasil, I2P, or RNode before relying on network sync."
+log "Reticulum interface setup is deployment-specific. First networked launch will ask you to review and accept $RNS_DIR/config before sync starts."

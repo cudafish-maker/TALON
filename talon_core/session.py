@@ -329,6 +329,11 @@ class TalonCoreSession:
             )
         if not status.valid:
             raise CoreSessionError("; ".join(status.errors))
+        if not status.accepted:
+            raise CoreSessionError(
+                f"Reticulum config has not been accepted: {status.path}. "
+                "Unlock TALON and complete Reticulum setup before network startup."
+            )
         from talon_core.network.node import init_reticulum
 
         init_reticulum(self.paths.rns_config_dir, mode=self.mode)

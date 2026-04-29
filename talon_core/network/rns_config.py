@@ -6,6 +6,7 @@ starting Reticulum or opening network sockets.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import os
 import pathlib
 import shutil
@@ -32,6 +33,8 @@ class ReticulumConfigStatus:
     path: pathlib.Path
     exists: bool
     validation: ReticulumConfigValidation
+    accepted: bool = False
+    acceptance_path: pathlib.Path | None = None
     reticulum_started: bool = False
 
     @property
@@ -48,7 +51,7 @@ class ReticulumConfigStatus:
 
     @property
     def needs_setup(self) -> bool:
-        return (not self.exists) or (not self.valid) or bool(self.warnings)
+        return (not self.exists) or (not self.valid) or (not self.accepted)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -61,10 +64,15 @@ class ReticulumConfigSaveResult:
 
 _TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 _FALSE_VALUES = {"0", "false", "no", "off", "disabled"}
+_ACCEPTANCE_MARKER_NAME = ".talon-reticulum-config.accepted"
 
 
 def reticulum_config_path(config_dir: pathlib.Path) -> pathlib.Path:
     return pathlib.Path(config_dir) / "config"
+
+
+def reticulum_acceptance_path(config_dir: pathlib.Path) -> pathlib.Path:
+    return pathlib.Path(config_dir) / _ACCEPTANCE_MARKER_NAME
 
 
 def reticulum_config_status(
@@ -74,11 +82,16 @@ def reticulum_config_status(
     reticulum_started: bool = False,
 ) -> ReticulumConfigStatus:
     path = reticulum_config_path(config_dir)
+    acceptance_path = reticulum_acceptance_path(config_dir)
     if not path.exists():
         return ReticulumConfigStatus(
             path=path,
             exists=False,
-            validation=validate_reticulum_config_text(default_reticulum_config(mode), mode=mode),
+            validation=validate_reticulum_config_text(
+                default_reticulum_config(mode),
+                mode=mode,
+            ),
+            acceptance_path=acceptance_path,
             reticulum_started=reticulum_started,
         )
     if path.is_symlink():
@@ -89,6 +102,7 @@ def reticulum_config_status(
                 valid=False,
                 errors=(f"Refusing symlinked Reticulum config: {path}",),
             ),
+            acceptance_path=acceptance_path,
             reticulum_started=reticulum_started,
         )
     if not path.is_file():
@@ -99,8 +113,10 @@ def reticulum_config_status(
                 valid=False,
                 errors=(f"Reticulum config path is not a regular file: {path}",),
             ),
+            acceptance_path=acceptance_path,
             reticulum_started=reticulum_started,
         )
+    accepted = False
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -110,10 +126,13 @@ def reticulum_config_status(
         )
     else:
         validation = validate_reticulum_config_text(text, mode=mode)
+        accepted = validation.valid and _is_config_accepted(config_dir, text)
     return ReticulumConfigStatus(
         path=path,
         exists=True,
         validation=validation,
+        accepted=accepted,
+        acceptance_path=acceptance_path,
         reticulum_started=reticulum_started,
     )
 
@@ -218,7 +237,9 @@ def save_reticulum_config_text(
     config_dir = pathlib.Path(config_dir)
     path = reticulum_config_path(config_dir)
     if config_dir.is_symlink():
-        raise ReticulumConfigError(f"Refusing symlinked Reticulum config directory: {config_dir}")
+        raise ReticulumConfigError(
+            f"Refusing symlinked Reticulum config directory: {config_dir}"
+        )
     if path.is_symlink():
         raise ReticulumConfigError(f"Refusing to overwrite symlinked Reticulum config: {path}")
 
@@ -226,29 +247,40 @@ def save_reticulum_config_text(
     _chmod_private(config_dir, 0o700)
 
     backup_path: pathlib.Path | None = None
+    data = _normalise_text(text)
+    existing_text: str | None = None
     if path.exists():
         if not path.is_file():
-            raise ReticulumConfigError(f"Reticulum config path is not a regular file: {path}")
-        backup_path = _backup_path(path)
-        shutil.copy2(path, backup_path)
-        _chmod_private(backup_path, 0o600)
+            raise ReticulumConfigError(
+                f"Reticulum config path is not a regular file: {path}"
+            )
+        existing_text = _normalise_text(path.read_text(encoding="utf-8"))
+        if existing_text != data:
+            backup_path = _backup_path(path)
+            shutil.copy2(path, backup_path)
+            _chmod_private(backup_path, 0o600)
 
-    tmp_path = config_dir / f".config.tmp.{os.getpid()}.{time.time_ns()}"
-    data = _normalise_text(text).encode("utf-8")
-    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
-        _chmod_private(path, 0o600)
-    except Exception:
+    if existing_text != data:
+        tmp_path = config_dir / f".config.tmp.{os.getpid()}.{time.time_ns()}"
+        encoded = data.encode("utf-8")
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
-            tmp_path.unlink()
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
+            _chmod_private(path, 0o600)
+        except Exception:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+            raise
+    else:
+        _chmod_private(path, 0o600)
+
+    _write_acceptance_marker(config_dir, data)
 
     return ReticulumConfigSaveResult(
         path=path,
@@ -265,11 +297,17 @@ def import_default_reticulum_config(
     reticulum_started: bool = False,
     source_path: pathlib.Path | None = None,
 ) -> ReticulumConfigSaveResult:
-    source = source_path if source_path is not None else pathlib.Path.home() / ".reticulum" / "config"
+    source = (
+        source_path
+        if source_path is not None
+        else pathlib.Path.home() / ".reticulum" / "config"
+    )
     if not source.exists():
         raise ReticulumConfigError(f"Default Reticulum config does not exist: {source}")
     if not source.is_file():
-        raise ReticulumConfigError(f"Default Reticulum config path is not a regular file: {source}")
+        raise ReticulumConfigError(
+            f"Default Reticulum config path is not a regular file: {source}"
+        )
     text = source.read_text(encoding="utf-8")
     return save_reticulum_config_text(
         config_dir,
@@ -426,6 +464,52 @@ def _backup_path(path: pathlib.Path) -> pathlib.Path:
 
 def _normalise_text(text: str) -> str:
     return text if text.endswith("\n") else text + "\n"
+
+
+def _config_digest(text: str) -> str:
+    return hashlib.sha256(_normalise_text(text).encode("utf-8")).hexdigest()
+
+
+def _is_config_accepted(config_dir: pathlib.Path, text: str) -> bool:
+    marker = reticulum_acceptance_path(config_dir)
+    if marker.is_symlink() or not marker.is_file():
+        return False
+    try:
+        marker_text = marker.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    expected = _config_digest(text)
+    values: dict[str, str] = {}
+    for raw_line in marker_text.splitlines():
+        if "=" not in raw_line:
+            continue
+        key, value = raw_line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values.get("version") == "1" and values.get("sha256") == expected
+
+
+def _write_acceptance_marker(config_dir: pathlib.Path, text: str) -> None:
+    marker = reticulum_acceptance_path(config_dir)
+    if marker.is_symlink():
+        raise ReticulumConfigError(
+            f"Refusing symlinked Reticulum config acceptance marker: {marker}"
+        )
+    marker_text = f"version = 1\nsha256 = {_config_digest(text)}\n"
+    tmp_path = config_dir / f".accepted.tmp.{os.getpid()}.{time.time_ns()}"
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(marker_text.encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, marker)
+        _chmod_private(marker, 0o600)
+    except Exception:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def _chmod_private(path: pathlib.Path, mode: int) -> None:

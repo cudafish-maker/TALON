@@ -406,8 +406,9 @@ def _write_rns_config(
     *,
     enable_transport: bool,
 ) -> None:
-    rns_dir.mkdir(parents=True, exist_ok=True)
-    (rns_dir / "config").write_text(
+    from talon_core.network.rns_config import save_reticulum_config_text
+
+    text = (
         "[reticulum]\n"
         f"  enable_transport = {'True' if enable_transport else 'False'}\n"
         "  share_instance = No\n"
@@ -416,8 +417,12 @@ def _write_rns_config(
         "  loglevel = 3\n"
         "\n"
         "[interfaces]\n"
-        f"{stanza}\n",
-        encoding="utf-8",
+        f"{stanza}\n"
+    )
+    save_reticulum_config_text(
+        rns_dir,
+        text,
+        mode="server" if enable_transport else "client",
     )
 
 

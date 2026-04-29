@@ -7,6 +7,10 @@ import pytest
 from talon.constants import DB_SCHEMA_VERSION
 from talon.documents import DocumentError
 from talon_core import CoreSessionError, TalonCoreSession
+from talon_core.network.rns_config import (
+    default_reticulum_config,
+    reticulum_acceptance_path,
+)
 
 TEST_KEY = bytes(range(32))
 
@@ -611,12 +615,42 @@ def test_core_reticulum_missing_config_returns_default_after_unlock(
 
     assert status.exists is False
     assert status.valid is True
+    assert status.accepted is False
     assert status.needs_setup is True
     assert "[reticulum]" in text
     assert "share_instance = No" in text
     assert "TALON AutoInterface" in text
     with pytest.raises(CoreSessionError, match="Reticulum config is missing"):
         session.start_reticulum()
+
+    session.close()
+
+
+def test_core_reticulum_existing_unaccepted_config_still_needs_setup(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.paths.rns_config_dir.mkdir(parents=True)
+    config_file = session.paths.rns_config_dir / "config"
+    config_file.write_text(default_reticulum_config("server"), encoding="utf-8")
+
+    status = session.reticulum_config_status()
+
+    assert status.exists is True
+    assert status.valid is True
+    assert status.accepted is False
+    assert status.needs_setup is True
+    with pytest.raises(CoreSessionError, match="has not been accepted"):
+        session.start_reticulum()
+
+    session.save_reticulum_config_text(session.load_reticulum_config_text())
+    accepted = session.reticulum_config_status()
+
+    assert accepted.accepted is True
+    assert accepted.needs_setup is False
+    assert reticulum_acceptance_path(session.paths.rns_config_dir).is_file()
 
     session.close()
 
@@ -652,9 +686,12 @@ def test_core_reticulum_save_writes_private_permissions_and_backup(
     assert first.backup_path is None
     assert second.backup_path is not None
     assert second.backup_path.read_text(encoding="utf-8") == first_text
+    assert session.reticulum_config_status().accepted is True
     assert stat.S_IMODE(session.paths.rns_config_dir.stat().st_mode) == 0o700
     assert stat.S_IMODE(first.path.stat().st_mode) == 0o600
     assert stat.S_IMODE(second.backup_path.stat().st_mode) == 0o600
+    acceptance_mode = reticulum_acceptance_path(session.paths.rns_config_dir).stat().st_mode
+    assert stat.S_IMODE(acceptance_mode) == 0o600
 
     session.close()
 
@@ -691,6 +728,7 @@ def test_core_reticulum_import_default_requires_explicit_unlocked_call(
 
     assert result.path.read_text(encoding="utf-8") == default_text
     assert "server.lan" in session.load_reticulum_config_text()
+    assert session.reticulum_config_status().accepted is True
 
     session.close()
 
