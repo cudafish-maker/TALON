@@ -38,6 +38,16 @@ from talon_desktop.theme import apply_desktop_theme
 
 _log = get_logger("desktop")
 
+DIRECT_TCP_PRIVACY_WARNING_TITLE = "TCP Connection Privacy Warning"
+DIRECT_TCP_PRIVACY_WARNING_TEXT = (
+    "This TALON session is using direct TCP, not Yggdrasil, I2P, or LoRa. "
+    "A direct TCP path can reveal network addressing metadata to peers, routers, "
+    "or local network observers.\n\n"
+    "Use Yggdrasil, I2P, LoRa, or a trusted VPN when IP-address privacy matters. "
+    "This warning appears every time a new direct TCP connection or session is "
+    "established."
+)
+
 
 class _WorkerSignals(QtCore.QObject):
     succeeded = QtCore.Signal(object)
@@ -323,6 +333,7 @@ class DesktopPage(QtWidgets.QWidget):
             f"Unlocked: {summary.unlocked}",
             f"Operator ID: {summary.operator_id}",
             f"Connection: {sync.connection_state}",
+            f"Network method: {sync.network_method_label}",
             f"Reticulum started: {sync.reticulum_started}",
             f"Sync started: {sync.sync_started}",
             f"Lease monitor started: {sync.lease_monitor_started}",
@@ -540,6 +551,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._settings = settings if settings is not None else desktop_settings()
         self._log_buffer = log_buffer if log_buffer is not None else desktop_log_buffer()
         self._log_dialog: LogDialog | None = None
+        self._last_direct_tcp_warning_session_id: int | None = None
         self._settings_prefix = f"{core.mode}/main_window"
         self._theme_key = str(self._settings.value(self._setting_key("theme"), "dark"))
         self._font_scale = self._read_font_scale()
@@ -587,6 +599,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self._root_splitter)
         self._sitrep_alert_overlay = SitrepAlertOverlay(self.stack)
         self.statusBar().showMessage("Core unlocked.")
+        self.network_method_badge = QtWidgets.QLabel("Network method unknown")
+        self.network_method_badge.setObjectName("networkMethodBadge")
         self.network_setup_button = QtWidgets.QPushButton("Network Setup")
         self.network_setup_button.setObjectName("statusButton")
         self.network_setup_button.clicked.connect(self.networkSetupRequested.emit)
@@ -599,10 +613,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._font_button = QtWidgets.QPushButton("Font")
         self._font_button.setObjectName("statusButton")
         self._font_button.clicked.connect(self._show_font_scale_dialog)
+        self.statusBar().addPermanentWidget(self.network_method_badge)
         self.statusBar().addPermanentWidget(self.network_setup_button)
         self.statusBar().addPermanentWidget(self._theme_button)
         self.statusBar().addPermanentWidget(self._font_button)
         self.statusBar().addPermanentWidget(self._log_button)
+        self._network_status_timer = QtCore.QTimer(self)
+        self._network_status_timer.timeout.connect(self._refresh_network_method_status)
+        self._network_status_timer.start(2000)
         self._log_timer = QtCore.QTimer(self)
         self._log_timer.timeout.connect(self._refresh_log_button)
         self._log_timer.start(2000)
@@ -614,6 +632,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._restore_desktop_state()
         self.nav.setCurrentRow(self._initial_nav_row())
         self.refresh_all()
+        self._refresh_network_method_status()
         self._refresh_log_button()
 
     def refresh_all(self) -> None:
@@ -632,6 +651,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def show_network_status(self, message: str, timeout_ms: int = 8000) -> None:
         self.statusBar().showMessage(message, timeout_ms)
+        self._refresh_network_method_status()
 
     def _on_nav_changed(self, row: int) -> None:
         if row < 0:
@@ -821,6 +841,72 @@ class MainWindow(QtWidgets.QMainWindow):
     def _refresh_log_button(self) -> None:
         warnings = self._log_buffer.warning_count()
         self._log_button.setText(f"Logs ({warnings})" if warnings else "Logs")
+
+    def _refresh_network_method_status(self) -> None:
+        try:
+            sync = self._core.read_model("sync.status")
+        except Exception as exc:
+            self.network_method_badge.setText("Network method unknown")
+            self.network_method_badge.setProperty("warning", False)
+            self.network_method_badge.setToolTip(f"Unable to read network status: {exc}")
+            self._refresh_widget_style(self.network_method_badge)
+            return
+
+        label = str(getattr(sync, "network_method_label", "Unknown") or "Unknown")
+        method = str(getattr(sync, "network_method", "unknown") or "unknown")
+        warning = bool(getattr(sync, "network_method_exposes_ip", False))
+        if method == "unknown":
+            text = "Network method unknown"
+        elif bool(getattr(sync, "connected", False)):
+            text = f"Connected via {label}"
+        elif bool(getattr(sync, "sync_started", False)):
+            text = (
+                f"Listening via {label}"
+                if self._core.mode == "server"
+                else f"Using {label}"
+            )
+        else:
+            text = f"Configured via {label}"
+
+        self.network_method_badge.setText(text)
+        self.network_method_badge.setProperty("warning", warning)
+        self.network_method_badge.setToolTip(
+            "Direct TCP can reveal IP-address metadata. Use Yggdrasil, I2P, "
+            "LoRa, or a trusted VPN when privacy matters."
+            if warning
+            else f"TALON network method: {label}"
+        )
+        self._refresh_widget_style(self.network_method_badge)
+        self._maybe_show_direct_tcp_warning(sync)
+
+    def _maybe_show_direct_tcp_warning(self, sync: object) -> None:
+        if not bool(getattr(sync, "network_method_exposes_ip", False)):
+            return
+        if not bool(getattr(sync, "sync_started", False)):
+            return
+        session_id = int(getattr(sync, "connection_session_id", 0) or 0)
+        warning_id = session_id if session_id > 0 else -1
+        if self._last_direct_tcp_warning_session_id == warning_id:
+            return
+        self._last_direct_tcp_warning_session_id = warning_id
+        QtCore.QTimer.singleShot(0, self._show_direct_tcp_privacy_warning)
+
+    def _show_direct_tcp_privacy_warning(self) -> None:
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle(DIRECT_TCP_PRIVACY_WARNING_TITLE)
+        box.setText(DIRECT_TCP_PRIVACY_WARNING_TEXT)
+        box.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        dismiss = box.button(QtWidgets.QMessageBox.Ok)
+        if dismiss is not None:
+            dismiss.setText("Dismiss")
+        box.exec()
+
+    @staticmethod
+    def _refresh_widget_style(widget: QtWidgets.QWidget) -> None:
+        style = widget.style()
+        style.unpolish(widget)
+        style.polish(widget)
 
     def _on_record_mutated(self, action: str, table: str, record_id: int) -> None:
         self.statusBar().showMessage(f"{table} {action}: #{record_id}", 5000)

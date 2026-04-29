@@ -66,6 +66,7 @@ class ServerActiveClients:
             handler._teardown_link(old_link)
         with handler._links_lock:
             handler._active_links[operator_rns_hash] = link
+            handler._connection_session_id += 1
             return len(handler._active_links)
 
     def remove_link(self, link: RNS.Link) -> typing.Optional[str]:

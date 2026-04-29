@@ -297,6 +297,21 @@ def _stylesheet(*, theme_key: str = "dark", font_scale: float = 1.0) -> str:
         background: #121a1d;
     }
 
+    QLabel#networkMethodBadge {
+        color: #b7c4ca;
+        background: #121a1d;
+        border: 1px solid #34474f;
+        border-radius: 4px;
+        padding: 3px 9px;
+        font-weight: 700;
+    }
+
+    QLabel#networkMethodBadge[warning="true"] {
+        color: #130d04;
+        background: #f28c28;
+        border-color: #ffb35d;
+    }
+
     QCheckBox {
         background: transparent;
         spacing: 8px;

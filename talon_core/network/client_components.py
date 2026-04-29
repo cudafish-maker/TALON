@@ -1246,6 +1246,7 @@ class ClientLinkLifecycle:
                 sync_done_event.set()
                 return
             manager._link = link
+            manager._connection_session_id += 1
             outbox = manager._collect_outbox()
             if outbox:
                 self._log.info(

@@ -143,6 +143,7 @@ class ServerNetHandler:
         self._lock = threading.Lock()
         # operator_rns_hash → persistent RNS.Link (broadband clients)
         self._active_links: dict[str, RNS.Link] = {}
+        self._connection_session_id: int = 0
         self._links_lock = threading.Lock()
         self._link_identity_hashes: dict[int, str] = {}
         self._link_auth: dict[int, AuthenticatedOperator] = {}
@@ -238,6 +239,7 @@ class ServerNetHandler:
             "started": self._destination is not None,
             "active_client_count": len(active_hashes),
             "active_client_hashes": active_hashes,
+            "connection_session_id": self._connection_session_id,
         }
 
     # ------------------------------------------------------------------

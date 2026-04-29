@@ -549,6 +549,7 @@ import talon_desktop.app as app_module
 from talon_desktop.app import DesktopRuntime, MainWindow
 
 config_path = sys.argv[1]
+mode = sys.argv[2]
 
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 core = TalonCoreSession(config_path=config_path).start()
@@ -564,28 +565,97 @@ try:
             events.append("accepted")
             return QtWidgets.QDialog.Accepted
     app_module.ReticulumConfigDialog = FakeReticulumConfigDialog
-    runtime.show_login()
-    runtime.unlock("DesktopSmoke-1")
-    deadline = time.time() + 15.0
-    while time.time() < deadline:
-        app.processEvents()
-        if runtime.main_window is not None:
-            break
-        time.sleep(0.02)
-    else:
-        raise AssertionError("main window did not open")
+    core.unlock_with_key(bytes(range(32)))
+    runtime.main_window = MainWindow(core, runtime.event_bridge)
+    runtime.main_window.networkSetupRequested.connect(runtime.configure_network)
+    runtime.main_window.show()
+    app.processEvents()
     runtime.main_window.network_setup_button.click()
     app.processEvents()
     assert events == ["main-parent", "accepted"], events
     assert runtime.main_window.network_setup_button.isEnabled()
     assert runtime.main_window.statusBar().currentMessage() == "Network settings saved."
-    print("main-network-setup-ok")
+    print("main-network-setup-ok-" + mode)
 finally:
     if runtime.main_window is not None:
         runtime.main_window.close()
     if runtime.login_window is not None:
         runtime.login_window.close()
     runtime.shutdown()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
+_QT_NETWORK_METHOD_WARNING_SCRIPT = r"""
+import os
+import sys
+import time
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtCore, QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_core.network.rns_config import tcp_client_config
+from talon_desktop.app import DIRECT_TCP_PRIVACY_WARNING_TEXT, MainWindow
+from talon_desktop.qt_events import CoreEventBridge
+
+config_path = sys.argv[1]
+settings_path = sys.argv[4]
+
+class FakeClientSync:
+    def __init__(self):
+        self.session_id = 1
+
+    def status(self):
+        return {
+            "started": True,
+            "connected": True,
+            "enrolled": True,
+            "operator_id": 2,
+            "last_sync_at": 12345,
+            "connection_session_id": self.session_id,
+        }
+
+    def stop(self):
+        pass
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+window = None
+try:
+    core.unlock_with_key(bytes(range(32)))
+    core.save_reticulum_config_text(tcp_client_config("203.0.113.44", port=4242))
+    settings = QtCore.QSettings(settings_path, QtCore.QSettings.IniFormat)
+    window = MainWindow(core, CoreEventBridge(), settings=settings)
+    shown = []
+    window._show_direct_tcp_privacy_warning = lambda: shown.append(
+        DIRECT_TCP_PRIVACY_WARNING_TEXT
+    )
+    fake = FakeClientSync()
+    core._client_sync = fake
+    window._refresh_network_method_status()
+    app.processEvents()
+    assert window.network_method_badge.text() == "Connected via TCP"
+    assert window.network_method_badge.property("warning") is True
+    assert len(shown) == 1
+    assert "VPN" in shown[0]
+    assert "203.0.113.44" not in shown[0]
+    window._refresh_network_method_status()
+    app.processEvents()
+    assert len(shown) == 1
+    fake.session_id = 2
+    window._refresh_network_method_status()
+    app.processEvents()
+    assert len(shown) == 2
+    print("network-method-warning-ok")
+finally:
+    if window is not None:
+        window.close()
+    core._client_sync = None
+    core.close()
     app.processEvents()
 sys.stdout.flush()
 sys.stderr.flush()
@@ -1124,18 +1194,34 @@ def test_qt_client_network_setup_button_recovers_after_setup_reject(
     assert "network-setup-retry-ok" in result.stdout
 
 
+@pytest.mark.parametrize("mode", ("client", "server"))
 def test_qt_main_window_network_setup_button_opens_setup(
     tmp_path: pathlib.Path,
+    mode: str,
 ) -> None:
     result = _run_qt_subprocess(
         _QT_MAIN_NETWORK_SETUP_SCRIPT,
         tmp_path,
-        mode="server",
+        mode=mode,
         extra_arg="main-network-setup",
         timeout=30,
     )
 
-    assert "main-network-setup-ok" in result.stdout
+    assert f"main-network-setup-ok-{mode}" in result.stdout
+
+
+def test_qt_network_method_badge_warns_for_each_direct_tcp_session(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_NETWORK_METHOD_WARNING_SCRIPT,
+        tmp_path,
+        mode="client",
+        extra_arg="network-method-warning",
+        timeout=30,
+    )
+
+    assert "network-method-warning-ok" in result.stdout
 
 
 def test_qt_unaccepted_reticulum_config_opens_setup_before_network_start(

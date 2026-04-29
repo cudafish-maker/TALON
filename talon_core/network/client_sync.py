@@ -110,6 +110,7 @@ class ClientSyncManager:
         self._last_sync_at: int = 0
         # Handle to the current persistent link (None when disconnected).
         self._link: typing.Optional[RNS.Link] = None
+        self._connection_session_id: int = 0
         self._chunk_reassembler = ChunkReassembler(logger=_log)
         # Compatibility aliases for existing tests and diagnostic inspection.
         self._chunk_buffers = self._chunk_reassembler.buffers
@@ -228,6 +229,7 @@ class ClientSyncManager:
             "server_hash": self._server_hash.hex() if self._server_hash else None,
             "last_sync_at": self._last_sync_at or None,
             "initial_sync_done": self._initial_sync_done,
+            "connection_session_id": self._connection_session_id,
         }
 
     def _connection_loop(self) -> None:

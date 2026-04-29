@@ -12,6 +12,8 @@ from talon_core.network.rns_config import (
     i2pd_client_config,
     i2pd_server_config,
     reticulum_acceptance_path,
+    tcp_client_config,
+    tcp_server_config,
     yggdrasil_client_config,
     yggdrasil_server_config,
 )
@@ -845,6 +847,62 @@ def test_core_reticulum_yggdrasil_and_i2pd_templates_validate(
         in i2pd_client
     )
     assert session.validate_reticulum_config_text(i2pd_client).valid is True
+
+    session.close()
+
+
+def test_core_sync_status_reports_redacted_network_method(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    session.save_reticulum_config_text(tcp_client_config("203.0.113.44", port=4242))
+    direct_tcp = session.read_model("sync.status")
+    assert direct_tcp.network_method == "tcp"
+    assert direct_tcp.network_method_label == "TCP"
+    assert direct_tcp.network_method_exposes_ip is True
+    assert direct_tcp.network_method_warning == "direct_tcp_ip_exposure"
+    assert "203.0.113.44" not in direct_tcp.network_method_label
+
+    session.save_reticulum_config_text(
+        yggdrasil_client_config("201:5d78:af73:5caf:a4de:a79f:3278:71e5")
+    )
+    yggdrasil = session.read_model("sync.status")
+    assert yggdrasil.network_method == "yggdrasil"
+    assert yggdrasil.network_method_label == "Yggdrasil"
+    assert yggdrasil.network_method_exposes_ip is False
+    assert yggdrasil.network_method_warning is None
+    assert "201:5d78" not in yggdrasil.network_method_label
+
+    session.save_reticulum_config_text(
+        i2pd_client_config(
+            "5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p"
+        )
+    )
+    i2p = session.read_model("sync.status")
+    assert i2p.network_method == "i2p"
+    assert i2p.network_method_label == "I2P"
+    assert i2p.network_method_exposes_ip is False
+
+    session.close()
+
+
+def test_core_sync_status_reports_server_tcp_warning_without_addresses(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.save_reticulum_config_text(tcp_server_config(listen_ip="0.0.0.0", port=4242))
+
+    sync_status = session.read_model("sync.status")
+
+    assert sync_status.network_method == "tcp"
+    assert sync_status.network_method_label == "TCP"
+    assert sync_status.network_method_exposes_ip is True
+    assert "0.0.0.0" not in sync_status.network_method_label
 
     session.close()
 

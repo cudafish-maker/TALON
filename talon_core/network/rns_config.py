@@ -62,9 +62,33 @@ class ReticulumConfigSaveResult:
     restart_required: bool = False
 
 
+@dataclasses.dataclass(frozen=True)
+class ReticulumTransportSummary:
+    method: str
+    label: str
+    direct_tcp_warning: bool = False
+    enabled_methods: tuple[str, ...] = ()
+
+
 _TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 _FALSE_VALUES = {"0", "false", "no", "off", "disabled"}
 _ACCEPTANCE_MARKER_NAME = ".talon-reticulum-config.accepted"
+_METHOD_LABELS = {
+    "yggdrasil": "Yggdrasil",
+    "i2p": "I2P",
+    "tcp": "TCP",
+    "lora": "LoRa",
+    "auto": "AutoInterface",
+    "unknown": "Unknown",
+}
+_METHOD_PRIORITY = ("yggdrasil", "i2p", "tcp", "lora", "auto")
+_LORA_INTERFACE_TYPES = frozenset({
+    "RNodeInterface",
+    "RNodeMultiInterface",
+    "KISSInterface",
+    "AX25KISSInterface",
+    "SerialInterface",
+})
 
 
 def reticulum_config_path(config_dir: pathlib.Path) -> pathlib.Path:
@@ -226,6 +250,58 @@ def validate_reticulum_config_text(
         valid=not errors,
         errors=tuple(errors),
         warnings=tuple(dict.fromkeys(warnings)),
+    )
+
+
+def reticulum_transport_summary(
+    config_dir: pathlib.Path,
+    *,
+    mode: Mode,
+) -> ReticulumTransportSummary:
+    """Return a redacted operator-facing summary of the configured RNS method."""
+    text = load_reticulum_config_text(config_dir, mode=mode)
+    return reticulum_transport_summary_from_text(text, mode=mode)
+
+
+def reticulum_transport_summary_from_text(
+    text: str,
+    *,
+    mode: Mode,
+) -> ReticulumTransportSummary:
+    """Classify enabled Reticulum interfaces without exposing addresses."""
+    del mode  # Reserved for future mode-specific classification rules.
+    try:
+        from RNS.vendor.configobj import ConfigObj
+
+        parsed = ConfigObj(text.splitlines())
+    except Exception:
+        return ReticulumTransportSummary(
+            method="unknown",
+            label=_METHOD_LABELS["unknown"],
+        )
+
+    interfaces = _section(parsed, "interfaces")
+    if interfaces is None:
+        return ReticulumTransportSummary(
+            method="unknown",
+            label=_METHOD_LABELS["unknown"],
+        )
+
+    methods: list[str] = []
+    for interface_name, interface in _iter_interface_sections(interfaces):
+        if not _as_bool(interface.get("enabled"), default=False):
+            continue
+        method = _classify_interface_method(interface_name, interface)
+        if method is not None:
+            methods.append(method)
+
+    unique_methods = tuple(dict.fromkeys(methods))
+    selected = _select_method(unique_methods)
+    return ReticulumTransportSummary(
+        method=selected,
+        label=_METHOD_LABELS.get(selected, _METHOD_LABELS["unknown"]),
+        direct_tcp_warning=(selected == "tcp"),
+        enabled_methods=unique_methods,
     )
 
 
@@ -447,6 +523,61 @@ def _iter_interface_sections(
         value = interfaces.get(name)
         if isinstance(value, dict) or hasattr(value, "items"):
             yield str(name), typing.cast(typing.Mapping[str, typing.Any], value)
+
+
+def _classify_interface_method(
+    interface_name: str,
+    interface: typing.Mapping[str, typing.Any],
+) -> str | None:
+    interface_type = str(interface.get("type", "")).strip()
+    interface_name_lower = interface_name.lower()
+    if interface_type == "I2PInterface":
+        return "i2p"
+    if interface_type in _LORA_INTERFACE_TYPES:
+        return "lora"
+    if interface_type == "AutoInterface":
+        return "auto"
+    if interface_type in {"TCPServerInterface", "TCPClientInterface"}:
+        if _is_yggdrasil_tcp_interface(interface_name_lower, interface):
+            return "yggdrasil"
+        return "tcp"
+    return None
+
+
+def _is_yggdrasil_tcp_interface(
+    interface_name_lower: str,
+    interface: typing.Mapping[str, typing.Any],
+) -> bool:
+    if "yggdrasil" in interface_name_lower:
+        return True
+    if _as_bool(interface.get("prefer_ipv6"), default=False):
+        return True
+    if str(interface.get("device", "")).strip():
+        return True
+    return _is_yggdrasil_address(interface.get("target_host")) or _is_yggdrasil_address(
+        interface.get("listen_ip")
+    )
+
+
+def _is_yggdrasil_address(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        import ipaddress
+
+        address = ipaddress.ip_address(str(value).strip().split("%", 1)[0])
+        return address in ipaddress.ip_network("200::/7")
+    except ValueError:
+        return False
+
+
+def _select_method(methods: tuple[str, ...]) -> str:
+    if not methods:
+        return "unknown"
+    for method in _METHOD_PRIORITY:
+        if method in methods:
+            return method
+    return "unknown"
 
 
 def _validate_tcp_server(

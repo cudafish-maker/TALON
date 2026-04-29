@@ -27,6 +27,7 @@ from talon_core.network.rns_config import (
     ReticulumConfigSaveResult,
     ReticulumConfigStatus,
     ReticulumConfigValidation,
+    ReticulumTransportSummary,
 )
 from talon_core.operators import (
     list_operators,
@@ -111,6 +112,11 @@ class SyncStatus:
     lease_monitor_started: bool
     connection_state: str
     connected: bool
+    network_method: str
+    network_method_label: str
+    network_method_warning: typing.Optional[str]
+    network_method_exposes_ip: bool
+    connection_session_id: int
     heartbeat_interval_s: typing.Optional[int]
     last_heartbeat_at: typing.Optional[int]
     lease_locked: typing.Optional[bool]
@@ -788,6 +794,7 @@ class TalonCoreSession:
         lease_status = self._lease_monitor_status()
         client_status = self._client_sync_status()
         server_status = self._server_net_status()
+        transport = self._network_transport_summary()
         pending_by_table = self._pending_outbox_counts() if self.is_unlocked else {}
         pending_total = sum(pending_by_table.values())
 
@@ -822,6 +829,17 @@ class TalonCoreSession:
             lease_monitor_started=bool(lease_status.get("started")),
             connection_state=connection_state,
             connected=connected,
+            network_method=transport.method,
+            network_method_label=transport.label,
+            network_method_warning=(
+                "direct_tcp_ip_exposure" if transport.direct_tcp_warning else None
+            ),
+            network_method_exposes_ip=transport.direct_tcp_warning,
+            connection_session_id=int(
+                client_status.get("connection_session_id")
+                or server_status.get("connection_session_id")
+                or 0
+            ),
             heartbeat_interval_s=typing.cast(
                 typing.Optional[int],
                 lease_status.get("interval_s"),
@@ -868,6 +886,7 @@ class TalonCoreSession:
                 "enrolled": self._operator_id is not None,
                 "operator_id": self._operator_id,
                 "last_sync_at": None,
+                "connection_session_id": 0,
             }
         if hasattr(self._client_sync, "status"):
             return dict(self._client_sync.status())
@@ -876,15 +895,42 @@ class TalonCoreSession:
             "connected": bool(getattr(self._client_sync, "is_connected", lambda: False)()),
             "operator_id": self._operator_id,
             "last_sync_at": getattr(self._client_sync, "_last_sync_at", None),
+            "connection_session_id": getattr(
+                self._client_sync,
+                "_connection_session_id",
+                0,
+            ),
         }
 
     def _server_net_status(self) -> dict[str, typing.Any]:
         if self._net_handler is None:
-            return {"started": False, "active_client_count": 0}
+            return {
+                "started": False,
+                "active_client_count": 0,
+                "connection_session_id": 0,
+            }
         if hasattr(self._net_handler, "status"):
             return dict(self._net_handler.status())
         active_links = getattr(self._net_handler, "_active_links", {})
-        return {"started": True, "active_client_count": len(active_links)}
+        return {
+            "started": True,
+            "active_client_count": len(active_links),
+            "connection_session_id": getattr(
+                self._net_handler,
+                "_connection_session_id",
+                0,
+            ),
+        }
+
+    def _network_transport_summary(self) -> ReticulumTransportSummary:
+        if not self.is_unlocked:
+            return ReticulumTransportSummary(method="unknown", label="Unknown")
+        try:
+            from talon_core.network.rns_config import reticulum_transport_summary
+
+            return reticulum_transport_summary(self.paths.rns_config_dir, mode=self.mode)
+        except Exception:
+            return ReticulumTransportSummary(method="unknown", label="Unknown")
 
     def _apply_sync_side_effects(
         self,
