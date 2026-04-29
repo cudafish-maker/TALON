@@ -399,6 +399,161 @@ MIGRATIONS: list[str] = [
     ALTER TABLE messages ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'synced';
     CREATE INDEX idx_messages_sync_status ON messages(sync_status);
     """,
+
+    # 0016 — Community safety assignments, check-ins, and incidents
+    #
+    # These tables provide the first field-oriented community safety workflow:
+    # patrol/protective-detail assignment tracking, scheduled or ad hoc
+    # check-ins, duress states, and event-scoped incident records. They avoid
+    # person-of-interest or suspect records and keep sensitive protected-person
+    # data as short operational labels until core-level privacy/ACLs exist.
+    """
+    CREATE TABLE IF NOT EXISTS assignments (
+        id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+        mission_id               INTEGER REFERENCES missions(id),
+        assignment_type          TEXT    NOT NULL,
+        title                    TEXT    NOT NULL,
+        status                   TEXT    NOT NULL DEFAULT 'planned',
+        priority                 TEXT    NOT NULL DEFAULT 'ROUTINE',
+        protected_label          TEXT    NOT NULL DEFAULT '',
+        location_label           TEXT    NOT NULL DEFAULT '',
+        location_precision       TEXT    NOT NULL DEFAULT 'general',
+        support_reason           TEXT    NOT NULL DEFAULT '',
+        consent_source           TEXT    NOT NULL DEFAULT '',
+        assigned_operator_ids    TEXT    NOT NULL DEFAULT '[]',
+        team_lead                TEXT    NOT NULL DEFAULT '',
+        backup_operator          TEXT    NOT NULL DEFAULT '',
+        escalation_contact       TEXT    NOT NULL DEFAULT '',
+        required_skills          TEXT    NOT NULL DEFAULT '[]',
+        shift_start              TEXT    NOT NULL DEFAULT '',
+        shift_end                TEXT    NOT NULL DEFAULT '',
+        checkin_interval_min     INTEGER NOT NULL DEFAULT 20,
+        overdue_threshold_min    INTEGER NOT NULL DEFAULT 5,
+        handoff_notes            TEXT    NOT NULL DEFAULT '',
+        risk_notes               TEXT    NOT NULL DEFAULT '',
+        lat                      REAL,
+        lon                      REAL,
+        last_checkin_state       TEXT    NOT NULL DEFAULT '',
+        last_checkin_at          INTEGER,
+        last_checkin_operator_id INTEGER REFERENCES operators(id),
+        created_by               INTEGER NOT NULL REFERENCES operators(id),
+        created_at               INTEGER NOT NULL,
+        uuid                     TEXT    NOT NULL UNIQUE,
+        sync_status              TEXT    NOT NULL DEFAULT 'synced',
+        version                  INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS checkins (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id   INTEGER NOT NULL REFERENCES assignments(id),
+        state           TEXT    NOT NULL,
+        note            TEXT    NOT NULL DEFAULT '',
+        operator_id     INTEGER NOT NULL REFERENCES operators(id),
+        lat             REAL,
+        lon             REAL,
+        acknowledged_by INTEGER REFERENCES operators(id),
+        acknowledged_at INTEGER,
+        created_at      INTEGER NOT NULL,
+        uuid            TEXT    NOT NULL UNIQUE,
+        sync_status     TEXT    NOT NULL DEFAULT 'synced',
+        version         INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS incidents (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        category             TEXT    NOT NULL,
+        severity             TEXT    NOT NULL,
+        title                TEXT    NOT NULL DEFAULT '',
+        occurred_at          INTEGER NOT NULL,
+        location_label       TEXT    NOT NULL DEFAULT '',
+        lat                  REAL,
+        lon                  REAL,
+        narrative            TEXT    NOT NULL DEFAULT '',
+        actions_taken        TEXT    NOT NULL DEFAULT '',
+        outcome              TEXT    NOT NULL DEFAULT '',
+        follow_up_needed     INTEGER NOT NULL DEFAULT 0,
+        notified_services    TEXT    NOT NULL DEFAULT '',
+        linked_mission_id    INTEGER REFERENCES missions(id),
+        linked_assignment_id INTEGER REFERENCES assignments(id),
+        linked_asset_id      INTEGER REFERENCES assets(id),
+        linked_sitrep_id     INTEGER REFERENCES sitreps(id),
+        created_by           INTEGER NOT NULL REFERENCES operators(id),
+        created_at           INTEGER NOT NULL,
+        uuid                 TEXT    NOT NULL UNIQUE,
+        sync_status          TEXT    NOT NULL DEFAULT 'synced',
+        version              INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE INDEX idx_assignments_status ON assignments(status);
+    CREATE INDEX idx_assignments_type ON assignments(assignment_type);
+    CREATE INDEX idx_assignments_mission ON assignments(mission_id);
+    CREATE INDEX idx_assignments_sync_status ON assignments(sync_status);
+    CREATE INDEX idx_checkins_assignment ON checkins(assignment_id, created_at);
+    CREATE INDEX idx_checkins_state ON checkins(state);
+    CREATE INDEX idx_checkins_sync_status ON checkins(sync_status);
+    CREATE INDEX idx_incidents_category ON incidents(category);
+    CREATE INDEX idx_incidents_severity ON incidents(severity);
+    CREATE INDEX idx_incidents_occurred ON incidents(occurred_at);
+    CREATE INDEX idx_incidents_sync_status ON incidents(sync_status);
+    """,
+
+    # 0017 — Location-native SITREPs, append-only follow-ups, and document links
+    #
+    # SITREPs were previously location-visible only when linked to an asset.
+    # This keeps the immutable original encrypted body while adding optional
+    # native map coordinates, assignment linkage, current triage state, and
+    # append-only child rows for acknowledgements, assignment handoff, status
+    # changes, resolution notes, and document/photo links.
+    """
+    ALTER TABLE sitreps ADD COLUMN location_label TEXT NOT NULL DEFAULT '';
+    ALTER TABLE sitreps ADD COLUMN lat REAL;
+    ALTER TABLE sitreps ADD COLUMN lon REAL;
+    ALTER TABLE sitreps ADD COLUMN location_precision TEXT NOT NULL DEFAULT '';
+    ALTER TABLE sitreps ADD COLUMN location_source TEXT NOT NULL DEFAULT '';
+    ALTER TABLE sitreps ADD COLUMN assignment_id INTEGER REFERENCES assignments(id);
+    ALTER TABLE sitreps ADD COLUMN status TEXT NOT NULL DEFAULT 'open';
+    ALTER TABLE sitreps ADD COLUMN assigned_to TEXT NOT NULL DEFAULT '';
+    ALTER TABLE sitreps ADD COLUMN resolved_at INTEGER;
+    ALTER TABLE sitreps ADD COLUMN disposition TEXT NOT NULL DEFAULT '';
+    ALTER TABLE sitreps ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'team';
+
+    CREATE TABLE IF NOT EXISTS sitrep_followups (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        sitrep_id   INTEGER NOT NULL REFERENCES sitreps(id),
+        action      TEXT    NOT NULL,
+        note        TEXT    NOT NULL DEFAULT '',
+        author_id   INTEGER NOT NULL REFERENCES operators(id),
+        assigned_to TEXT    NOT NULL DEFAULT '',
+        status      TEXT    NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL,
+        uuid        TEXT    NOT NULL UNIQUE,
+        sync_status TEXT    NOT NULL DEFAULT 'synced',
+        version     INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS sitrep_documents (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        sitrep_id   INTEGER NOT NULL REFERENCES sitreps(id),
+        document_id INTEGER NOT NULL REFERENCES documents(id),
+        description TEXT    NOT NULL DEFAULT '',
+        created_by  INTEGER NOT NULL REFERENCES operators(id),
+        created_at  INTEGER NOT NULL,
+        uuid        TEXT    NOT NULL UNIQUE,
+        sync_status TEXT    NOT NULL DEFAULT 'synced',
+        version     INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(sitrep_id, document_id)
+    );
+
+    CREATE INDEX idx_sitreps_assignment ON sitreps(assignment_id);
+    CREATE INDEX idx_sitreps_status ON sitreps(status);
+    CREATE INDEX idx_sitreps_location ON sitreps(lat, lon);
+    CREATE INDEX idx_sitrep_followups_sitrep ON sitrep_followups(sitrep_id, created_at);
+    CREATE INDEX idx_sitrep_followups_action ON sitrep_followups(action);
+    CREATE INDEX idx_sitrep_followups_sync_status ON sitrep_followups(sync_status);
+    CREATE INDEX idx_sitrep_documents_sitrep ON sitrep_documents(sitrep_id);
+    CREATE INDEX idx_sitrep_documents_document ON sitrep_documents(document_id);
+    CREATE INDEX idx_sitrep_documents_sync_status ON sitrep_documents(sync_status);
+    """,
 ]
 
 

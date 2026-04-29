@@ -22,6 +22,8 @@ _COMMON_NAV: tuple[DesktopNavItem, ...] = (
     DesktopNavItem("sitreps", "SITREPs", "sitreps.list", frozenset({"sitrep"})),
     DesktopNavItem("assets", "Assets", "assets.list", frozenset({"assets"})),
     DesktopNavItem("missions", "Missions", "missions.list", frozenset({"mission"})),
+    DesktopNavItem("assignments", "Assignments", "assignments.board", frozenset({"assignments"})),
+    DesktopNavItem("incidents", "Incidents", "incidents.list", frozenset({"incidents"})),
     DesktopNavItem("chat", "Chat", "chat.channels", frozenset({"chat"})),
     DesktopNavItem("documents", "Documents", "documents.list", frozenset({"documents"})),
     DesktopNavItem("operators", "Operators", "operators.list", frozenset({"operators"})),

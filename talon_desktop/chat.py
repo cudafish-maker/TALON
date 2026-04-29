@@ -197,9 +197,14 @@ def grid_reference_items_from_context(
     for entry in sitrep_entries:
         sitrep = entry[0] if isinstance(entry, tuple) else entry
         asset_id = _optional_int(_field(sitrep, "asset_id", default=None))
-        if asset_id is None or asset_id not in asset_locations:
-            continue
-        lat, lon, asset_label = asset_locations[asset_id]
+        lat = _optional_float(_field(sitrep, "lat", default=None))
+        lon = _optional_float(_field(sitrep, "lon", default=None))
+        detail = str(_field(sitrep, "location_label", default="") or "Native location")
+        if lat is None or lon is None:
+            if asset_id is None or asset_id not in asset_locations:
+                continue
+            lat, lon, asset_label = asset_locations[asset_id]
+            detail = f"Linked to {asset_label}"
         sitrep_id = int(_field(sitrep, "id"))
         level = str(_field(sitrep, "level", default="SITREP"))
         items.append(
@@ -208,7 +213,7 @@ def grid_reference_items_from_context(
                 f"{level} #{sitrep_id}",
                 lat,
                 lon,
-                detail=f"Linked to {asset_label}",
+                detail=detail,
             )
         )
 

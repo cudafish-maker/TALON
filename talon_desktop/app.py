@@ -12,6 +12,7 @@ from talon_core.utils.logging import get_logger
 
 from talon_desktop.asset_page import AssetPage
 from talon_desktop.chat_page import ChatPage
+from talon_desktop.community_safety_page import AssignmentPage, IncidentPage
 from talon_desktop.document_page import DocumentPage
 from talon_desktop.log_view import LogDialog
 from talon_desktop.logs import (
@@ -572,6 +573,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 page = MapPage(core)
             elif section.key == "missions":
                 page = MissionPage(core)
+            elif section.key == "assignments":
+                page = AssignmentPage(core)
+            elif section.key == "incidents":
+                page = IncidentPage(core)
             elif section.key == "chat":
                 page = ChatPage(core)
             elif section.key == "documents":
@@ -920,6 +925,17 @@ class MainWindow(QtWidgets.QMainWindow):
             map_page = self._pages.get("map")
             if isinstance(map_page, MapPage):
                 map_page.handle_record_mutation(action, table, record_id)
+        elif table in {"sitrep_followups", "sitrep_documents"}:
+            page = self._pages.get("sitreps")
+            if isinstance(page, SitrepPage):
+                page.handle_record_mutation(action, table, record_id)
+            map_page = self._pages.get("map")
+            if isinstance(map_page, MapPage):
+                map_page.handle_record_mutation(action, table, record_id)
+            if table == "sitrep_documents":
+                document_page = self._pages.get("documents")
+                if isinstance(document_page, DocumentPage):
+                    document_page.handle_record_mutation(action, table, record_id)
         elif table == "assets":
             page = self._pages.get("assets")
             if isinstance(page, AssetPage):
@@ -927,6 +943,26 @@ class MainWindow(QtWidgets.QMainWindow):
             map_page = self._pages.get("map")
             if isinstance(map_page, MapPage):
                 map_page.handle_record_mutation(action, table, record_id)
+        elif table in {"assignments", "checkins"}:
+            assignment_page = self._pages.get("assignments")
+            if isinstance(assignment_page, AssignmentPage):
+                assignment_page.handle_record_mutation(action, table, record_id)
+            map_page = self._pages.get("map")
+            if isinstance(map_page, MapPage):
+                map_page.handle_record_mutation(action, table, record_id)
+            mission_page = self._pages.get("missions")
+            if isinstance(mission_page, MissionPage):
+                mission_page.handle_record_mutation(action, table, record_id)
+        elif table == "incidents":
+            incident_page = self._pages.get("incidents")
+            if isinstance(incident_page, IncidentPage):
+                incident_page.handle_record_mutation(action, table, record_id)
+            assignment_page = self._pages.get("assignments")
+            if isinstance(assignment_page, AssignmentPage):
+                assignment_page.handle_record_mutation(action, table, record_id)
+            page = self._pages.get("sitreps")
+            if isinstance(page, SitrepPage):
+                page.handle_record_mutation(action, table, record_id)
         elif table in {"missions", "zones", "waypoints", "sitreps"}:
             page = self._pages.get("map")
             if isinstance(page, MapPage):
@@ -957,7 +993,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if isinstance(chat_page, ChatPage):
                 chat_page.handle_record_mutation(action, table, record_id)
 
-        if table in {"assets", "sitreps"}:
+        if table in {"assets", "sitreps", "assignments", "checkins", "incidents"}:
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
@@ -969,6 +1005,11 @@ class MainWindow(QtWidgets.QMainWindow):
             "zones": ("map", "dashboard"),
             "waypoints": ("map", "dashboard"),
             "sitreps": ("sitreps", "map", "dashboard"),
+            "sitrep_followups": ("sitreps", "map", "dashboard"),
+            "sitrep_documents": ("sitreps", "documents", "map", "dashboard"),
+            "assignments": ("assignments", "map", "missions", "dashboard"),
+            "checkins": ("assignments", "map", "dashboard"),
+            "incidents": ("incidents", "assignments", "sitreps", "map", "dashboard"),
             "channels": ("chat",),
             "messages": ("chat", "dashboard"),
             "documents": ("documents",),

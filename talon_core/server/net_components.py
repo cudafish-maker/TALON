@@ -890,6 +890,22 @@ class ServerMessageHandlers:
                                 clean,
                             )
                         if new_record_id is not None:
+                            linked_sitrep_id = None
+                            if table == "sitrep_followups":
+                                try:
+                                    from talon_core.sitrep import apply_sitrep_followup_effect
+
+                                    with handler._lock:
+                                        linked_sitrep_id = apply_sitrep_followup_effect(
+                                            handler._conn,
+                                            new_record_id,
+                                        )
+                                except Exception as exc:
+                                    self._log.warning(
+                                        "Client push: SITREP follow-up effect failed id=%s: %s",
+                                        new_record_id,
+                                        exc,
+                                    )
                             accepted_uuids.append(uuid_val)
                             self._log.info(
                                 "Client push accepted: table=%s uuid=%s new_id=%s",
@@ -898,6 +914,8 @@ class ServerMessageHandlers:
                                 new_record_id,
                             )
                             handler.notify_change(table, new_record_id)
+                            if linked_sitrep_id is not None:
+                                handler.notify_change("sitreps", linked_sitrep_id)
                             self._ui_dispatcher.notify(table)
                     except Exception as exc:
                         self._log.warning(

@@ -50,6 +50,41 @@ class Sitrep:
     asset_id: typing.Optional[int]
     created_at: int
     version: int
+    location_label: str = ""
+    lat: typing.Optional[float] = None
+    lon: typing.Optional[float] = None
+    location_precision: str = ""
+    location_source: str = ""
+    assignment_id: typing.Optional[int] = None
+    status: str = "open"
+    assigned_to: str = ""
+    resolved_at: typing.Optional[int] = None
+    disposition: str = ""
+    sensitivity: str = "team"
+
+
+@dataclasses.dataclass
+class SitrepFollowUp:
+    id: int
+    sitrep_id: int
+    action: str
+    note: str
+    author_id: int
+    assigned_to: str
+    status: str
+    created_at: int
+    version: int
+
+
+@dataclasses.dataclass
+class SitrepDocumentLink:
+    id: int
+    sitrep_id: int
+    document_id: int
+    description: str
+    created_by: int
+    created_at: int
+    version: int
 
 
 @dataclasses.dataclass
@@ -81,6 +116,79 @@ class Mission:
     custom_resources: list = dataclasses.field(default_factory=list)  # JSON array of resource dicts
     objectives: list = dataclasses.field(default_factory=list)    # JSON array of objective dicts
     key_locations: dict = dataclasses.field(default_factory=dict) # JSON object
+
+
+@dataclasses.dataclass
+class CommunityAssignment:
+    id: int
+    mission_id: typing.Optional[int]
+    assignment_type: str
+    title: str
+    status: str
+    priority: str
+    protected_label: str
+    location_label: str
+    location_precision: str
+    support_reason: str
+    consent_source: str
+    assigned_operator_ids: list[int]
+    team_lead: str
+    backup_operator: str
+    escalation_contact: str
+    required_skills: list[str]
+    shift_start: str
+    shift_end: str
+    checkin_interval_min: int
+    overdue_threshold_min: int
+    handoff_notes: str
+    risk_notes: str
+    lat: typing.Optional[float]
+    lon: typing.Optional[float]
+    last_checkin_state: str
+    last_checkin_at: typing.Optional[int]
+    last_checkin_operator_id: typing.Optional[int]
+    created_by: int
+    created_at: int
+    version: int
+
+
+@dataclasses.dataclass
+class AssignmentCheckIn:
+    id: int
+    assignment_id: int
+    state: str
+    note: str
+    operator_id: int
+    lat: typing.Optional[float]
+    lon: typing.Optional[float]
+    acknowledged_by: typing.Optional[int]
+    acknowledged_at: typing.Optional[int]
+    created_at: int
+    version: int
+
+
+@dataclasses.dataclass
+class CommunityIncident:
+    id: int
+    category: str
+    severity: str
+    title: str
+    occurred_at: int
+    location_label: str
+    lat: typing.Optional[float]
+    lon: typing.Optional[float]
+    narrative: str
+    actions_taken: str
+    outcome: str
+    follow_up_needed: bool
+    notified_services: str
+    linked_mission_id: typing.Optional[int]
+    linked_assignment_id: typing.Optional[int]
+    linked_asset_id: typing.Optional[int]
+    linked_sitrep_id: typing.Optional[int]
+    created_by: int
+    created_at: int
+    version: int
 
 
 @dataclasses.dataclass

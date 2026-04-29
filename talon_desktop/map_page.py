@@ -12,6 +12,7 @@ from talon_desktop.map_data import (
     SCENE_HEIGHT,
     SCENE_WIDTH,
     AssetOverlay,
+    AssignmentOverlay,
     MapBounds,
     MapOverlayBundle,
     RouteOverlay,
@@ -26,6 +27,7 @@ from talon_desktop.map_tiles import (
     TILE_LAYERS_BY_KEY,
     WEB_MERCATOR_MAX_LAT,
     build_tile_plan,
+    lat_lon_for_scene_point,
     pan_bounds_by_scene_delta,
     zoom_bounds_around_scene_point,
 )
@@ -224,6 +226,8 @@ class MapPage(QtWidgets.QWidget):
             )
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
+        self.report_here_button = QtWidgets.QPushButton("Report Here")
+        self.report_here_button.clicked.connect(self._report_at_view_center)
         self.asset_filter_button = QtWidgets.QPushButton("Assets")
         self.asset_filter_button.clicked.connect(self._choose_visible_assets)
 
@@ -233,6 +237,7 @@ class MapPage(QtWidgets.QWidget):
         top_row.addLayout(layer_row)
         top_row.addWidget(self.mission_filter)
         top_row.addWidget(self.asset_filter_button)
+        top_row.addWidget(self.report_here_button)
         top_row.addWidget(self.refresh_button)
 
         self.view = MapGraphicsView(self._scene)
@@ -295,7 +300,8 @@ class MapPage(QtWidgets.QWidget):
             f"{len(self._bundle.zones)} zones, "
             f"{len(self._bundle.routes)} routes, "
             f"{len(self._bundle.waypoints)} waypoints, "
-            f"{len(self._bundle.sitreps)} linked SITREPs."
+            f"{len(self._bundle.assignments)} assignments, "
+            f"{len(self._bundle.sitreps)} mapped SITREPs."
         )
 
     def _sync_scene_size_to_view(self, *, rerender: bool = True) -> None:
@@ -565,10 +571,12 @@ class MapPage(QtWidgets.QWidget):
 
         self.sitrep_panel_count.setText(str(len(sitreps)))
         self.sitrep_panel_list.clear()
-        for sitrep in sitreps[:24]:
+        for entry in sitreps[:24]:
+            sitrep = entry[0] if isinstance(entry, tuple) else entry
             sitrep_id = getattr(sitrep, "id", "")
             level = str(getattr(sitrep, "level", "SITREP"))
-            body = str(getattr(sitrep, "body", ""))
+            raw_body = getattr(sitrep, "body", "")
+            body = raw_body.decode("utf-8", errors="replace") if isinstance(raw_body, bytes) else str(raw_body)
             body = body[:72] + ("..." if len(body) > 72 else "")
             item = QtWidgets.QListWidgetItem(f"{level} #{sitrep_id}\n{body}")
             item.setData(QtCore.Qt.UserRole, f"sitrep:{sitrep_id}")
@@ -699,7 +707,16 @@ class MapPage(QtWidgets.QWidget):
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
         _ = action, record_id
-        if table in {"assets", "missions", "zones", "waypoints", "sitreps"}:
+        if table in {
+            "assets",
+            "assignments",
+            "checkins",
+            "missions",
+            "sitrep_followups",
+            "sitreps",
+            "waypoints",
+            "zones",
+        }:
             self.refresh()
 
     def _render_bundle(self, bundle: MapOverlayBundle, *, refit: bool = False) -> None:
@@ -721,8 +738,14 @@ class MapPage(QtWidgets.QWidget):
         visible_asset_ids = {asset.id for asset in assets}
         for asset in assets:
             self._draw_asset(asset)
+        for assignment in bundle.assignments:
+            self._draw_assignment(assignment)
         for sitrep in bundle.sitreps:
-            if self._visible_asset_ids is not None and sitrep.asset_id not in visible_asset_ids:
+            if (
+                self._visible_asset_ids is not None
+                and sitrep.asset_id is not None
+                and sitrep.asset_id not in visible_asset_ids
+            ):
                 continue
             self._draw_sitrep(sitrep)
         self._scene.setSceneRect(0, 0, self._scene_width, self._scene_height)
@@ -856,6 +879,41 @@ class MapPage(QtWidgets.QWidget):
             ),
         )
 
+    def _draw_assignment(self, assignment: AssignmentOverlay) -> None:
+        color = (
+            QtGui.QColor("#e74c3c")
+            if assignment.status == "needs_support"
+            else QtGui.QColor("#8fbcbb")
+        )
+        size = 8
+        polygon = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(assignment.point.x, assignment.point.y - size),
+                QtCore.QPointF(assignment.point.x + size, assignment.point.y),
+                QtCore.QPointF(assignment.point.x, assignment.point.y + size),
+                QtCore.QPointF(assignment.point.x - size, assignment.point.y),
+            ]
+        )
+        item = self._scene.addPolygon(
+            polygon,
+            QtGui.QPen(QtGui.QColor("#ecf0f1"), 1),
+            QtGui.QBrush(color),
+        )
+        self._register_item(
+            item,
+            key=f"assignment:{assignment.id}",
+            label=f"Assignment #{assignment.id}",
+            detail=(
+                f"Assignment #{assignment.id}\n"
+                f"Title: {assignment.title}\n"
+                f"Type: {assignment.assignment_type}\n"
+                f"Status: {assignment.status}\n"
+                f"Priority: {assignment.priority}\n"
+                f"Last check-in: {assignment.last_checkin_state or ''}\n"
+                f"Lat/Lon: {assignment.point.lat:.6f}, {assignment.point.lon:.6f}"
+            ),
+        )
+
     def _draw_sitrep(self, sitrep: SitrepOverlay) -> None:
         size = 7
         polygon = QtGui.QPolygonF(
@@ -867,6 +925,8 @@ class MapPage(QtWidgets.QWidget):
             ]
         )
         color = QtGui.QColor("#e74c3c") if sitrep.level.startswith("FLASH") else QtGui.QColor("#3498db")
+        if sitrep.status in {"resolved", "closed"}:
+            color = QtGui.QColor(color.red(), color.green(), color.blue(), 120)
         item = self._scene.addPolygon(
             polygon,
             QtGui.QPen(QtGui.QColor("#ecf0f1"), 1),
@@ -879,8 +939,12 @@ class MapPage(QtWidgets.QWidget):
             detail=(
                 f"SITREP #{sitrep.id}\n"
                 f"Level: {sitrep.level}\n"
-                f"Asset: {sitrep.asset_id}\n"
+                f"Status: {sitrep.status}\n"
+                f"Asset: {sitrep.asset_id or ''}\n"
+                f"Assignment: {sitrep.assignment_id or ''}\n"
                 f"Mission: {sitrep.mission_id or ''}\n\n"
+                f"Location: {sitrep.location_label or sitrep.location_source or 'map point'}\n"
+                f"Lat/Lon: {sitrep.point.lat:.6f}, {sitrep.point.lon:.6f}\n\n"
                 f"{sitrep.body}"
             ),
         )
@@ -975,6 +1039,50 @@ class MapPage(QtWidgets.QWidget):
         self._visible_asset_ids = None if selected == all_ids else selected
         self._render_bundle(self._bundle)
         self._refresh_side_panels()
+
+    def _report_at_view_center(self) -> None:
+        bounds = self._view_bounds or (self._bundle.bounds if self._bundle is not None else None)
+        if bounds is None:
+            self.summary.setText("Load the map before creating a map SITREP.")
+            return
+        lat, lon = lat_lon_for_scene_point(
+            bounds,
+            self._scene_width / 2.0,
+            self._scene_height / 2.0,
+            scene_width=self._scene_width,
+            scene_height=self._scene_height,
+            scene_margin=self._scene_margin,
+        )
+        body, accepted = QtWidgets.QInputDialog.getMultiLineText(
+            self,
+            "Report Here",
+            f"SITREP at {lat:.6f}, {lon:.6f}",
+            "",
+        )
+        if not accepted:
+            return
+        body = body.strip()
+        if not body:
+            self.summary.setText("SITREP body is required.")
+            return
+        try:
+            self._core.command(
+                "sitreps.create",
+                {
+                    "level": "ROUTINE",
+                    "body": body,
+                    "lat": lat,
+                    "lon": lon,
+                    "location_label": "Map report",
+                    "location_precision": "exact",
+                    "location_source": "map",
+                    "mission_id": self._selected_mission_id(),
+                },
+            )
+            self.refresh()
+        except Exception as exc:
+            _log.warning("Map SITREP create failed: %s", exc)
+            self.summary.setText(f"SITREP not sent: {exc}")
 
     def _selected_mission_id(self) -> int | None:
         index = self.mission_filter.currentIndex()

@@ -334,6 +334,186 @@ def test_core_session_phase1_domain_boundary(tmp_path: pathlib.Path) -> None:
     assert "messages" in tables
     assert "missions" in tables
 
+
+def test_core_session_community_safety_commands_and_read_models(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    received = []
+    session.subscribe(received.append)
+
+    assignment_result = session.command(
+        "assignments.create",
+        {
+            "assignment_type": "protective_detail",
+            "title": "North Shelter evening support",
+            "status": "active",
+            "priority": "PRIORITY",
+            "protected_label": "North Shelter front desk",
+            "location_label": "North Shelter",
+            "team_lead": "Aster",
+            "checkin_interval_min": 20,
+            "overdue_threshold_min": 5,
+            "required_skills": ["medic", "de-escalation"],
+        },
+    )
+    checkin_result = session.command(
+        "assignments.checkin",
+        {
+            "assignment_id": assignment_result.assignment_id,
+            "state": "need_backup",
+            "note": "De-escalation support requested.",
+        },
+    )
+    incident_result = session.command(
+        "incidents.create",
+        {
+            "category": "community_conflict",
+            "severity": "IMMEDIATE",
+            "title": "Shelter support follow-up",
+            "location_label": "North Shelter",
+            "narrative": "Team documented a conflict and requested follow-up.",
+            "actions_taken": "De-escalation support notified.",
+            "follow_up_needed": True,
+            "linked_assignment_id": assignment_result.assignment_id,
+        },
+    )
+
+    board = session.read_model("assignments.board")
+    assert board["assignments"][0].title == "North Shelter evening support"
+    assert board["assignments"][0].status == "needs_support"
+    assert board["recent_checkins"][0].id == checkin_result.checkin_id
+    assert board["open_incidents"][0].id == incident_result.incident_id
+
+    detail = session.read_model(
+        "assignments.detail",
+        {"assignment_id": assignment_result.assignment_id},
+    )
+    assert detail["assignment"].last_checkin_state == "need_backup"
+    assert detail["checkins"][0].note == "De-escalation support requested."
+    assert detail["incidents"][0].title == "Shelter support follow-up"
+
+    incident_detail = session.read_model(
+        "incidents.detail",
+        {"incident_id": incident_result.incident_id},
+    )
+    assert incident_detail["assignment_title"] == "North Shelter evening support"
+
+    dashboard = session.read_model("dashboard.summary")
+    assert dashboard.counts["assignments"] == 1
+    assert dashboard.counts["assignments_needing_support"] == 1
+    assert dashboard.counts["incident_follow_ups"] == 1
+
+    tables = {mutation.table for event in received for mutation in event.iter_records()}
+    assert {"assignments", "checkins", "incidents"}.issubset(tables)
+
+    session.close()
+
+
+def test_core_session_sitrep_followups_locations_and_documents(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    received = []
+    session.subscribe(received.append)
+
+    assignment_result = session.command(
+        "assignments.create",
+        {
+            "assignment_type": "fixed_post",
+            "title": "North Gate watch",
+            "status": "active",
+            "priority": "PRIORITY",
+            "location_label": "North Gate",
+            "lat": 40.123456,
+            "lon": -75.25,
+        },
+    )
+    upload = session.command(
+        "documents.upload",
+        raw_filename="north-gate.txt",
+        file_data=b"photo notes",
+        description="North Gate attachment",
+    )
+    sitrep_result = session.command(
+        "sitreps.create",
+        {
+            "level": "PRIORITY",
+            "body": "Need support near North Gate.",
+            "assignment_id": assignment_result.assignment_id,
+            "location_label": "North Gate",
+            "lat": 40.123456,
+            "lon": -75.25,
+            "location_precision": "exact",
+            "location_source": "device",
+        },
+    )
+
+    sitrep_id = sitrep_result.record_id
+    listed = session.read_model("sitreps.list", {"has_location": True})
+    assert listed[0][0].id == sitrep_id
+    assert listed[0][0].assignment_id == assignment_result.assignment_id
+    assert listed[0][0].location_label == "North Gate"
+    assert listed[0][0].status == "open"
+
+    session.command("sitreps.acknowledge", {"sitrep_id": sitrep_id})
+    session.command(
+        "sitreps.assign_followup",
+        {"sitrep_id": sitrep_id, "assigned_to": "Team Bravo"},
+    )
+    session.command(
+        "sitreps.link_document",
+        {
+            "sitrep_id": sitrep_id,
+            "document_id": upload.document_id,
+            "description": "Attachment reviewed.",
+        },
+    )
+    session.command(
+        "sitreps.update_status",
+        {
+            "sitrep_id": sitrep_id,
+            "status": "closed",
+            "note": "Resolved with escort handoff.",
+        },
+    )
+
+    detail = session.read_model("sitreps.detail", {"sitrep_id": sitrep_id})
+    assert detail["assignment_title"] == "North Gate watch"
+    assert detail["sitrep"].status == "closed"
+    assert detail["sitrep"].assigned_to == "Team Bravo"
+    assert detail["sitrep"].disposition == "Resolved with escort handoff."
+    assert [item.action for item in detail["followups"]] == [
+        "acknowledged",
+        "assigned",
+        "document_linked",
+        "status",
+    ]
+    assert detail["documents"][0]["document"].filename == "north-gate.txt"
+
+    assert session.read_model("sitreps.list", {"unresolved_only": True}) == []
+    assert len(session.read_model("sitreps.list", {"status_filter": "closed"})) == 1
+    dashboard = session.read_model("dashboard.summary")
+    assert dashboard.counts["located_sitreps"] == 1
+    assert dashboard.counts["unresolved_sitreps"] == 0
+    assert dashboard.counts["sitrep_followups"] == 4
+    assert dashboard.counts["sitrep_documents"] == 1
+
+    deleted = session.command("documents.delete", document_id=upload.document_id)
+    assert deleted.document_id == upload.document_id
+    assert session.read_model("sitreps.detail", {"sitrep_id": sitrep_id})["documents"] == []
+
+    tables = {mutation.table for event in received for mutation in event.iter_records()}
+    assert {"sitreps", "sitrep_followups", "sitrep_documents", "documents"}.issubset(
+        tables
+    )
+
     session.close()
 
 

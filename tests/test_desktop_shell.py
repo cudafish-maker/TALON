@@ -29,6 +29,13 @@ from talon_desktop.chat import (
     item_from_channel,
     item_from_message,
 )
+from talon_desktop.community_safety import (
+    assignment_item_from_assignment,
+    build_assignment_payload,
+    build_checkin_payload,
+    build_incident_payload,
+    incident_item_from_incident,
+)
 from talon_desktop.documents import (
     build_upload_payload as build_document_upload_payload,
     can_delete_document,
@@ -75,6 +82,7 @@ from talon_desktop.sitreps import (
     DEFAULT_TEMPLATE_KEY,
     SITREP_TEMPLATES,
     build_create_payload,
+    build_filter_payload,
     feed_item_from_entry,
     severity_counts,
     should_play_audio,
@@ -1043,7 +1051,7 @@ finally:
 def test_desktop_navigation_includes_documents_for_client_and_server() -> None:
     for mode in ("client", "server"):
         keys = {item.key for item in navigation_items(mode)}
-    assert "documents" in keys
+        assert {"documents", "assignments", "incidents"}.issubset(keys)
 
 
 def test_desktop_log_buffer_tracks_warning_count() -> None:
@@ -1091,6 +1099,90 @@ def test_desktop_event_mapping_refreshes_documents_section() -> None:
     assert update.refresh_sections == frozenset({"documents"})
     assert update.mutations[0].table == "documents"
     assert update.mutations[0].record_id == 42
+
+
+def test_desktop_event_mapping_refreshes_sitrep_workflow_surfaces() -> None:
+    followup_update = desktop_update_from_event(record_changed("sitrep_followups", 42))
+    document_update = desktop_update_from_event(record_changed("sitrep_documents", 43))
+    incident_update = desktop_update_from_event(record_changed("incidents", 44))
+
+    assert followup_update.refresh_sections == frozenset(
+        {"dashboard", "map", "sitreps"}
+    )
+    assert document_update.refresh_sections == frozenset(
+        {"dashboard", "documents", "map", "sitreps"}
+    )
+    assert incident_update.refresh_sections == frozenset(
+        {"assignments", "dashboard", "incidents", "map", "sitreps"}
+    )
+
+
+def test_desktop_community_safety_helpers() -> None:
+    assignment = types.SimpleNamespace(
+        id=7,
+        title="North Shelter evening support",
+        assignment_type="protective_detail",
+        status="needs_support",
+        priority="PRIORITY",
+        team_lead="Aster",
+        backup_operator="Sol",
+        checkin_interval_min=20,
+        overdue_threshold_min=5,
+        created_at=1_700_000_000,
+        last_checkin_state="need_backup",
+        last_checkin_at=1_700_000_600,
+        assigned_operator_ids=[2, 3],
+        support_reason="Presence and de-escalation support",
+        location_label="North Shelter",
+    )
+    item = assignment_item_from_assignment(assignment, now=1_700_000_700)
+    assert item.type_label == "Protective detail"
+    assert item.status_label == "Needs support"
+    assert item.needs_support is True
+    assert item.next_checkin_label == "Needs acknowledgement"
+
+    assignment_payload = build_assignment_payload(
+        assignment_type="foot_patrol",
+        title="Oak Loop",
+        assigned_operator_ids=[2],
+        required_skills=["medic"],
+    )
+    assert assignment_payload["assignment_type"] == "foot_patrol"
+    assert assignment_payload["assigned_operator_ids"] == [2]
+
+    checkin_payload = build_checkin_payload(
+        assignment_id=7,
+        state="ok",
+        note="All clear",
+    )
+    assert checkin_payload == {
+        "assignment_id": 7,
+        "state": "ok",
+        "note": "All clear",
+    }
+
+    incident_payload = build_incident_payload(
+        category="welfare_concern",
+        severity="PRIORITY",
+        narrative="Follow-up needed.",
+        linked_assignment_id=7,
+    )
+    assert incident_payload["follow_up_needed"] is False
+    assert incident_payload["linked_assignment_id"] == 7
+
+    incident = types.SimpleNamespace(
+        id=9,
+        category="welfare_concern",
+        severity="PRIORITY",
+        title="Welfare follow-up",
+        occurred_at=1_700_000_900,
+        location_label="Oak Loop",
+        follow_up_needed=True,
+        narrative="Follow-up needed.",
+    )
+    incident_item = incident_item_from_incident(incident)
+    assert incident_item.category_label == "Welfare concern"
+    assert incident_item.follow_up_needed is True
 
 
 def test_desktop_event_mapping_refreshes_asset_surfaces() -> None:
@@ -1596,9 +1688,46 @@ def test_sitrep_create_payload_strips_body_and_keeps_links() -> None:
     }
 
 
+def test_sitrep_create_payload_supports_location_and_filters() -> None:
+    payload = build_create_payload(
+        level="PRIORITY",
+        body="  Welfare team needs support  ",
+        assignment_id=9,
+        location_label="North Gate",
+        lat_text="40.123456",
+        lon_text="-75.25",
+        location_precision="exact",
+        location_source="map",
+    )
+
+    assert payload["assignment_id"] == 9
+    assert payload["location_label"] == "North Gate"
+    assert payload["lat"] == 40.123456
+    assert payload["lon"] == -75.25
+    assert payload["location_precision"] == "exact"
+    assert payload["location_source"] == "map"
+    assert build_filter_payload(
+        level_filter="PRIORITY",
+        status_filter="open",
+        unresolved_only=True,
+        has_location=True,
+        pending_sync_only=True,
+        assignment_id=9,
+    ) == {
+        "level_filter": "PRIORITY",
+        "status_filter": "open",
+        "unresolved_only": True,
+        "has_location": True,
+        "pending_sync_only": True,
+        "assignment_id": 9,
+    }
+
+
 def test_sitrep_create_payload_rejects_empty_body() -> None:
     with pytest.raises(ValueError, match="body is required"):
         build_create_payload(level="ROUTINE", body="   ")
+    with pytest.raises(ValueError, match="Both latitude and longitude"):
+        build_create_payload(level="ROUTINE", body="Located", lat_text="40.0")
 
 
 def test_sitrep_templates_are_valid_and_include_free_text_default() -> None:
@@ -1628,6 +1757,13 @@ def test_sitrep_feed_item_normalizes_core_tuple() -> None:
         body=b"Need transport",
         mission_id=8,
         asset_id=13,
+        assignment_id=7,
+        status="assigned",
+        assigned_to="Team Bravo",
+        location_label="North Gate",
+        lat=40.0,
+        lon=-75.0,
+        location_source="device",
         created_at=123456,
     )
 
@@ -1638,6 +1774,9 @@ def test_sitrep_feed_item_normalizes_core_tuple() -> None:
     assert item.body == "Need transport"
     assert item.callsign == "ALPHA"
     assert item.asset_label == "Truck"
+    assert item.assignment_id == 7
+    assert item.status == "assigned"
+    assert item.has_location is True
     assert item.needs_attention is True
     assert severity_counts([item])["IMMEDIATE"] == 1
 
@@ -1647,9 +1786,10 @@ def test_sitrep_feed_item_normalizes_core_tuple() -> None:
         body="Status normal",
         mission_id=None,
         asset_id=None,
+        status="closed",
         created_at=123457,
     )
-    assert feed_item_from_entry((routine, "ALPHA", None)).needs_attention is True
+    assert feed_item_from_entry((routine, "ALPHA", None)).needs_attention is False
 
 
 def test_asset_create_payload_validates_and_normalizes_fields() -> None:
@@ -1767,28 +1907,57 @@ def test_map_overlays_project_assets_zones_routes_and_sitreps() -> None:
         ),
     ]
     mission = types.SimpleNamespace(id=9, title="Route Mission")
+    assignment = types.SimpleNamespace(
+        id=6,
+        title="North Gate watch",
+        assignment_type="fixed_post",
+        status="needs_support",
+        priority="PRIORITY",
+        last_checkin_state="need_backup",
+        lat=40.02,
+        lon=-75.03,
+    )
     sitrep = types.SimpleNamespace(
         id=5,
         level="FLASH",
         body=b"At cache",
         asset_id=1,
+        assignment_id=None,
         mission_id=9,
+    )
+    native_sitrep = types.SimpleNamespace(
+        id=6,
+        level="PRIORITY",
+        body="Need support",
+        asset_id=None,
+        assignment_id=6,
+        mission_id=9,
+        status="acknowledged",
+        location_label="North Gate",
+        location_source="map",
+        lat=40.02,
+        lon=-75.03,
     )
     context = types.SimpleNamespace(
         assets=[asset],
         zones=[zone],
         waypoints=waypoints,
         missions=[mission],
+        assignments=[assignment],
     )
 
-    overlays = build_map_overlays(context, sitrep_entries=[sitrep])
+    overlays = build_map_overlays(context, sitrep_entries=[sitrep, native_sitrep])
 
     assert overlays.assets[0].label == "Cache"
+    assert overlays.assignments[0].title == "North Gate watch"
     assert overlays.zones[0].label == "AO"
     assert overlays.routes[0].mission_label == "Route Mission"
     assert [point.id for point in overlays.waypoints] == [3, 4]
     assert overlays.sitreps[0].body == "At cache"
     assert overlays.sitreps[0].point == overlays.assets[0].point
+    assert overlays.sitreps[1].assignment_id == 6
+    assert overlays.sitreps[1].location_source == "map"
+    assert overlays.sitreps[1].point.lat == pytest.approx(40.02)
 
 
 def test_map_projection_keeps_coordinates_inside_scene() -> None:
@@ -2126,14 +2295,22 @@ def test_chat_grid_reference_items_are_built_from_map_context() -> None:
         ],
     )
     sitrep = types.SimpleNamespace(id=5, level="ROUTINE", asset_id=1)
+    native_sitrep = types.SimpleNamespace(
+        id=6,
+        level="PRIORITY",
+        asset_id=None,
+        lat=40.75,
+        lon=-75.75,
+    )
 
-    items = grid_reference_items_from_context(context, sitrep_entries=[sitrep])
+    items = grid_reference_items_from_context(context, sitrep_entries=[sitrep, native_sitrep])
     references = {item.reference for item in items}
 
     assert "ASSET Cache 40.123457, -75.250000" in references
     assert "WAYPOINT Rally 40.500000, -75.500000" in references
     assert "ZONE AO 40.333333, -74.333333" in references
     assert "SITREP ROUTINE #5 40.123457, -75.250000" in references
+    assert "SITREP PRIORITY #6 40.750000, -75.750000" in references
     assert all("No Location" not in item.reference for item in items)
 
 

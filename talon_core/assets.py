@@ -202,6 +202,11 @@ def delete_asset(conn: Connection, asset_id: int) -> None:
             "UPDATE sitreps SET asset_id = NULL, version = version + 1 WHERE asset_id = ?",
             (asset_id,),
         )
+        conn.execute(
+            "UPDATE incidents SET linked_asset_id = NULL, version = version + 1 "
+            "WHERE linked_asset_id = ?",
+            (asset_id,),
+        )
         conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
         conn.commit()
     except Exception as exc:

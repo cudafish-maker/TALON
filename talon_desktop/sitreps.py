@@ -10,6 +10,7 @@ import datetime
 import typing
 
 from talon_core.constants import SITREP_LEVELS
+from talon_core.sitrep import SITREP_STATUSES
 
 FLASH_LEVELS = frozenset({"FLASH", "FLASH_OVERRIDE"})
 ATTENTION_LEVELS = frozenset(SITREP_LEVELS)
@@ -24,6 +25,13 @@ class SitrepFeedItem:
     asset_label: str | None
     mission_id: int | None
     asset_id: int | None
+    assignment_id: int | None
+    status: str
+    assigned_to: str
+    location_label: str
+    lat: float | None
+    lon: float | None
+    location_source: str
     created_at: int
 
     @property
@@ -32,7 +40,19 @@ class SitrepFeedItem:
 
     @property
     def needs_attention(self) -> bool:
-        return self.level in ATTENTION_LEVELS
+        return self.level in ATTENTION_LEVELS and self.status not in {"resolved", "closed"}
+
+    @property
+    def has_location(self) -> bool:
+        return (
+            (self.lat is not None and self.lon is not None)
+            or self.asset_id is not None
+            or self.assignment_id is not None
+        )
+
+    @property
+    def unresolved(self) -> bool:
+        return self.status not in {"resolved", "closed"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -114,6 +134,71 @@ SITREP_TEMPLATES = (
             "Impact on operations:"
         ),
     ),
+    SitrepTemplate(
+        key="welfare_concern",
+        label="Welfare concern",
+        level="PRIORITY",
+        body=(
+            "Location:\n"
+            "Concern observed:\n"
+            "Immediate needs:\n"
+            "Consent/source of request:\n"
+            "Action taken:\n"
+            "Follow-up needed:"
+        ),
+    ),
+    SitrepTemplate(
+        key="overdose_response",
+        label="Overdose response",
+        level="FLASH",
+        body=(
+            "Location:\n"
+            "Patient count:\n"
+            "Breathing/alertness:\n"
+            "Care given:\n"
+            "Medical services notified:\n"
+            "Support needed:"
+        ),
+    ),
+    SitrepTemplate(
+        key="unsafe_area",
+        label="Unsafe area",
+        level="IMMEDIATE",
+        body=(
+            "Location:\n"
+            "Hazard/condition:\n"
+            "People affected:\n"
+            "Area marked or avoided:\n"
+            "Route impact:\n"
+            "Requested support:"
+        ),
+    ),
+    SitrepTemplate(
+        key="need_support",
+        label="Need support",
+        level="FLASH_OVERRIDE",
+        body=(
+            "Location:\n"
+            "Need:\n"
+            "Current action:\n"
+            "Hazards:\n"
+            "Requested support:\n"
+            "Acknowledgement needed:"
+        ),
+    ),
+    SitrepTemplate(
+        key="protective_handoff",
+        label="Protective handoff",
+        level="ROUTINE",
+        body=(
+            "Location:\n"
+            "Assignment/detail:\n"
+            "Outgoing team:\n"
+            "Incoming team:\n"
+            "Access notes:\n"
+            "Follow-up:"
+        ),
+    ),
 )
 
 
@@ -143,6 +228,13 @@ def feed_item_from_entry(entry: object) -> SitrepFeedItem:
         asset_label=asset_label,
         mission_id=_optional_int(_field(sitrep, "mission_id", default=None)),
         asset_id=_optional_int(_field(sitrep, "asset_id", default=None)),
+        assignment_id=_optional_int(_field(sitrep, "assignment_id", default=None)),
+        status=str(_field(sitrep, "status", default="open") or "open"),
+        assigned_to=str(_field(sitrep, "assigned_to", default="") or ""),
+        location_label=str(_field(sitrep, "location_label", default="") or ""),
+        lat=_optional_float(_field(sitrep, "lat", default=None)),
+        lon=_optional_float(_field(sitrep, "lon", default=None)),
+        location_source=str(_field(sitrep, "location_source", default="") or ""),
         created_at=int(_field(sitrep, "created_at", default=0) or 0),
     )
 
@@ -166,6 +258,15 @@ def build_create_payload(
     template: str = "",
     asset_id: int | None = None,
     mission_id: int | None = None,
+    assignment_id: int | None = None,
+    location_label: str = "",
+    lat_text: str = "",
+    lon_text: str = "",
+    location_precision: str = "",
+    location_source: str = "",
+    status: str = "open",
+    assigned_to: str = "",
+    sensitivity: str = "team",
 ) -> dict[str, object]:
     """Validate desktop composer state and build a core command payload."""
     if level not in SITREP_LEVELS:
@@ -173,15 +274,68 @@ def build_create_payload(
     stripped = body.strip()
     if not stripped:
         raise ValueError("SITREP body is required.")
+    if status not in SITREP_STATUSES:
+        raise ValueError("Select a valid SITREP status.")
+    lat = _parse_optional_float(lat_text, "Latitude", -90.0, 90.0)
+    lon = _parse_optional_float(lon_text, "Longitude", -180.0, 180.0)
+    if (lat is None) != (lon is None):
+        raise ValueError("Both latitude and longitude are required for a map point.")
     payload: dict[str, object] = {
         "level": level,
         "body": stripped,
         "asset_id": asset_id,
         "mission_id": mission_id,
     }
+    if assignment_id is not None:
+        payload["assignment_id"] = assignment_id
+    if location_label.strip():
+        payload["location_label"] = location_label.strip()
+    if lat is not None and lon is not None:
+        payload["lat"] = lat
+        payload["lon"] = lon
+    if location_precision.strip():
+        payload["location_precision"] = location_precision.strip()
+    if location_source.strip():
+        payload["location_source"] = location_source.strip()
+    if status != "open":
+        payload["status"] = status
+    if assigned_to.strip():
+        payload["assigned_to"] = assigned_to.strip()
+    sensitivity_value = sensitivity.strip() or "team"
+    if sensitivity_value != "team":
+        payload["sensitivity"] = sensitivity_value
     if template:
         payload["template"] = template
     return payload
+
+
+def build_filter_payload(
+    *,
+    level_filter: str = "",
+    status_filter: str = "",
+    unresolved_only: bool = False,
+    has_location: bool = False,
+    pending_sync_only: bool = False,
+    assignment_id: int | None = None,
+) -> dict[str, object]:
+    filters: dict[str, object] = {}
+    if level_filter:
+        if level_filter not in SITREP_LEVELS:
+            raise ValueError("Select a valid severity filter.")
+        filters["level_filter"] = level_filter
+    if status_filter:
+        if status_filter not in SITREP_STATUSES:
+            raise ValueError("Select a valid status filter.")
+        filters["status_filter"] = status_filter
+    if unresolved_only:
+        filters["unresolved_only"] = True
+    if has_location:
+        filters["has_location"] = True
+    if pending_sync_only:
+        filters["pending_sync_only"] = True
+    if assignment_id is not None:
+        filters["assignment_id"] = int(assignment_id)
+    return filters
 
 
 def severity_counts(items: typing.Iterable[SitrepFeedItem]) -> dict[str, int]:
@@ -212,3 +366,27 @@ def _optional_int(value: object) -> int | None:
     if value in (None, ""):
         return None
     return int(value)
+
+
+def _optional_float(value: object) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(typing.cast(float, value))
+
+
+def _parse_optional_float(
+    value: str,
+    label: str,
+    minimum: float,
+    maximum: float,
+) -> float | None:
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        parsed = float(stripped)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a number.") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"{label} must be between {minimum} and {maximum}.")
+    return parsed

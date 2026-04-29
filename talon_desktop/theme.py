@@ -221,6 +221,143 @@ def _stylesheet(*, theme_key: str = "dark", font_scale: float = 1.0) -> str:
         border-radius: 4px;
     }
 
+    QFrame#sitrepPanel,
+    QFrame#sitrepMetric {
+        background: #101719;
+        border: 1px solid #253238;
+        border-radius: 7px;
+    }
+
+    QWidget#sitrepPanelHeader {
+        background: #101719;
+        border-bottom: 1px solid #253238;
+        border-top-left-radius: 7px;
+        border-top-right-radius: 7px;
+    }
+
+    QWidget#sitrepPanelBody {
+        background: #101719;
+        border-bottom-left-radius: 7px;
+        border-bottom-right-radius: 7px;
+    }
+
+    QLabel#sitrepPanelTitle,
+    QLabel#sitrepDetailTitle {
+        color: #f6fbfb;
+        font-weight: 800;
+    }
+
+    QLabel#sitrepTag {
+        color: #d8dee9;
+        background: #162126;
+        border: 1px solid #35484f;
+        border-radius: 4px;
+        padding: 2px 7px;
+        font-size: 8.5pt;
+        font-weight: 800;
+    }
+
+    QLabel#sitrepTag[tone="red"] {
+        color: #fff4f5;
+        background: #8b2630;
+        border-color: #b33642;
+    }
+
+    QLabel#sitrepTag[tone="orange"] {
+        color: #1f1000;
+        background: #f28c28;
+        border-color: #f28c28;
+    }
+
+    QLabel#sitrepTag[tone="blue"] {
+        color: #07111a;
+        background: #6aa3d8;
+        border-color: #6aa3d8;
+    }
+
+    QLabel#sitrepTag[tone="green"] {
+        color: #08110b;
+        background: #7fb069;
+        border-color: #7fb069;
+    }
+
+    QFrame#sitrepMetric[tone="warn"] {
+        background: #201b10;
+        border-color: #6a4e1d;
+    }
+
+    QFrame#sitrepMetric[tone="alert"] {
+        background: #211318;
+        border-color: #74323a;
+    }
+
+    QLabel#sitrepMetricTitle,
+    QLabel#sitrepMetricSubtitle,
+    QLabel#sitrepFieldLabel,
+    QLabel#sitrepMutedLabel,
+    QLabel#sitrepFeedStamp,
+    QLabel#sitrepFeedMeta,
+    QLabel#sitrepMiniMetaValue {
+        color: #93a1a8;
+    }
+
+    QLabel#sitrepMetricValue {
+        color: #f6fbfb;
+        font-size: 18pt;
+        font-weight: 850;
+    }
+
+    QFrame#sitrepFeedCard,
+    QFrame#sitrepDetailCard,
+    QFrame#sitrepMiniMeta,
+    QFrame#sitrepActivityCard {
+        background: #0b1012;
+        border: 1px solid #253238;
+        border-radius: 6px;
+    }
+
+    QFrame#sitrepFeedCard[selected="true"] {
+        background: #17262a;
+        border-color: #4b6870;
+    }
+
+    QFrame#sitrepFeedCard[severity="flash"],
+    QFrame#sitrepFeedCard[severity="flash_override"] {
+        background: #211318;
+        border-color: #74323a;
+    }
+
+    QLabel#sitrepFeedTitle,
+    QLabel#sitrepMiniMetaTitle,
+    QLabel#sitrepActivityTitle {
+        color: #f6fbfb;
+        font-weight: 800;
+    }
+
+    QLabel#sitrepFeedBody,
+    QLabel#sitrepActivityNote {
+        color: #d8dee9;
+    }
+
+    QPushButton#sitrepTemplateButton {
+        text-align: left;
+        min-height: 36px;
+        padding: 7px 8px;
+        font-size: 9pt;
+    }
+
+    QPushButton#sitrepTemplateButton:checked {
+        color: #1c1600;
+        background: #d6b85a;
+        border-color: #d6b85a;
+    }
+
+    QListWidget#sitrepFeedList,
+    QListWidget#sitrepActivityList {
+        background: #101719;
+        border: 0;
+    }
+
     QListWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit,
     QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
         background: #11181b;

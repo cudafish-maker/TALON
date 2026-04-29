@@ -465,8 +465,9 @@ def delete_document(
         except Exception as exc:
             _log.warning("Could not delete file for doc id=%s: %s", doc_id, exc)
 
-    conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-    conn.commit()
+    with conn.transaction():
+        conn.execute("DELETE FROM sitrep_documents WHERE document_id = ?", (doc_id,))
+        conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
 
     try:
         from talon_core.utils.logging import audit

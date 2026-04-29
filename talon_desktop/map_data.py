@@ -61,8 +61,23 @@ class SitrepOverlay:
     id: int
     level: str
     body: str
-    asset_id: int
+    asset_id: int | None
+    assignment_id: int | None
     mission_id: int | None
+    status: str
+    location_label: str
+    location_source: str
+    point: ProjectedPoint
+
+
+@dataclasses.dataclass(frozen=True)
+class AssignmentOverlay:
+    id: int
+    title: str
+    assignment_type: str
+    status: str
+    priority: str
+    last_checkin_state: str
     point: ProjectedPoint
 
 
@@ -74,6 +89,7 @@ class MapOverlayBundle:
     waypoints: tuple[WaypointOverlay, ...]
     routes: tuple[RouteOverlay, ...]
     sitreps: tuple[SitrepOverlay, ...]
+    assignments: tuple[AssignmentOverlay, ...]
 
 
 SCENE_WIDTH = 1000.0
@@ -100,12 +116,15 @@ def build_map_overlays(
     zones = list(_field(context, "zones", default=[]) or [])
     waypoints = list(_field(context, "waypoints", default=[]) or [])
     missions = list(_field(context, "missions", default=[]) or [])
+    assignments = list(_field(context, "assignments", default=[]) or [])
 
     if bounds is None:
         bounds = bounds_for_context(
             assets=assets,
             zones=zones,
             waypoints=waypoints,
+            assignments=assignments,
+            sitrep_entries=sitrep_entries,
         )
     mission_labels = {
         int(_field(mission, "id")): str(_field(mission, "title", default="Mission"))
@@ -186,9 +205,38 @@ def build_map_overlays(
     )
 
     asset_by_id = {item.id: item for item in asset_overlays}
+    assignment_overlays = tuple(
+        AssignmentOverlay(
+            id=int(_field(assignment, "id")),
+            title=str(_field(assignment, "title", default="Assignment")),
+            assignment_type=str(_field(assignment, "assignment_type", default="")),
+            status=str(_field(assignment, "status", default="")),
+            priority=str(_field(assignment, "priority", default="ROUTINE")),
+            last_checkin_state=str(_field(assignment, "last_checkin_state", default="")),
+            point=project_lat_lon(
+                bounds,
+                float(_field(assignment, "lat")),
+                float(_field(assignment, "lon")),
+                scene_width=scene_width,
+                scene_height=scene_height,
+                scene_margin=scene_margin,
+            ),
+        )
+        for assignment in assignments
+        if _has_coordinates(assignment)
+    )
+    assignment_by_id = {item.id: item for item in assignment_overlays}
     sitrep_items = []
     for entry in sitrep_entries:
-        overlay = _sitrep_overlay(entry, asset_by_id)
+        overlay = _sitrep_overlay(
+            entry,
+            asset_by_id,
+            assignment_by_id,
+            bounds=bounds,
+            scene_width=scene_width,
+            scene_height=scene_height,
+            scene_margin=scene_margin,
+        )
         if overlay is not None:
             sitrep_items.append(overlay)
 
@@ -199,6 +247,7 @@ def build_map_overlays(
         waypoints=waypoint_overlays,
         routes=routes,
         sitreps=tuple(sitrep_items),
+        assignments=assignment_overlays,
     )
 
 
@@ -207,6 +256,8 @@ def bounds_for_context(
     assets: typing.Iterable[object],
     zones: typing.Iterable[object],
     waypoints: typing.Iterable[object],
+    assignments: typing.Iterable[object] = (),
+    sitrep_entries: typing.Iterable[object] = (),
 ) -> MapBounds:
     coords: list[tuple[float, float]] = []
     for asset in assets:
@@ -217,6 +268,13 @@ def bounds_for_context(
             coords.append((float(lat), float(lon)))
     for waypoint in waypoints:
         coords.append((float(_field(waypoint, "lat")), float(_field(waypoint, "lon"))))
+    for assignment in assignments:
+        if _has_coordinates(assignment):
+            coords.append((float(_field(assignment, "lat")), float(_field(assignment, "lon"))))
+    for entry in sitrep_entries:
+        sitrep = entry[0] if isinstance(entry, tuple) else entry
+        if _has_coordinates(sitrep):
+            coords.append((float(_field(sitrep, "lat")), float(_field(sitrep, "lon"))))
 
     if not coords:
         return DEFAULT_MAP_BOUNDS
@@ -266,21 +324,47 @@ def project_lat_lon(
 def _sitrep_overlay(
     entry: object,
     assets_by_id: dict[int, AssetOverlay],
+    assignments_by_id: dict[int, AssignmentOverlay],
+    *,
+    bounds: MapBounds,
+    scene_width: float,
+    scene_height: float,
+    scene_margin: float,
 ) -> SitrepOverlay | None:
     sitrep = entry[0] if isinstance(entry, tuple) else entry
     asset_id = _optional_int(_field(sitrep, "asset_id", default=None))
-    if asset_id is None:
-        return None
-    asset = assets_by_id.get(asset_id)
-    if asset is None:
+    assignment_id = _optional_int(_field(sitrep, "assignment_id", default=None))
+    lat = _optional_float(_field(sitrep, "lat", default=None))
+    lon = _optional_float(_field(sitrep, "lon", default=None))
+    location_source = str(_field(sitrep, "location_source", default="") or "")
+    if lat is not None and lon is not None:
+        point = project_lat_lon(
+            bounds,
+            lat,
+            lon,
+            scene_width=scene_width,
+            scene_height=scene_height,
+            scene_margin=scene_margin,
+        )
+    elif asset_id is not None and asset_id in assets_by_id:
+        point = assets_by_id[asset_id].point
+        location_source = location_source or "asset"
+    elif assignment_id is not None and assignment_id in assignments_by_id:
+        point = assignments_by_id[assignment_id].point
+        location_source = location_source or "assignment"
+    else:
         return None
     return SitrepOverlay(
         id=int(_field(sitrep, "id")),
         level=str(_field(sitrep, "level", default="ROUTINE")),
         body=_text(_field(sitrep, "body", default="")),
         asset_id=asset_id,
+        assignment_id=assignment_id,
         mission_id=_optional_int(_field(sitrep, "mission_id", default=None)),
-        point=asset.point,
+        status=str(_field(sitrep, "status", default="open") or "open"),
+        location_label=str(_field(sitrep, "location_label", default="") or ""),
+        location_source=location_source,
+        point=point,
     )
 
 
@@ -304,6 +388,12 @@ def _optional_int(value: object) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _text(value: object) -> str:

@@ -615,7 +615,18 @@ class TalonCoreSession:
                 limit=int(filters.get("limit", 200)),
                 mission_id=filters.get("mission_id"),
                 asset_id=filters.get("asset_id"),
+                assignment_id=filters.get("assignment_id"),
+                status_filter=filters.get("status_filter"),
+                unresolved_only=bool(filters.get("unresolved_only", False)),
+                level_filter=filters.get("level_filter"),
+                author_id=filters.get("author_id"),
+                has_location=bool(filters.get("has_location", False)),
+                pending_sync_only=bool(filters.get("pending_sync_only", False)),
+                min_created_at=filters.get("min_created_at"),
             )
+        if name == "sitreps.detail":
+            self._require_unlocked()
+            return self._sitrep_detail(int(filters["sitrep_id"]))
         if name == "missions.list":
             self._require_unlocked()
             from talon_core.missions import load_missions
@@ -631,6 +642,45 @@ class TalonCoreSession:
         if name == "missions.approval_context":
             self._require_unlocked()
             return self._mission_approval_context(int(filters["mission_id"]))
+        if name == "assignments.board":
+            self._require_unlocked()
+            return self._assignment_board(limit=int(filters.get("limit", 200)))
+        if name == "assignments.list":
+            self._require_unlocked()
+            from talon_core.community_safety import list_assignments
+
+            return list_assignments(
+                self._conn,
+                status_filter=filters.get("status_filter"),
+                active_only=bool(filters.get("active_only", False)),
+                limit=int(filters.get("limit", 200)),
+            )
+        if name == "assignments.detail":
+            self._require_unlocked()
+            return self._assignment_detail(int(filters["assignment_id"]))
+        if name == "checkins.list":
+            self._require_unlocked()
+            from talon_core.community_safety import list_checkins
+
+            return list_checkins(
+                self._conn,
+                assignment_id=filters.get("assignment_id"),
+                limit=int(filters.get("limit", 100)),
+            )
+        if name == "incidents.list":
+            self._require_unlocked()
+            from talon_core.community_safety import list_incidents
+
+            return list_incidents(
+                self._conn,
+                category_filter=filters.get("category_filter"),
+                severity_filter=filters.get("severity_filter"),
+                follow_up_only=bool(filters.get("follow_up_only", False)),
+                limit=int(filters.get("limit", 200)),
+            )
+        if name == "incidents.detail":
+            self._require_unlocked()
+            return self._incident_detail(int(filters["incident_id"]))
         if name == "chat.channels":
             self._require_unlocked()
             from talon_core.chat import load_channels
@@ -757,11 +807,40 @@ class TalonCoreSession:
                     "sitreps",
                     "level IN ('FLASH', 'FLASH_OVERRIDE')",
                 ),
+                "unresolved_sitreps": self._count_rows(
+                    "sitreps",
+                    "status NOT IN ('resolved', 'closed')",
+                ),
+                "located_sitreps": self._count_rows(
+                    "sitreps",
+                    "(lat IS NOT NULL AND lon IS NOT NULL) OR asset_id IS NOT NULL "
+                    "OR EXISTS (SELECT 1 FROM assignments assignment_location "
+                    "WHERE assignment_location.id = sitreps.assignment_id "
+                    "AND assignment_location.lat IS NOT NULL "
+                    "AND assignment_location.lon IS NOT NULL)",
+                ),
+                "sitrep_followups": self._count_rows("sitrep_followups"),
+                "sitrep_documents": self._count_rows("sitrep_documents"),
                 "missions": self._count_rows("missions"),
                 "active_missions": self._count_rows("missions", "status = 'active'"),
                 "pending_missions": self._count_rows(
                     "missions",
                     "status = 'pending_approval'",
+                ),
+                "assignments": self._count_rows("assignments"),
+                "active_assignments": self._count_rows(
+                    "assignments",
+                    "status NOT IN ('completed', 'aborted')",
+                ),
+                "assignments_needing_support": self._count_rows(
+                    "assignments",
+                    "status = 'needs_support'",
+                ),
+                "checkins": self._count_rows("checkins"),
+                "incidents": self._count_rows("incidents"),
+                "incident_follow_ups": self._count_rows(
+                    "incidents",
+                    "follow_up_needed != 0",
                 ),
                 "channels": self._count_rows("channels"),
                 "messages": self._count_rows("messages"),
@@ -992,6 +1071,27 @@ class TalonCoreSession:
         elif mission_id is not None:
             records.add(("missions", int(mission_id)))
 
+        assignment = getattr(result, "assignment", None)
+        assignment_id = getattr(result, "assignment_id", None)
+        if assignment is not None and getattr(assignment, "id", None) is not None:
+            records.add(("assignments", int(assignment.id)))
+        elif assignment_id is not None:
+            records.add(("assignments", int(assignment_id)))
+
+        checkin = getattr(result, "checkin", None)
+        checkin_id = getattr(result, "checkin_id", None)
+        if checkin is not None and getattr(checkin, "id", None) is not None:
+            records.add(("checkins", int(checkin.id)))
+        elif checkin_id is not None:
+            records.add(("checkins", int(checkin_id)))
+
+        incident = getattr(result, "incident", None)
+        incident_id = getattr(result, "incident_id", None)
+        if incident is not None and getattr(incident, "id", None) is not None:
+            records.add(("incidents", int(incident.id)))
+        elif incident_id is not None:
+            records.add(("incidents", int(incident_id)))
+
         return records
 
     def _mark_client_record_pending(self, table: str, record_id: int) -> None:
@@ -1030,12 +1130,17 @@ class TalonCoreSession:
         safe_tables = {
             "amendments",
             "assets",
+            "assignments",
+            "checkins",
             "channels",
             "documents",
             "enrollment_tokens",
+            "incidents",
             "messages",
             "missions",
             "operators",
+            "sitrep_documents",
+            "sitrep_followups",
             "sitreps",
         }
         if table not in safe_tables:
@@ -1104,6 +1209,18 @@ class TalonCoreSession:
             return self._sitreps_create(**payload)
         if name == "sitreps.delete":
             return self._sitreps_delete(**payload)
+        if name == "sitreps.acknowledge":
+            payload.setdefault("author_id", self.require_local_operator_id())
+            return self._sitreps_followup(action="acknowledged", **payload)
+        if name == "sitreps.assign_followup":
+            payload.setdefault("author_id", self.require_local_operator_id())
+            return self._sitreps_followup(action="assigned", **payload)
+        if name == "sitreps.update_status":
+            payload.setdefault("author_id", self.require_local_operator_id())
+            return self._sitreps_followup(action="status", **payload)
+        if name == "sitreps.link_document":
+            payload.setdefault("created_by", self.require_local_operator_id())
+            return self._sitreps_link_document(**payload)
 
         if name == "missions.create":
             from talon_core.services.missions import create_mission_command
@@ -1135,6 +1252,33 @@ class TalonCoreSession:
             from talon_core.services.missions import delete_mission_command
 
             return delete_mission_command(self._conn, **payload)
+
+        if name == "assignments.create":
+            from talon_core.services.community_safety import create_assignment_command
+
+            payload.setdefault("created_by", self.require_local_operator_id())
+            return create_assignment_command(self._conn, **payload)
+        if name == "assignments.update_status":
+            from talon_core.services.community_safety import (
+                update_assignment_status_command,
+            )
+
+            return update_assignment_status_command(self._conn, **payload)
+        if name == "assignments.checkin":
+            from talon_core.services.community_safety import create_checkin_command
+
+            payload.setdefault("operator_id", self.require_local_operator_id())
+            return create_checkin_command(self._conn, **payload)
+        if name == "assignments.acknowledge_checkin":
+            from talon_core.services.community_safety import acknowledge_checkin_command
+
+            payload.setdefault("acknowledged_by", self.require_local_operator_id())
+            return acknowledge_checkin_command(self._conn, **payload)
+        if name == "incidents.create":
+            from talon_core.services.community_safety import create_incident_command
+
+            payload.setdefault("created_by", self.require_local_operator_id())
+            return create_incident_command(self._conn, **payload)
 
         if name == "chat.ensure_defaults":
             from talon_core.chat import ensure_default_channels
@@ -1183,6 +1327,16 @@ class TalonCoreSession:
         template: str = "",
         mission_id: typing.Optional[int] = None,
         asset_id: typing.Optional[int] = None,
+        assignment_id: typing.Optional[int] = None,
+        location_label: str = "",
+        lat: typing.Optional[float] = None,
+        lon: typing.Optional[float] = None,
+        location_precision: str = "",
+        location_source: str = "",
+        status: str = "open",
+        assigned_to: str = "",
+        disposition: str = "",
+        sensitivity: str = "team",
         author_id: typing.Optional[int] = None,
         sync_status: str = "synced",
     ) -> RecordCommandResult:
@@ -1200,6 +1354,16 @@ class TalonCoreSession:
             body=body,
             mission_id=mission_id,
             asset_id=asset_id,
+            assignment_id=assignment_id,
+            location_label=location_label,
+            lat=lat,
+            lon=lon,
+            location_precision=location_precision,
+            location_source=location_source,
+            status=status,
+            assigned_to=assigned_to,
+            disposition=disposition,
+            sensitivity=sensitivity,
             sync_status=sync_status,
         )
         return RecordCommandResult("sitreps", sitrep_id, (record_changed("sitreps", sitrep_id),))
@@ -1212,6 +1376,73 @@ class TalonCoreSession:
         doc_id = int(sitrep_id)
         delete_sitrep(self._conn, doc_id)
         return RecordCommandResult("sitreps", doc_id, (record_deleted("sitreps", doc_id),))
+
+    def _sitreps_followup(
+        self,
+        *,
+        sitrep_id: int,
+        action: str,
+        author_id: int,
+        note: str = "",
+        assigned_to: str = "",
+        status: str = "",
+        sync_status: str = "synced",
+    ) -> RecordCommandResult:
+        from talon_core.services.events import linked_records_changed, record_changed
+        from talon_core.sitrep import create_sitrep_followup
+
+        followup = create_sitrep_followup(
+            self._conn,
+            sitrep_id=int(sitrep_id),
+            action=action,
+            author_id=int(author_id),
+            note=note,
+            assigned_to=assigned_to,
+            status=status,
+            sync_status=sync_status,
+        )
+        return RecordCommandResult(
+            "sitrep_followups",
+            followup.id,
+            (
+                linked_records_changed(
+                    record_changed("sitrep_followups", followup.id),
+                    record_changed("sitreps", int(sitrep_id)),
+                ),
+            ),
+        )
+
+    def _sitreps_link_document(
+        self,
+        *,
+        sitrep_id: int,
+        document_id: int,
+        created_by: int,
+        description: str = "",
+        sync_status: str = "synced",
+    ) -> RecordCommandResult:
+        from talon_core.services.events import linked_records_changed, record_changed
+        from talon_core.sitrep import link_sitrep_document
+
+        link = link_sitrep_document(
+            self._conn,
+            sitrep_id=int(sitrep_id),
+            document_id=int(document_id),
+            created_by=int(created_by),
+            description=description,
+            sync_status=sync_status,
+        )
+        return RecordCommandResult(
+            "sitrep_documents",
+            link.id,
+            (
+                linked_records_changed(
+                    record_changed("sitrep_documents", link.id),
+                    record_changed("sitreps", int(sitrep_id)),
+                    record_changed("documents", int(document_id)),
+                ),
+            ),
+        )
 
     def _documents_list(self, *, limit: int = 200) -> list[DocumentListItem]:
         from talon_core.documents import list_documents
@@ -1303,24 +1534,97 @@ class TalonCoreSession:
         if self.mode != "server":
             raise CoreSessionError("Document deletion is only valid in server mode.")
         from talon_core.documents import get_document, delete_document
-        from talon_core.services.events import record_deleted
+        from talon_core.services.events import linked_records_changed, record_changed, record_deleted
 
         doc_id = int(document_id)
         doc = get_document(self._conn, doc_id)
+        sitrep_ids = [
+            int(row[0])
+            for row in self._conn.execute(
+                "SELECT sitrep_id FROM sitrep_documents WHERE document_id = ? "
+                "ORDER BY sitrep_id ASC",
+                (doc_id,),
+            ).fetchall()
+        ]
         delete_document(
             self._conn,
             pathlib.Path(storage_root) if storage_root is not None else self.paths.document_storage_path,
             doc_id,
         )
+        events: tuple[DomainEvent, ...]
+        if sitrep_ids:
+            events = (
+                linked_records_changed(
+                    record_deleted("documents", doc_id),
+                    *(record_changed("sitreps", sitrep_id) for sitrep_id in sitrep_ids),
+                ),
+            )
+        else:
+            events = (record_deleted("documents", doc_id),)
         return DocumentCommandResult(
             document_id=doc_id,
             document=doc,
-            events=(record_deleted("documents", doc_id),),
+            events=events,
         )
 
     def _document_callsigns(self) -> dict[int, str]:
         rows = self._conn.execute("SELECT id, callsign FROM operators").fetchall()
         return {int(row[0]): str(row[1]) for row in rows}
+
+    def _sitrep_detail(self, sitrep_id: int) -> dict[str, typing.Any]:
+        from talon_core.documents import DocumentError, get_document
+        from talon_core.sitrep import (
+            get_sitrep,
+            list_sitrep_document_links,
+            list_sitrep_followups,
+        )
+
+        sitrep, callsign, asset_label = get_sitrep(
+            self._conn,
+            self._require_db_key(),
+            sitrep_id,
+        )
+        document_callsigns = self._document_callsigns()
+        linked_documents = []
+        for link in list_sitrep_document_links(self._conn, sitrep_id=sitrep_id):
+            try:
+                doc = get_document(self._conn, link.document_id)
+            except DocumentError:
+                doc = None
+            linked_documents.append(
+                {
+                    "link": link,
+                    "document": doc,
+                    "uploader_callsign": (
+                        document_callsigns.get(doc.uploaded_by, f"id={doc.uploaded_by}")
+                        if doc is not None
+                        else ""
+                    ),
+                }
+            )
+
+        incidents = []
+        try:
+            from talon_core.community_safety import list_incidents
+
+            incidents = [
+                incident
+                for incident in list_incidents(self._conn, limit=500)
+                if incident.linked_sitrep_id == sitrep_id
+            ]
+        except Exception:
+            incidents = []
+
+        return {
+            "sitrep": sitrep,
+            "callsign": callsign,
+            "asset_label": asset_label or "",
+            "assignment_title": self._assignment_title(sitrep.assignment_id),
+            "mission_title": self._mission_title(sitrep.mission_id),
+            "followups": list_sitrep_followups(self._conn, sitrep_id=sitrep_id),
+            "documents": linked_documents,
+            "incidents": incidents,
+        }
 
     def _mission_detail(self, mission_id: int) -> dict[str, typing.Any]:
         from talon_core.missions import get_channel_for_mission, get_mission, get_mission_assets
@@ -1363,12 +1667,122 @@ class TalonCoreSession:
             "creator_callsign": self._operator_callsign(mission.created_by),
         }
 
+    def _assignment_board(self, *, limit: int) -> dict[str, typing.Any]:
+        from talon_core.community_safety import (
+            list_assignments,
+            list_checkins,
+            list_incidents,
+        )
+
+        return {
+            "generated_at": self._now(),
+            "assignments": list_assignments(self._conn, limit=limit),
+            "active_assignments": list_assignments(
+                self._conn,
+                active_only=True,
+                limit=limit,
+            ),
+            "operators": list_operators(self._conn, include_sentinel=True),
+            "recent_checkins": list_checkins(self._conn, limit=50),
+            "open_incidents": list_incidents(
+                self._conn,
+                follow_up_only=True,
+                limit=50,
+            ),
+            "sync": self._sync_status(),
+        }
+
+    def _assignment_detail(self, assignment_id: int) -> dict[str, typing.Any]:
+        from talon_core.community_safety import (
+            get_assignment,
+            list_checkins,
+            list_incidents,
+        )
+
+        assignment = get_assignment(self._conn, assignment_id)
+        if assignment is None:
+            raise ValueError(f"Assignment {assignment_id} not found.")
+        incidents = [
+            incident
+            for incident in list_incidents(self._conn, limit=500)
+            if incident.linked_assignment_id == assignment_id
+        ]
+        return {
+            "assignment": assignment,
+            "creator_callsign": self._operator_callsign(assignment.created_by),
+            "last_checkin_callsign": (
+                self._operator_callsign(assignment.last_checkin_operator_id)
+                if assignment.last_checkin_operator_id is not None
+                else ""
+            ),
+            "checkins": list_checkins(self._conn, assignment_id=assignment_id, limit=100),
+            "incidents": incidents,
+            "mission_title": self._mission_title(assignment.mission_id),
+        }
+
+    def _incident_detail(self, incident_id: int) -> dict[str, typing.Any]:
+        from talon_core.community_safety import get_assignment, get_incident
+        from talon_core.missions import get_mission
+
+        incident = get_incident(self._conn, incident_id)
+        if incident is None:
+            raise ValueError(f"Incident {incident_id} not found.")
+        assignment = (
+            get_assignment(self._conn, incident.linked_assignment_id)
+            if incident.linked_assignment_id is not None
+            else None
+        )
+        mission = (
+            get_mission(self._conn, incident.linked_mission_id)
+            if incident.linked_mission_id is not None
+            else None
+        )
+        return {
+            "incident": incident,
+            "creator_callsign": self._operator_callsign(incident.created_by),
+            "assignment_title": assignment.title if assignment is not None else "",
+            "mission_title": mission.title if mission is not None else "",
+            "asset_label": self._asset_label(incident.linked_asset_id),
+            "sitrep_label": (
+                f"SITREP #{incident.linked_sitrep_id}"
+                if incident.linked_sitrep_id is not None
+                else ""
+            ),
+        }
+
     def _operator_callsign(self, operator_id: int) -> str:
         row = self._conn.execute(
             "SELECT callsign FROM operators WHERE id = ?",
             (operator_id,),
         ).fetchone()
         return str(row[0]) if row else f"#{operator_id}"
+
+    def _mission_title(self, mission_id: typing.Optional[int]) -> str:
+        if mission_id is None:
+            return ""
+        row = self._conn.execute(
+            "SELECT title FROM missions WHERE id = ?",
+            (int(mission_id),),
+        ).fetchone()
+        return str(row[0]) if row else ""
+
+    def _asset_label(self, asset_id: typing.Optional[int]) -> str:
+        if asset_id is None:
+            return ""
+        row = self._conn.execute(
+            "SELECT label FROM assets WHERE id = ?",
+            (int(asset_id),),
+        ).fetchone()
+        return str(row[0]) if row else ""
+
+    def _assignment_title(self, assignment_id: typing.Optional[int]) -> str:
+        if assignment_id is None:
+            return ""
+        row = self._conn.execute(
+            "SELECT title FROM assignments WHERE id = ?",
+            (int(assignment_id),),
+        ).fetchone()
+        return str(row[0]) if row else ""
 
     def _chat_create_channel(self, *, name: str) -> ChatCommandResult:
         from talon_core.chat import create_channel

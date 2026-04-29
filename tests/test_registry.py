@@ -28,13 +28,18 @@ def test_registry_exposes_current_sync_sets():
     assert registry.SYNC_TABLES == (
         "operators",
         "missions",
+        "assignments",
         "assets",
         "waypoints",
         "zones",
         "channels",
         "messages",
-        "sitreps",
         "documents",
+        "sitreps",
+        "sitrep_followups",
+        "sitrep_documents",
+        "checkins",
+        "incidents",
     )
     assert registry.CLIENT_PUSH_TABLES == {
         "assets",
@@ -42,22 +47,37 @@ def test_registry_exposes_current_sync_sets():
         "missions",
         "messages",
         "zones",
+        "assignments",
+        "checkins",
+        "incidents",
+        "sitrep_followups",
+        "sitrep_documents",
     }
     assert registry.OFFLINE_TABLES == (
         "missions",
+        "assignments",
         "assets",
         "zones",
         "messages",
         "sitreps",
+        "sitrep_followups",
+        "sitrep_documents",
+        "checkins",
+        "incidents",
     )
     assert registry.TOMBSTONE_APPLY_ORDER == (
         "messages",
         "channels",
         "waypoints",
         "zones",
+        "checkins",
+        "sitrep_documents",
+        "sitrep_followups",
+        "incidents",
         "sitreps",
         "assets",
         "documents",
+        "assignments",
         "missions",
         "operators",
     )
@@ -68,15 +88,43 @@ def test_registry_captures_table_metadata():
     sitreps = registry.get_table("sitreps")
     messages = registry.get_table("messages")
     assets = registry.get_table("assets")
+    assignments = registry.get_table("assignments")
+    checkins = registry.get_table("checkins")
+    incidents = registry.get_table("incidents")
+    sitrep_followups = registry.get_table("sitrep_followups")
+    sitrep_documents = registry.get_table("sitrep_documents")
 
     assert documents.redacted_fields == {"file_path"}
     assert sitreps.encrypted_fields == {"body"}
     assert messages.binary_text_fields == {"body"}
     assert messages.ownership_fields == ("sender_id",)
     assert assets.ownership_fields == ("created_by",)
+    assert assignments.ownership_fields == ("created_by",)
+    assert checkins.ownership_fields == ("operator_id",)
+    assert incidents.ownership_fields == ("created_by",)
+    assert sitrep_followups.ownership_fields == ("author_id",)
+    assert sitrep_documents.ownership_fields == ("created_by",)
     assert assets.client_push_forced_fields == {"verified": 0, "confirmed_by": None}
-    assert registry.ui_refresh_targets("sitreps") == {"sitrep", "main"}
+    assert registry.ui_refresh_targets("sitreps") == {"sitrep", "map", "main"}
     assert registry.ui_refresh_targets("missions") == {"mission", "main"}
+    assert registry.ui_refresh_targets("assignments") == {
+        "assignments",
+        "mission",
+        "map",
+        "main",
+    }
+    assert registry.ui_refresh_targets("incidents") == {
+        "incidents",
+        "assignments",
+        "sitrep",
+        "main",
+    }
+    assert registry.ui_refresh_targets("sitrep_followups") == {"sitrep", "map", "main"}
+    assert registry.ui_refresh_targets("sitrep_documents") == {
+        "sitrep",
+        "documents",
+        "main",
+    }
     assert registry.ui_refresh_targets("amendments") == {"sitrep"}
 
 

@@ -5,7 +5,20 @@ import time
 import typing
 
 from talon_core.constants import ASSET_CATEGORIES, SITREP_LEVELS
+from talon_core.community_safety import (
+    ASSIGNMENT_STATUSES,
+    ASSIGNMENT_TYPES,
+    CHECKIN_STATES,
+    INCIDENT_CATEGORIES,
+)
 from talon_core.crypto.fields import decrypt_field, encrypt_field
+from talon_core.sitrep import (
+    SITREP_FOLLOWUP_ACTIONS,
+    SITREP_LOCATION_PRECISIONS,
+    SITREP_LOCATION_SOURCES,
+    SITREP_SENSITIVITIES,
+    SITREP_STATUSES,
+)
 from talon_core.zones import ZONE_TYPES
 
 
@@ -34,43 +47,51 @@ TABLES: dict[str, SyncedTable] = {
     "operators": SyncedTable(
         name="operators",
         sync_order=0,
-        tombstone_order=8,
+        tombstone_order=13,
         ui_refresh_targets=_fields("operators", "clients"),
     ),
     "assets": SyncedTable(
         name="assets",
-        sync_order=2,
+        sync_order=3,
         client_pushable=True,
         offline_creatable=True,
-        tombstone_order=5,
+        tombstone_order=9,
         ownership_fields=("created_by",),
         client_push_forced_fields={"verified": 0, "confirmed_by": None},
         ui_refresh_targets=_fields("assets", "main"),
         predelete_sql=(
             "UPDATE sitreps SET asset_id = NULL WHERE asset_id = ?",
+            "UPDATE incidents SET linked_asset_id = NULL WHERE linked_asset_id = ?",
             "UPDATE assets SET mission_id = NULL WHERE id = ?",
         ),
     ),
     "sitreps": SyncedTable(
         name="sitreps",
-        sync_order=7,
+        sync_order=9,
         client_pushable=True,
         offline_creatable=True,
-        tombstone_order=4,
+        tombstone_order=8,
         encrypted_fields=_fields("body"),
         ownership_fields=("author_id",),
-        ui_refresh_targets=_fields("sitrep", "main"),
+        ui_refresh_targets=_fields("sitrep", "map", "main"),
+        predelete_sql=(
+            "UPDATE incidents SET linked_sitrep_id = NULL WHERE linked_sitrep_id = ?",
+            "DELETE FROM sitrep_documents WHERE sitrep_id = ?",
+            "DELETE FROM sitrep_followups WHERE sitrep_id = ?",
+        ),
     ),
     "missions": SyncedTable(
         name="missions",
         sync_order=1,
         client_pushable=True,
         offline_creatable=True,
-        tombstone_order=7,
+        tombstone_order=12,
         ownership_fields=("created_by",),
         ui_refresh_targets=_fields("mission", "main"),
         predelete_sql=(
             "UPDATE sitreps SET mission_id = NULL WHERE mission_id = ?",
+            "UPDATE assignments SET mission_id = NULL WHERE mission_id = ?",
+            "UPDATE incidents SET linked_mission_id = NULL WHERE linked_mission_id = ?",
             "UPDATE zones SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE channels SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE assets SET mission_id = NULL WHERE mission_id = ?",
@@ -79,13 +100,13 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "waypoints": SyncedTable(
         name="waypoints",
-        sync_order=3,
+        sync_order=4,
         tombstone_order=2,
         ui_refresh_targets=_fields("mission", "main"),
     ),
     "zones": SyncedTable(
         name="zones",
-        sync_order=4,
+        sync_order=5,
         client_pushable=True,
         offline_creatable=True,
         tombstone_order=3,
@@ -94,7 +115,7 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "channels": SyncedTable(
         name="channels",
-        sync_order=5,
+        sync_order=6,
         tombstone_order=1,
         ui_refresh_targets=_fields("chat"),
         predelete_sql=(
@@ -103,7 +124,7 @@ TABLES: dict[str, SyncedTable] = {
     ),
     "messages": SyncedTable(
         name="messages",
-        sync_order=6,
+        sync_order=7,
         client_pushable=True,
         offline_creatable=True,
         tombstone_order=0,
@@ -114,9 +135,62 @@ TABLES: dict[str, SyncedTable] = {
     "documents": SyncedTable(
         name="documents",
         sync_order=8,
-        tombstone_order=6,
+        tombstone_order=10,
         redacted_fields=_fields("file_path"),
         ui_refresh_targets=_fields("documents"),
+        predelete_sql=(
+            "DELETE FROM sitrep_documents WHERE document_id = ?",
+        ),
+    ),
+    "assignments": SyncedTable(
+        name="assignments",
+        sync_order=2,
+        client_pushable=True,
+        offline_creatable=True,
+        tombstone_order=11,
+        ownership_fields=("created_by",),
+        ui_refresh_targets=_fields("assignments", "mission", "map", "main"),
+        predelete_sql=(
+            "UPDATE incidents SET linked_assignment_id = NULL WHERE linked_assignment_id = ?",
+            "UPDATE sitreps SET assignment_id = NULL WHERE assignment_id = ?",
+            "DELETE FROM checkins WHERE assignment_id = ?",
+        ),
+    ),
+    "checkins": SyncedTable(
+        name="checkins",
+        sync_order=12,
+        client_pushable=True,
+        offline_creatable=True,
+        tombstone_order=4,
+        ownership_fields=("operator_id",),
+        ui_refresh_targets=_fields("assignments", "map", "main"),
+    ),
+    "incidents": SyncedTable(
+        name="incidents",
+        sync_order=13,
+        client_pushable=True,
+        offline_creatable=True,
+        tombstone_order=7,
+        ownership_fields=("created_by",),
+        ui_refresh_targets=_fields("incidents", "assignments", "sitrep", "main"),
+    ),
+    "sitrep_followups": SyncedTable(
+        name="sitrep_followups",
+        sync_order=10,
+        client_pushable=True,
+        offline_creatable=True,
+        tombstone_order=6,
+        ownership_fields=("author_id",),
+        ui_refresh_targets=_fields("sitrep", "map", "main"),
+    ),
+    "sitrep_documents": SyncedTable(
+        name="sitrep_documents",
+        sync_order=11,
+        client_pushable=True,
+        offline_creatable=True,
+        tombstone_order=5,
+        ownership_fields=("created_by",),
+        ui_refresh_targets=_fields("sitrep", "documents", "main"),
     ),
     "amendments": SyncedTable(
         name="amendments",
@@ -367,14 +441,73 @@ def _client_push_dto(
         body = _str_field(record, "body")
         mission_id = _optional_int(record.get("mission_id"), "mission_id")
         asset_id = _optional_int(record.get("asset_id"), "asset_id")
+        assignment_id = _optional_int(record.get("assignment_id"), "assignment_id")
+        status = str(record.get("status") or "open")
+        if status not in SITREP_STATUSES:
+            raise ValueError(f"unknown SITREP status: {status!r}")
+        location_precision = str(record.get("location_precision") or "")
+        if location_precision not in SITREP_LOCATION_PRECISIONS:
+            raise ValueError(f"unknown SITREP location precision: {location_precision!r}")
+        location_source = str(record.get("location_source") or "")
+        if location_source not in SITREP_LOCATION_SOURCES:
+            raise ValueError(f"unknown SITREP location source: {location_source!r}")
+        sensitivity = str(record.get("sensitivity") or "team")
+        if sensitivity not in SITREP_SENSITIVITIES:
+            raise ValueError(f"unknown SITREP sensitivity: {sensitivity!r}")
+        lat = _optional_float(record.get("lat"), "lat", -90.0, 90.0)
+        lon = _optional_float(record.get("lon"), "lon", -180.0, 180.0)
+        if (lat is None) != (lon is None):
+            raise ValueError("both lat and lon are required for SITREP location")
         _require_fk(conn, "missions", mission_id)
         _require_fk(conn, "assets", asset_id)
+        _require_fk(conn, "assignments", assignment_id)
         return {
             "level": level,
             "template": str(record.get("template") or ""),
             "body": body,
             "mission_id": mission_id,
             "asset_id": asset_id,
+            "assignment_id": assignment_id,
+            "location_label": str(record.get("location_label") or "").strip(),
+            "lat": lat,
+            "lon": lon,
+            "location_precision": location_precision,
+            "location_source": location_source,
+            "status": status,
+            "assigned_to": str(record.get("assigned_to") or "").strip(),
+            "resolved_at": _optional_int(record.get("resolved_at"), "resolved_at"),
+            "disposition": str(record.get("disposition") or "").strip(),
+            "sensitivity": sensitivity,
+            "created_at": now,
+        }
+
+    if table_name == "sitrep_followups":
+        sitrep_id = _required_int(record.get("sitrep_id"), "sitrep_id")
+        _require_fk(conn, "sitreps", sitrep_id)
+        action = _str_field(record, "action")
+        if action not in SITREP_FOLLOWUP_ACTIONS:
+            raise ValueError(f"unknown SITREP follow-up action: {action!r}")
+        status = str(record.get("status") or "")
+        if status and status not in SITREP_STATUSES:
+            raise ValueError(f"unknown SITREP status: {status!r}")
+        return {
+            "sitrep_id": sitrep_id,
+            "action": action,
+            "note": str(record.get("note") or "").strip(),
+            "assigned_to": str(record.get("assigned_to") or "").strip(),
+            "status": status,
+            "created_at": now,
+        }
+
+    if table_name == "sitrep_documents":
+        sitrep_id = _required_int(record.get("sitrep_id"), "sitrep_id")
+        document_id = _required_int(record.get("document_id"), "document_id")
+        _require_fk(conn, "sitreps", sitrep_id)
+        _require_fk(conn, "documents", document_id)
+        return {
+            "sitrep_id": sitrep_id,
+            "document_id": document_id,
+            "description": str(record.get("description") or "").strip(),
             "created_at": now,
         }
 
@@ -431,6 +564,114 @@ def _client_push_dto(
             "zone_type": zone_type,
             "polygon": polygon_text,
             "mission_id": mission_id,
+            "created_at": now,
+        }
+
+    if table_name == "assignments":
+        assignment_type = _str_field(record, "assignment_type")
+        if assignment_type not in ASSIGNMENT_TYPES:
+            raise ValueError(f"unknown assignment type: {assignment_type!r}")
+        status = str(record.get("status") or "planned")
+        if status not in ASSIGNMENT_STATUSES:
+            raise ValueError(f"unknown assignment status: {status!r}")
+        priority = str(record.get("priority") or "ROUTINE")
+        if priority not in SITREP_LEVELS:
+            raise ValueError(f"unknown assignment priority: {priority!r}")
+        title = _str_field(record, "title").strip()
+        if not title:
+            raise ValueError("assignment title is required")
+        mission_id = _optional_int(record.get("mission_id"), "mission_id")
+        _require_fk(conn, "missions", mission_id)
+        return {
+            "mission_id": mission_id,
+            "assignment_type": assignment_type,
+            "title": title,
+            "status": status,
+            "priority": priority,
+            "protected_label": str(record.get("protected_label") or "").strip(),
+            "location_label": str(record.get("location_label") or "").strip(),
+            "location_precision": str(record.get("location_precision") or "general").strip(),
+            "support_reason": str(record.get("support_reason") or "").strip(),
+            "consent_source": str(record.get("consent_source") or "").strip(),
+            "assigned_operator_ids": _json_text(
+                record.get("assigned_operator_ids"),
+                list,
+                "assigned_operator_ids",
+            ),
+            "team_lead": str(record.get("team_lead") or "").strip(),
+            "backup_operator": str(record.get("backup_operator") or "").strip(),
+            "escalation_contact": str(record.get("escalation_contact") or "").strip(),
+            "required_skills": _json_text(
+                record.get("required_skills"),
+                list,
+                "required_skills",
+            ),
+            "shift_start": str(record.get("shift_start") or "").strip(),
+            "shift_end": str(record.get("shift_end") or "").strip(),
+            "checkin_interval_min": max(1, int(record.get("checkin_interval_min") or 20)),
+            "overdue_threshold_min": max(1, int(record.get("overdue_threshold_min") or 5)),
+            "handoff_notes": str(record.get("handoff_notes") or "").strip(),
+            "risk_notes": str(record.get("risk_notes") or "").strip(),
+            "lat": _optional_float(record.get("lat"), "lat", -90.0, 90.0),
+            "lon": _optional_float(record.get("lon"), "lon", -180.0, 180.0),
+            "last_checkin_state": str(record.get("last_checkin_state") or ""),
+            "last_checkin_at": _optional_int(record.get("last_checkin_at"), "last_checkin_at"),
+            "last_checkin_operator_id": _optional_int(
+                record.get("last_checkin_operator_id"),
+                "last_checkin_operator_id",
+            ),
+            "created_at": now,
+        }
+
+    if table_name == "checkins":
+        assignment_id = _required_int(record.get("assignment_id"), "assignment_id")
+        _require_fk(conn, "assignments", assignment_id)
+        state = _str_field(record, "state")
+        if state not in CHECKIN_STATES:
+            raise ValueError(f"unknown check-in state: {state!r}")
+        return {
+            "assignment_id": assignment_id,
+            "state": state,
+            "note": str(record.get("note") or "").strip(),
+            "lat": _optional_float(record.get("lat"), "lat", -90.0, 90.0),
+            "lon": _optional_float(record.get("lon"), "lon", -180.0, 180.0),
+            "acknowledged_by": None,
+            "acknowledged_at": None,
+            "created_at": now,
+        }
+
+    if table_name == "incidents":
+        category = _str_field(record, "category")
+        if category not in INCIDENT_CATEGORIES:
+            raise ValueError(f"unknown incident category: {category!r}")
+        severity = str(record.get("severity") or "ROUTINE")
+        if severity not in SITREP_LEVELS:
+            raise ValueError(f"unknown incident severity: {severity!r}")
+        mission_id = _optional_int(record.get("linked_mission_id"), "linked_mission_id")
+        assignment_id = _optional_int(record.get("linked_assignment_id"), "linked_assignment_id")
+        asset_id = _optional_int(record.get("linked_asset_id"), "linked_asset_id")
+        sitrep_id = _optional_int(record.get("linked_sitrep_id"), "linked_sitrep_id")
+        _require_fk(conn, "missions", mission_id)
+        _require_fk(conn, "assignments", assignment_id)
+        _require_fk(conn, "assets", asset_id)
+        _require_fk(conn, "sitreps", sitrep_id)
+        return {
+            "category": category,
+            "severity": severity,
+            "title": str(record.get("title") or "").strip(),
+            "occurred_at": int(record.get("occurred_at") or now),
+            "location_label": str(record.get("location_label") or "").strip(),
+            "lat": _optional_float(record.get("lat"), "lat", -90.0, 90.0),
+            "lon": _optional_float(record.get("lon"), "lon", -180.0, 180.0),
+            "narrative": str(record.get("narrative") or "").strip(),
+            "actions_taken": str(record.get("actions_taken") or "").strip(),
+            "outcome": str(record.get("outcome") or "").strip(),
+            "follow_up_needed": 1 if bool(record.get("follow_up_needed")) else 0,
+            "notified_services": str(record.get("notified_services") or "").strip(),
+            "linked_mission_id": mission_id,
+            "linked_assignment_id": assignment_id,
+            "linked_asset_id": asset_id,
+            "linked_sitrep_id": sitrep_id,
             "created_at": now,
         }
 

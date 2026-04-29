@@ -5,7 +5,7 @@ import dataclasses
 import typing
 
 from talon_core.db.connection import Connection
-from talon_core.db.models import Asset, Mission, Waypoint, Zone
+from talon_core.db.models import Asset, CommunityAssignment, Mission, Waypoint, Zone
 
 
 @dataclasses.dataclass
@@ -16,6 +16,7 @@ class MapContext:
     zones: list[Zone] = dataclasses.field(default_factory=list)
     waypoints: list[Waypoint] = dataclasses.field(default_factory=list)
     missions: list[Mission] = dataclasses.field(default_factory=list)
+    assignments: list[CommunityAssignment] = dataclasses.field(default_factory=list)
 
     @property
     def missions_by_id(self) -> dict[int, Mission]:
@@ -73,10 +74,18 @@ def load_map_context(
 ) -> MapContext:
     """Load the shared operational map picture without importing UI code."""
     from talon_core.assets import load_assets
+    from talon_core.community_safety import list_assignments
     from talon_core.missions import load_missions
     from talon_core.zones import load_zones
 
     assets = load_assets(conn, limit=limit)
+    assignments = list_assignments(conn, active_only=True, limit=limit)
+    if mission_id is not None:
+        assignments = [
+            assignment
+            for assignment in assignments
+            if assignment.mission_id is None or assignment.mission_id == mission_id
+        ]
     zones = load_zones(conn, mission_id=mission_id, limit=limit)
     waypoints = load_waypoints_for_map(conn, mission_id=mission_id, limit=limit)
     missions = load_missions(conn, limit=limit)
@@ -85,6 +94,7 @@ def load_map_context(
         zones=zones,
         waypoints=waypoints,
         missions=missions,
+        assignments=assignments,
     )
 
 

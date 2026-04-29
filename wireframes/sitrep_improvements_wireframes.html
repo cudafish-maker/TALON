@@ -1,0 +1,1488 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON SITREP Improvement Wireframes</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1214;
+      --shell: #080d0f;
+      --panel: #101719;
+      --panel-2: #141f22;
+      --panel-3: #1a2529;
+      --line: #253238;
+      --line-strong: #35484f;
+      --text: #d8dee9;
+      --text-strong: #f6fbfb;
+      --muted: #93a1a8;
+      --teal: #8fbcbb;
+      --green: #7fb069;
+      --yellow: #d6b85a;
+      --orange: #f28c28;
+      --red: #ff5555;
+      --rose: #ff7a94;
+      --blue: #6aa3d8;
+      --violet: #b48ead;
+      --shadow: rgba(0, 0, 0, 0.34);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, "Noto Sans", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .page {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 28px;
+    }
+
+    .brief h1 {
+      margin: 0 0 8px;
+      color: var(--text-strong);
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .brief p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 92ch;
+    }
+
+    .approval {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 16px 38px var(--shadow);
+    }
+
+    .approval h2 {
+      margin: 0 0 8px;
+      color: var(--text-strong);
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    .approval ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .approval li + li {
+      margin-top: 4px;
+    }
+
+    .screen {
+      margin: 0 0 34px;
+    }
+
+    .screen-title {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin: 0 0 10px;
+    }
+
+    .screen-title h2 {
+      margin: 0;
+      color: var(--text-strong);
+      font-size: 20px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .screen-title span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .desktop-frame {
+      overflow: hidden;
+      min-height: 760px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) 34px;
+    }
+
+    .nav {
+      grid-row: 1 / span 2;
+      background: var(--shell);
+      border-right: 1px solid var(--line);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .brand {
+      padding: 8px 10px 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+    }
+
+    .brand .name {
+      color: var(--text-strong);
+      font-size: 18px;
+      font-weight: 850;
+    }
+
+    .brand .mode {
+      margin-top: 2px;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .nav-item {
+      min-height: 34px;
+      padding: 8px 10px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 750;
+    }
+
+    .nav-item.active {
+      color: var(--text-strong);
+      background: #1f2f35;
+      border-color: #31434a;
+    }
+
+    .nav-item .badge {
+      min-width: 22px;
+      height: 20px;
+      border-radius: 4px;
+      background: var(--orange);
+      color: #16120b;
+      display: inline-grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .content {
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .statusbar {
+      grid-column: 2;
+      background: var(--shell);
+      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .statusbar span:last-child {
+      margin-left: auto;
+    }
+
+    .topbar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar h3 {
+      margin: 0;
+      color: var(--text-strong);
+      font-size: 21px;
+      line-height: 1.1;
+      font-weight: 850;
+      flex: 1;
+    }
+
+    .control,
+    button.control {
+      min-height: 34px;
+      padding: 7px 10px;
+      background: #162126;
+      color: var(--text);
+      border: 1px solid #31434a;
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .control.primary {
+      color: #071012;
+      background: var(--teal);
+      border-color: var(--teal);
+    }
+
+    .control.danger {
+      color: var(--text-strong);
+      background: #4b171b;
+      border-color: #7d2a31;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(112px, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      min-height: 72px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .metric .value {
+      margin-top: 4px;
+      color: var(--text-strong);
+      font-size: 24px;
+      font-weight: 850;
+    }
+
+    .metric .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric.warn {
+      border-color: #6a4e1d;
+      background: #201b10;
+    }
+
+    .metric.alert {
+      border-color: #74323a;
+      background: #211318;
+    }
+
+    .main-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(430px, 1fr) minmax(360px, 0.82fr) minmax(330px, 0.76fr);
+      gap: 10px;
+    }
+
+    .map-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 238px minmax(0, 1fr) 320px;
+      gap: 10px;
+    }
+
+    .handoff-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(500px, 1fr) minmax(370px, 0.7fr);
+      gap: 10px;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      min-height: 42px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-head strong {
+      color: var(--text-strong);
+      font-size: 14px;
+      font-weight: 850;
+      flex: 1;
+    }
+
+    .panel-body {
+      min-height: 0;
+      padding: 10px;
+      overflow: hidden;
+    }
+
+    .feed {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .feed-row {
+      min-height: 78px;
+      padding: 10px;
+      background: #0b1012;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) 74px;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .feed-row.selected {
+      border-color: #4b6870;
+      background: #17262a;
+    }
+
+    .feed-row.flash {
+      border-color: #74323a;
+      background: #211318;
+    }
+
+    .feed-row .stamp {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .feed-row .body {
+      min-width: 0;
+      color: var(--text);
+    }
+
+    .feed-row .body strong {
+      display: block;
+      color: var(--text-strong);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .feed-row .body span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pill,
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      color: var(--text);
+      background: #162126;
+      font-size: 11px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .pill {
+      width: max-content;
+    }
+
+    .pill.green,
+    .tag.green {
+      color: #08110b;
+      background: var(--green);
+      border-color: var(--green);
+    }
+
+    .pill.yellow,
+    .tag.yellow {
+      color: #1c1600;
+      background: var(--yellow);
+      border-color: var(--yellow);
+    }
+
+    .pill.orange,
+    .tag.orange {
+      color: #1f1000;
+      background: var(--orange);
+      border-color: var(--orange);
+    }
+
+    .pill.red,
+    .tag.red {
+      color: #fff4f5;
+      background: #8b2630;
+      border-color: #b33642;
+    }
+
+    .pill.blue,
+    .tag.blue {
+      color: #07111a;
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .pill.violet,
+    .tag.violet {
+      color: #160d18;
+      background: var(--violet);
+      border-color: var(--violet);
+    }
+
+    .filter-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .filter {
+      min-height: 30px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .filter.active {
+      color: #071012;
+      background: var(--teal);
+      border-color: var(--teal);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .form-grid .wide {
+      grid-column: 1 / -1;
+    }
+
+    label.field {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .input {
+      min-height: 36px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #0a0f11;
+      color: var(--text);
+      padding: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .textarea {
+      min-height: 108px;
+      white-space: normal;
+    }
+
+    .template-grid {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .template {
+      min-height: 44px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+    }
+
+    .template.active {
+      color: #071012;
+      background: var(--yellow);
+      border-color: var(--yellow);
+    }
+
+    .action-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
+    .activity {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .activity-row {
+      min-height: 52px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+    }
+
+    .activity-row strong {
+      display: block;
+      color: var(--text-strong);
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+
+    .activity-row span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .map-canvas {
+      position: relative;
+      min-height: 620px;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(106, 163, 216, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(106, 163, 216, 0.08) 1px, transparent 1px),
+        linear-gradient(145deg, #10181b, #17252b 45%, #0f181a);
+      background-size: 42px 42px, 42px 42px, 100% 100%;
+    }
+
+    .map-water {
+      position: absolute;
+      left: -5%;
+      top: 34%;
+      width: 48%;
+      height: 32%;
+      background: rgba(54, 105, 128, 0.34);
+      transform: rotate(-15deg);
+      border-radius: 46%;
+      border: 1px solid rgba(106, 163, 216, 0.24);
+    }
+
+    .map-road {
+      position: absolute;
+      height: 8px;
+      border-radius: 99px;
+      background: rgba(216, 184, 90, 0.72);
+      box-shadow: 0 0 0 2px rgba(34, 26, 10, 0.65);
+      transform-origin: left center;
+    }
+
+    .map-road.r1 {
+      left: 9%;
+      top: 62%;
+      width: 62%;
+      transform: rotate(-18deg);
+    }
+
+    .map-road.r2 {
+      left: 45%;
+      top: 22%;
+      width: 58%;
+      transform: rotate(34deg);
+    }
+
+    .map-route {
+      position: absolute;
+      left: 19%;
+      top: 24%;
+      width: 50%;
+      height: 45%;
+      border: 3px solid var(--teal);
+      border-right-color: transparent;
+      border-radius: 48% 22% 56% 34%;
+      transform: rotate(8deg);
+    }
+
+    .ao {
+      position: absolute;
+      left: 44%;
+      top: 31%;
+      width: 28%;
+      height: 25%;
+      border: 2px dashed var(--violet);
+      background: rgba(180, 142, 173, 0.09);
+      transform: rotate(-7deg);
+    }
+
+    .marker {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #071012;
+      box-shadow: 0 0 0 2px var(--text-strong), 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    .marker.green { background: var(--green); }
+    .marker.yellow { background: var(--yellow); }
+    .marker.red { background: var(--red); }
+    .marker.blue { background: var(--blue); }
+    .marker.teal { background: var(--teal); }
+
+    .diamond {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: var(--blue);
+      border: 2px solid #071012;
+      transform: rotate(45deg);
+      box-shadow: 0 0 0 2px var(--text-strong), 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    .diamond.flash {
+      background: var(--red);
+      box-shadow: 0 0 0 2px var(--text-strong), 0 0 0 10px rgba(255, 85, 85, 0.12), 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    .beacon {
+      position: absolute;
+      left: 62%;
+      top: 35%;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      border: 2px solid var(--red);
+      background: rgba(255, 85, 85, 0.18);
+      display: grid;
+      place-items: center;
+      color: var(--text-strong);
+      font-weight: 900;
+      box-shadow: 0 0 0 9px rgba(255, 85, 85, 0.10);
+    }
+
+    .map-label {
+      position: absolute;
+      padding: 4px 6px;
+      background: rgba(10, 15, 17, 0.86);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--text-strong);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .layer-list,
+    .detail-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .layer-row {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      background: #0b1012;
+      border-radius: 6px;
+      padding: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 13px;
+    }
+
+    .table th {
+      height: 30px;
+      color: var(--muted);
+      text-align: left;
+      font-size: 11px;
+      font-weight: 850;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .table td {
+      height: 42px;
+      padding: 6px 6px 6px 0;
+      border-bottom: 1px solid #1c282c;
+      vertical-align: middle;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .table tr.selected td {
+      background: #1a2b30;
+      color: var(--text-strong);
+    }
+
+    .detail-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0b1012;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+
+    .detail-card h4 {
+      margin: 0 0 8px;
+      color: var(--text-strong);
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    .detail-card p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .detail-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    .meta-box {
+      min-height: 54px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #101719;
+    }
+
+    .meta-box strong {
+      display: block;
+      color: var(--text-strong);
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+
+    .meta-box span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .timeline-row {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      gap: 10px;
+      min-height: 50px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      padding: 9px;
+    }
+
+    .timeline-row .time {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .timeline-row strong {
+      display: block;
+      color: var(--text-strong);
+      margin-bottom: 3px;
+    }
+
+    .timeline-row span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mobile-wrap {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .phone {
+      width: 330px;
+      min-height: 690px;
+      margin: 0 auto;
+      padding: 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 26px;
+      background: #050607;
+      box-shadow: 0 22px 58px var(--shadow);
+    }
+
+    .phone-screen {
+      overflow: hidden;
+      min-height: 660px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .phone-top {
+      min-height: 52px;
+      padding: 10px 12px;
+      background: var(--shell);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .phone-top strong {
+      color: var(--text-strong);
+      flex: 1;
+      font-size: 15px;
+    }
+
+    .phone-map {
+      position: relative;
+      min-height: 274px;
+      background:
+        linear-gradient(90deg, rgba(106, 163, 216, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(106, 163, 216, 0.08) 1px, transparent 1px),
+        linear-gradient(135deg, #101719, #17252b);
+      background-size: 32px 32px, 32px 32px, 100% 100%;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .phone-body {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .phone-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 10px;
+    }
+
+    .phone-card strong {
+      color: var(--text-strong);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .quick {
+      min-height: 44px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #162126;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .quick.ok {
+      color: #08110b;
+      background: var(--green);
+      border-color: var(--green);
+    }
+
+    .quick.alert {
+      color: #fff4f5;
+      background: #8b2630;
+      border-color: #b33642;
+    }
+
+    .phone-tabs {
+      min-height: 44px;
+      border-top: 1px solid var(--line);
+      background: var(--shell);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+    }
+
+    .phone-tab {
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .phone-tab.active {
+      color: var(--teal);
+    }
+
+    @media (max-width: 1100px) {
+      .brief,
+      .main-grid,
+      .map-grid,
+      .handoff-grid,
+      .mobile-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .desktop-frame {
+        grid-template-columns: 64px minmax(0, 1fr);
+      }
+
+      .nav-item span.label,
+      .brand .mode {
+        display: none;
+      }
+
+      .metric-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brief">
+      <div>
+        <h1>SITREP Improvement Wireframes</h1>
+        <p>
+          Approval mockups for making TALON SITREPs location-native, map-visible,
+          acknowledgeable, assignment-aware, incident-linked, attachment-ready,
+          and usable as fast mobile field reports.
+        </p>
+      </div>
+      <aside class="approval">
+        <h2>Implementation held until approved</h2>
+        <ul>
+          <li>No app code changes are included in this artifact.</li>
+          <li>Core data changes: location fields, detail read model, follow-ups.</li>
+          <li>Desktop changes: SITREP page, map overlays, incident handoff.</li>
+          <li>Mobile mockup is future direction for the Android roadmap.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>Desktop SITREP Command Center</h2>
+        <span>Feed, filters, location-native composer, templates, attachments, and follow-ups</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">TALON</div>
+            <div class="mode">SERVER MODE</div>
+          </div>
+          <div class="nav-item"><span class="label">Dashboard</span></div>
+          <div class="nav-item"><span class="label">Map</span><span class="badge">4</span></div>
+          <div class="nav-item active"><span class="label">SITREPs</span><span class="badge">9</span></div>
+          <div class="nav-item"><span class="label">Assignments</span><span class="badge">2</span></div>
+          <div class="nav-item"><span class="label">Incidents</span></div>
+          <div class="nav-item"><span class="label">Chat</span></div>
+          <div class="nav-item"><span class="label">Documents</span></div>
+          <div class="nav-item"><span class="label">Operators</span></div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h3>SITREPs</h3>
+            <button class="control">Refresh</button>
+            <button class="control">Audio Opt-In</button>
+            <button class="control primary">New SITREP</button>
+          </div>
+          <div class="metric-row">
+            <div class="metric"><div class="label">Total</div><div class="value">128</div><div class="sub">200 retained in feed</div></div>
+            <div class="metric warn"><div class="label">Unresolved</div><div class="value">11</div><div class="sub">Needs action</div></div>
+            <div class="metric alert"><div class="label">Emergency</div><div class="value">1</div><div class="sub">Duress active</div></div>
+            <div class="metric"><div class="label">With Location</div><div class="value">83</div><div class="sub">Native or asset-linked</div></div>
+            <div class="metric"><div class="label">Pending Sync</div><div class="value">3</div><div class="sub">Queued over RNS</div></div>
+            <div class="metric"><div class="label">Attachments</div><div class="value">17</div><div class="sub">Text syncs first</div></div>
+          </div>
+          <div class="main-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Operational Feed</strong>
+                <span class="tag red">FLASH</span>
+                <span class="tag orange">IMMEDIATE</span>
+              </div>
+              <div class="panel-body">
+                <div class="filter-wrap">
+                  <span class="filter active">Unresolved</span>
+                  <span class="filter">My Missions</span>
+                  <span class="filter">With Location</span>
+                  <span class="filter">Pending Sync</span>
+                  <span class="filter">Last 12h</span>
+                  <span class="filter">Attachments</span>
+                </div>
+                <div class="feed">
+                  <div class="feed-row flash selected">
+                    <div class="stamp">12:48<br>Today</div>
+                    <div class="body">
+                      <strong>FLASH_OVERRIDE / Bravo-2 / Emergency beacon</strong>
+                      Need medical support at south entrance. De-escalating, crowd moving east.
+                      <span>Location: 40.123451, -75.250281 | Assignment: Protective Detail A</span>
+                    </div>
+                    <span class="pill red">Open</span>
+                  </div>
+                  <div class="feed-row">
+                    <div class="stamp">12:32<br>Today</div>
+                    <div class="body">
+                      <strong>PRIORITY / Logistics / Cache shortfall</strong>
+                      Water and blankets below planned level. Resupply requested before 16:00.
+                      <span>Asset: North Cache | Mission: Mutual Aid 04</span>
+                    </div>
+                    <span class="pill yellow">Assigned</span>
+                  </div>
+                  <div class="feed-row">
+                    <div class="stamp">11:56<br>Today</div>
+                    <div class="body">
+                      <strong>IMMEDIATE / Unsafe Area</strong>
+                      Downed line reported near alley. Area marked and route adjusted.
+                      <span>Location: precise map point | Incident: #42</span>
+                    </div>
+                    <span class="pill blue">Acked</span>
+                  </div>
+                  <div class="feed-row">
+                    <div class="stamp">10:14<br>Today</div>
+                    <div class="body">
+                      <strong>ROUTINE / Protective handoff</strong>
+                      Handoff complete. Next team briefed on access notes and check-in interval.
+                      <span>Assignment: Guard Post 3 | Follow-up: none</span>
+                    </div>
+                    <span class="pill green">Closed</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Composer</strong>
+                <span class="tag blue">Location Native</span>
+              </div>
+              <div class="panel-body">
+                <div class="form-grid">
+                  <label class="field">Severity<div class="input">IMMEDIATE</div></label>
+                  <label class="field">Status<div class="input">Open</div></label>
+                  <label class="field wide">Template
+                    <div class="template-grid">
+                      <div class="template active">Need Support</div>
+                      <div class="template">Welfare Concern</div>
+                      <div class="template">Overdose Response</div>
+                      <div class="template">Unsafe Area</div>
+                      <div class="template">Handoff</div>
+                      <div class="template">Free Text</div>
+                    </div>
+                  </label>
+                  <label class="field">Mission<div class="input">Mutual Aid 04</div></label>
+                  <label class="field">Assignment<div class="input">Protective Detail A</div></label>
+                  <label class="field">Asset<div class="input">None</div></label>
+                  <label class="field">Location<div class="input">Use current map point</div></label>
+                  <label class="field wide">Body<div class="input textarea">Location: South entrance
+Need: Medical support
+Current action: De-escalating
+Hazards: Crowd moving east
+Follow-up: Create incident if support is deployed</div></label>
+                  <label class="field">Attachment<div class="input">Add document/photo link</div></label>
+                  <label class="field">Privacy<div class="input">Shared team record</div></label>
+                  <div class="action-row">
+                    <button class="control">Save Draft</button>
+                    <button class="control">Attach File</button>
+                    <button class="control primary">Send SITREP</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Selected Detail</strong>
+                <span class="tag red">Open</span>
+              </div>
+              <div class="panel-body">
+                <div class="detail-card">
+                  <h4>FLASH_OVERRIDE #218</h4>
+                  <p>Emergency beacon from Bravo-2. Location is native to this report, not inferred from an asset.</p>
+                  <div class="detail-meta">
+                    <div class="meta-box"><strong>Age</strong><span>4 min</span></div>
+                    <div class="meta-box"><strong>Ack</strong><span>Command</span></div>
+                    <div class="meta-box"><strong>Handler</strong><span>Alpha Lead</span></div>
+                  </div>
+                  <div class="action-row">
+                    <button class="control">Acknowledge</button>
+                    <button class="control">Assign</button>
+                    <button class="control primary">Create Incident</button>
+                  </div>
+                </div>
+                <div class="activity">
+                  <div class="activity-row"><strong>12:49 Command acknowledged</strong><span>Visible in feed and map overlay</span></div>
+                  <div class="activity-row"><strong>12:50 Linked to assignment</strong><span>Protective Detail A</span></div>
+                  <div class="activity-row"><strong>12:51 Follow-up requested</strong><span>Medical support team ETA needed</span></div>
+                  <div class="activity-row"><strong>Attachment policy</strong><span>Text body syncs first; media is queued separately</span></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+        <footer class="statusbar">
+          <span>Connected via Yggdrasil</span>
+          <span>3 pending records</span>
+          <span>Last sync 12:51</span>
+        </footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>Map With Native SITREP Layers</h2>
+        <span>Standalone report points, asset-linked reports, duress beacon, filters, and aging</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">TALON</div>
+            <div class="mode">CLIENT MODE</div>
+          </div>
+          <div class="nav-item"><span class="label">Dashboard</span></div>
+          <div class="nav-item active"><span class="label">Map</span><span class="badge">4</span></div>
+          <div class="nav-item"><span class="label">SITREPs</span><span class="badge">9</span></div>
+          <div class="nav-item"><span class="label">Assignments</span></div>
+          <div class="nav-item"><span class="label">Incidents</span></div>
+          <div class="nav-item"><span class="label">Chat</span></div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h3>Operational Map</h3>
+            <button class="control">OSM</button>
+            <button class="control">Topo</button>
+            <button class="control">Satellite</button>
+            <button class="control primary">Report Here</button>
+          </div>
+          <div class="map-grid">
+            <section class="panel">
+              <div class="panel-head"><strong>Layers</strong></div>
+              <div class="panel-body">
+                <div class="layer-list">
+                  <div class="layer-row"><span>Assets</span><span class="tag green">18</span></div>
+                  <div class="layer-row"><span>Native SITREPs</span><span class="tag blue">12</span></div>
+                  <div class="layer-row"><span>Asset-linked SITREPs</span><span class="tag violet">7</span></div>
+                  <div class="layer-row"><span>Assignments</span><span class="tag yellow">5</span></div>
+                  <div class="layer-row"><span>Duress</span><span class="tag red">1</span></div>
+                  <div class="layer-row"><span>Routes / AO</span><span class="tag">On</span></div>
+                </div>
+                <div class="filter-wrap" style="margin-top: 12px;">
+                  <span class="filter active">Open</span>
+                  <span class="filter active">Last 12h</span>
+                  <span class="filter">Stale</span>
+                  <span class="filter">Mine</span>
+                  <span class="filter">Mission</span>
+                </div>
+              </div>
+            </section>
+            <div class="map-canvas">
+              <div class="map-water"></div>
+              <div class="map-road r1"></div>
+              <div class="map-road r2"></div>
+              <div class="map-route"></div>
+              <div class="ao"></div>
+              <div class="marker green" style="left: 27%; top: 58%;"></div>
+              <div class="marker yellow" style="left: 54%; top: 43%;"></div>
+              <div class="marker teal" style="left: 74%; top: 28%;"></div>
+              <div class="diamond" style="left: 39%; top: 44%;"></div>
+              <div class="diamond flash" style="left: 61%; top: 33%;"></div>
+              <div class="diamond" style="left: 69%; top: 58%; opacity: 0.55;"></div>
+              <div class="beacon">SOS</div>
+              <div class="map-label" style="left: 28%; top: 61%;">North Cache</div>
+              <div class="map-label" style="left: 42%; top: 41%;">SITREP #216</div>
+              <div class="map-label" style="left: 59%; top: 30%;">FLASH #218</div>
+              <div class="map-label" style="left: 66%; top: 44%;">Protective Detail A</div>
+              <div class="map-label" style="left: 72%; top: 61%; opacity: 0.65;">stale 5h</div>
+            </div>
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Selected Overlay</strong>
+                <span class="tag red">Duress</span>
+              </div>
+              <div class="panel-body">
+                <div class="detail-card">
+                  <h4>FLASH_OVERRIDE #218</h4>
+                  <p>Bravo-2 reported medical support needed. Exact native report point captured from current map context.</p>
+                </div>
+                <div class="detail-meta">
+                  <div class="meta-box"><strong>Location</strong><span>40.123451, -75.250281</span></div>
+                  <div class="meta-box"><strong>Source</strong><span>Device / map point</span></div>
+                  <div class="meta-box"><strong>Age</strong><span>4 min</span></div>
+                </div>
+                <div class="activity">
+                  <div class="activity-row"><strong>Acknowledge queue</strong><span>Command has acknowledged; field confirmation pending.</span></div>
+                  <div class="activity-row"><strong>Assignment link</strong><span>Protective Detail A, shift ends 15:00.</span></div>
+                  <div class="activity-row"><strong>Map action</strong><span>Center, route to point, create incident, message mission channel.</span></div>
+                </div>
+                <div class="action-row">
+                  <button class="control">Center</button>
+                  <button class="control">Message</button>
+                  <button class="control primary">Acknowledge</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+        <footer class="statusbar">
+          <span>Connected via LoRa gateway</span>
+          <span>Tile cache online</span>
+          <span>Map filters persisted</span>
+        </footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>SITREP Detail And Incident Handoff</h2>
+        <span>Append-only follow-ups, acknowledgements, assignment handoff, and incident creation</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">TALON</div>
+            <div class="mode">SERVER MODE</div>
+          </div>
+          <div class="nav-item"><span class="label">Dashboard</span></div>
+          <div class="nav-item"><span class="label">Map</span></div>
+          <div class="nav-item active"><span class="label">SITREPs</span><span class="badge">9</span></div>
+          <div class="nav-item"><span class="label">Assignments</span><span class="badge">2</span></div>
+          <div class="nav-item"><span class="label">Incidents</span></div>
+          <div class="nav-item"><span class="label">Documents</span></div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h3>SITREP #218</h3>
+            <button class="control">Open on Map</button>
+            <button class="control">Message Channel</button>
+            <button class="control primary">Create Incident</button>
+          </div>
+          <div class="handoff-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Append-Only Detail</strong>
+                <span class="tag red">FLASH_OVERRIDE</span>
+              </div>
+              <div class="panel-body">
+                <div class="detail-card">
+                  <h4>Original report remains immutable</h4>
+                  <p>Need medical support at south entrance. De-escalating, crowd moving east. No personal dossier is created; the incident narrative stays event-scoped.</p>
+                  <div class="detail-meta">
+                    <div class="meta-box"><strong>Reporter</strong><span>Bravo-2</span></div>
+                    <div class="meta-box"><strong>Location</strong><span>Precise native point</span></div>
+                    <div class="meta-box"><strong>Sync</strong><span>Server ACK received</span></div>
+                  </div>
+                </div>
+                <div class="timeline">
+                  <div class="timeline-row"><div class="time">12:48</div><div><strong>Report created</strong><span>FLASH_OVERRIDE, native location, assignment link.</span></div></div>
+                  <div class="timeline-row"><div class="time">12:49</div><div><strong>Command acknowledged</strong><span>Acknowledgement is synced to all active operators.</span></div></div>
+                  <div class="timeline-row"><div class="time">12:51</div><div><strong>Follow-up added</strong><span>Medical support requested; handler Alpha Lead assigned.</span></div></div>
+                  <div class="timeline-row"><div class="time">12:53</div><div><strong>Incident created</strong><span>Category: Medical support. Follow-up needed: yes.</span></div></div>
+                  <div class="timeline-row"><div class="time">13:05</div><div><strong>Resolution pending</strong><span>Report remains open until field support confirms outcome.</span></div></div>
+                </div>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Create Incident From SITREP</strong>
+                <span class="tag blue">Pre-filled</span>
+              </div>
+              <div class="panel-body">
+                <div class="form-grid">
+                  <label class="field">Category<div class="input">Overdose or medical emergency</div></label>
+                  <label class="field">Severity<div class="input">FLASH</div></label>
+                  <label class="field wide">Title<div class="input">Medical support at south entrance</div></label>
+                  <label class="field wide">Narrative<div class="input textarea">Imported from SITREP #218. Keep descriptions factual and event-scoped. Do not create person-of-interest records.</div></label>
+                  <label class="field">Assignment<div class="input">Protective Detail A</div></label>
+                  <label class="field">Linked SITREP<div class="input">#218</div></label>
+                  <label class="field">Emergency Services<div class="input">Notified / pending</div></label>
+                  <label class="field">Follow-Up<div class="input">Required</div></label>
+                  <div class="action-row">
+                    <button class="control">Cancel</button>
+                    <button class="control primary">Create Incident</button>
+                  </div>
+                </div>
+                <div class="detail-card" style="margin-top: 10px;">
+                  <h4>Privacy guardrail</h4>
+                  <p>Only incident-scoped facts are carried forward. Sensitive personal details wait for future core ACLs and retention policy.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+        <footer class="statusbar">
+          <span>Audit event ready</span>
+          <span>Shared active dataset</span>
+          <span>Retention policy future work</span>
+        </footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>Mobile Quick SITREP Direction</h2>
+        <span>Future Android flow for map-first reports, check-ins, duress, and offline state</span>
+      </div>
+      <div class="mobile-wrap">
+        <div class="phone">
+          <div class="phone-screen">
+            <div class="phone-top">
+              <strong>Field Report</strong>
+              <span class="tag yellow">3 pending</span>
+            </div>
+            <div class="phone-map">
+              <div class="map-route" style="left: 16%; top: 26%; width: 54%; height: 46%;"></div>
+              <div class="ao" style="left: 38%; top: 32%; width: 36%; height: 28%;"></div>
+              <div class="marker green" style="left: 24%; top: 58%;"></div>
+              <div class="diamond flash" style="left: 60%; top: 39%;"></div>
+              <div class="map-label" style="left: 33%; top: 72%;">current location</div>
+              <div class="map-label" style="left: 56%; top: 30%;">report here</div>
+            </div>
+            <div class="phone-body">
+              <div class="phone-card">
+                <strong>Assignment</strong>
+                Protective Detail A, check-in due in 9 min
+              </div>
+              <div class="quick-grid">
+                <button class="quick ok">OK Check-In</button>
+                <button class="quick">Delayed</button>
+                <button class="quick">Need Support</button>
+                <button class="quick alert">Emergency</button>
+              </div>
+              <div class="phone-card">
+                <strong>Quick SITREP</strong>
+                Template: Need Support<br>
+                Location: Current map point<br>
+                Sync: Text first, attachments later
+              </div>
+              <button class="control primary">Send Report</button>
+            </div>
+            <div class="phone-tabs">
+              <div class="phone-tab active">Map</div>
+              <div class="phone-tab">Report</div>
+              <div class="phone-tab">Chat</div>
+              <div class="phone-tab">Tasks</div>
+            </div>
+          </div>
+        </div>
+        <section class="panel">
+          <div class="panel-head">
+            <strong>Mobile Acceptance Notes</strong>
+          </div>
+          <div class="panel-body">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Capability</th>
+                  <th>Behavior</th>
+                  <th>Core Dependency</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Quick report</td>
+                  <td>Template buttons from current map context</td>
+                  <td>Location-native SITREP create</td>
+                </tr>
+                <tr class="selected">
+                  <td>Duress</td>
+                  <td>High visibility, timestamp, ACK workflow</td>
+                  <td>Follow-up and acknowledgement records</td>
+                </tr>
+                <tr>
+                  <td>Offline</td>
+                  <td>Pending banner, queued body, later attachments</td>
+                  <td>Outbox and document link policy</td>
+                </tr>
+                <tr>
+                  <td>Privacy</td>
+                  <td>Minimal labels, no person dossiers</td>
+                  <td>Future sensitivity/ACL work</td>
+                </tr>
+                <tr>
+                  <td>Map</td>
+                  <td>Center current assignment and report point</td>
+                  <td>Assignment/check-in overlays</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="detail-card" style="margin-top: 12px;">
+              <h4>Desktop-first implementation path</h4>
+              <p>Build the core data model and desktop workflows first. The mobile flow then consumes the same commands and read models through Chaquopy.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
