@@ -175,6 +175,8 @@ try:
             and runtime.login_window is not None
             and not runtime.login_window.enrollment_group.isHidden()
         ):
+            assert not runtime.login_window.network_setup_button.isHidden()
+            assert runtime.login_window.network_setup_button.isEnabled()
             result = "client-enrollment"
             break
         time.sleep(0.02)
@@ -356,6 +358,8 @@ try:
         app.processEvents()
         message = runtime.login_window.status_label.text()
         if "Reticulum setup is required before network startup." in message:
+            assert not runtime.login_window.network_setup_button.isHidden()
+            assert runtime.login_window.network_setup_button.isEnabled()
             print("config-gate-rejected")
             break
         time.sleep(0.02)
@@ -440,6 +444,88 @@ finally:
     if runtime.login_window is not None:
         runtime.login_window.close()
     core._reticulum_started = False
+    runtime.shutdown()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
+_QT_NETWORK_SETUP_RETRY_SCRIPT = r"""
+import os
+import sys
+import time
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core import TalonCoreSession
+import talon_desktop.app as app_module
+from talon_desktop.app import DesktopRuntime
+
+config_path = sys.argv[1]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+runtime = DesktopRuntime(core, start_sync=True)
+events = []
+try:
+    class FakeReticulumConfigDialog:
+        calls = 0
+        def __init__(self, core, parent=None):
+            self.core = core
+            assert core.is_unlocked is True
+        def exec(self):
+            FakeReticulumConfigDialog.calls += 1
+            if FakeReticulumConfigDialog.calls == 1:
+                events.append("config-reject")
+                return QtWidgets.QDialog.Rejected
+            events.append("config-accept")
+            self.core.save_reticulum_config_text(self.core.load_reticulum_config_text())
+            return QtWidgets.QDialog.Accepted
+    app_module.ReticulumConfigDialog = FakeReticulumConfigDialog
+    def _start_reticulum():
+        events.append("reticulum")
+        assert core.is_unlocked is True
+        core._reticulum_started = True
+    def _start_sync(*, init_reticulum=True):
+        events.append("sync")
+        assert init_reticulum is False
+        assert core.reticulum_started is True
+    core.start_reticulum = _start_reticulum
+    core.start_sync = _start_sync
+    runtime.show_login()
+    runtime.unlock("DesktopSmoke-1")
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        app.processEvents()
+        if (
+            runtime.login_window is not None
+            and "Reticulum setup is required before network startup."
+            in runtime.login_window.status_label.text()
+        ):
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(runtime.login_window.status_label.text())
+    assert runtime.login_window.network_setup_button.isEnabled()
+    runtime.login_window.network_setup_button.click()
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        app.processEvents()
+        if not runtime.login_window.enrollment_group.isHidden():
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(runtime.login_window.status_label.text())
+    assert events == ["config-reject", "config-accept", "reticulum", "sync"], events
+    print("network-setup-retry-ok")
+finally:
+    if runtime.main_window is not None:
+        runtime.main_window.close()
+    if runtime.login_window is not None:
+        runtime.login_window.close()
     runtime.shutdown()
     app.processEvents()
 sys.stdout.flush()
@@ -963,6 +1049,20 @@ def test_qt_missing_reticulum_config_opens_setup_before_network_start(
 
     assert "config-dialog-opened" in result.stdout
     assert "config-gate-rejected" in result.stdout
+
+
+def test_qt_client_network_setup_button_recovers_after_setup_reject(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_NETWORK_SETUP_RETRY_SCRIPT,
+        tmp_path,
+        mode="client",
+        extra_arg="network-setup-retry",
+        timeout=30,
+    )
+
+    assert "network-setup-retry-ok" in result.stdout
 
 
 def test_qt_unaccepted_reticulum_config_opens_setup_before_network_start(

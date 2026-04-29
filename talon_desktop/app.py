@@ -47,6 +47,7 @@ class _WorkerSignals(QtCore.QObject):
 class LoginWindow(QtWidgets.QWidget):
     unlockRequested = QtCore.Signal(str)
     enrollRequested = QtCore.Signal(str, str)
+    networkSetupRequested = QtCore.Signal()
 
     def __init__(self, mode: str) -> None:
         super().__init__()
@@ -57,6 +58,7 @@ class LoginWindow(QtWidgets.QWidget):
         self.setWindowTitle(f"T.A.L.O.N. Desktop [{mode.upper()}]")
         self.setMinimumWidth(520)
         self.setObjectName("loginWindow")
+        self._unlocked = False
 
         title = QtWidgets.QLabel(f"T.A.L.O.N. {mode.upper()} Desktop")
         title.setObjectName("title")
@@ -79,6 +81,10 @@ class LoginWindow(QtWidgets.QWidget):
         )
         self.network_status_label.setWordWrap(True)
         self.network_status_label.setObjectName("statusLabel")
+        self.network_setup_button = QtWidgets.QPushButton("Network Setup")
+        self.network_setup_button.setVisible(False)
+        self.network_setup_button.setEnabled(False)
+        self.network_setup_button.clicked.connect(self.networkSetupRequested.emit)
 
         form = QtWidgets.QFormLayout()
         form.addRow("Passphrase", self.passphrase)
@@ -109,18 +115,30 @@ class LoginWindow(QtWidgets.QWidget):
         layout.addWidget(self.unlock_button)
         layout.addWidget(self.status_label)
         layout.addWidget(self.network_status_label)
+        layout.addWidget(self.network_setup_button)
         layout.addWidget(self.enrollment_group)
 
     def set_busy(self, busy: bool, message: str = "") -> None:
-        self.unlock_button.setDisabled(busy)
+        self.unlock_button.setDisabled(busy or self._unlocked)
         self.enroll_button.setDisabled(busy)
         self.paste_token_button.setDisabled(busy)
-        self.passphrase.setDisabled(busy)
+        self.network_setup_button.setDisabled(busy or not self._unlocked)
+        self.passphrase.setDisabled(busy or self._unlocked)
         self.status_label.setText(message)
 
     def show_error(self, message: str) -> None:
         self.set_busy(False)
         self.status_label.setText(message)
+
+    def mark_unlocked(self) -> None:
+        self._unlocked = True
+        self.network_setup_button.setVisible(True)
+        self.network_setup_button.setEnabled(True)
+        self.network_status_label.setText("Network setup is available.")
+        self.set_busy(False, "")
+
+    def set_network_status(self, message: str) -> None:
+        self.network_status_label.setText(message)
 
     def show_enrollment(self) -> None:
         self.set_busy(False, "This client is unlocked but not enrolled.")
@@ -900,6 +918,7 @@ class DesktopRuntime(QtCore.QObject):
         self.login_window = LoginWindow(self.core.mode)
         self.login_window.unlockRequested.connect(self.unlock)
         self.login_window.enrollRequested.connect(self.enroll)
+        self.login_window.networkSetupRequested.connect(self.configure_network)
         self.login_window.show()
 
     @QtCore.Slot(str)
@@ -931,35 +950,46 @@ class DesktopRuntime(QtCore.QObject):
     def _unlock_succeeded(self, payload: object) -> None:
         result = payload
         sync_warning = ""
+        assert self.login_window is not None
+        self.login_window.mark_unlocked()
         if self.start_sync:
-            assert self.login_window is not None
-            self.login_window.set_busy(True, "Checking Reticulum configuration...")
-            if not self._ensure_reticulum_config_ready():
+            network_result = self._start_network_for_unlocked_session()
+            if network_result is None:
                 return
-            self.login_window.set_busy(True, "Starting Reticulum...")
-            try:
-                self.core.start_reticulum()
-            except Exception as exc:
-                _log.warning("Reticulum failed to start: %s", exc)
-                self.login_window.show_error(f"Reticulum failed to start: {exc}")
-                return
-            self.login_window.set_busy(True, "Starting sync...")
-            try:
-                self.core.start_sync(init_reticulum=False)
-            except Exception as exc:
-                if self.core.mode == "server":
-                    sync_warning = str(exc)
-                    _log.warning("Server sync failed to start: %s", exc)
-                else:
-                    _log.warning("Client sync failed to start: %s", exc)
-                    self.login_window.show_error(f"Sync failed to start: {exc}")
-                    return
+            sync_warning = network_result
         if self.login_window is not None and self.core.mode == "client":
             operator_id = getattr(result, "operator_id", None)
             if operator_id is None:
                 self.login_window.show_enrollment()
                 return
         self.show_main(sync_warning=sync_warning)
+
+    def _start_network_for_unlocked_session(self) -> str | None:
+        assert self.login_window is not None
+        self.login_window.set_busy(True, "Checking Reticulum configuration...")
+        if not self._ensure_reticulum_config_ready():
+            return None
+        self.login_window.set_busy(True, "Starting Reticulum...")
+        try:
+            self.core.start_reticulum()
+        except Exception as exc:
+            _log.warning("Reticulum failed to start: %s", exc)
+            self.login_window.show_error(f"Reticulum failed to start: {exc}")
+            return None
+        self.login_window.set_network_status(
+            "Network started. Network changes require restarting TALON."
+        )
+        self.login_window.set_busy(True, "Starting sync...")
+        try:
+            self.core.start_sync(init_reticulum=False)
+        except Exception as exc:
+            if self.core.mode == "server":
+                _log.warning("Server sync failed to start: %s", exc)
+                return str(exc)
+            _log.warning("Client sync failed to start: %s", exc)
+            self.login_window.show_error(f"Sync failed to start: {exc}")
+            return None
+        return ""
 
     def _ensure_reticulum_config_ready(self) -> bool:
         assert self.login_window is not None
@@ -1001,6 +1031,46 @@ class DesktopRuntime(QtCore.QObject):
     def _unlock_failed(self, message: str) -> None:
         if self.login_window is not None:
             self.login_window.show_error(f"Unlock failed: {message}")
+
+    @QtCore.Slot()
+    def configure_network(self) -> None:
+        parent = self.login_window if self.login_window is not None else self.main_window
+        if self.login_window is not None:
+            self.login_window.set_busy(True, "Opening network setup...")
+        try:
+            if not self.core.is_unlocked:
+                if self.login_window is not None:
+                    self.login_window.show_error(
+                        "Unlock the database before network setup."
+                    )
+                return
+            dialog = ReticulumConfigDialog(self.core, parent)
+            accepted = dialog.exec() == QtWidgets.QDialog.Accepted
+        except Exception as exc:
+            if self.login_window is not None:
+                self.login_window.show_error(f"Reticulum setup failed: {exc}")
+            return
+        if self.login_window is not None:
+            self.login_window.set_busy(False)
+        if not accepted:
+            return
+        if self.core.reticulum_started:
+            if self.login_window is not None:
+                self.login_window.set_network_status(
+                    "Network settings saved. Restart TALON to use changes."
+                )
+            return
+        if not self.start_sync:
+            if self.login_window is not None:
+                self.login_window.set_network_status("Network settings saved.")
+            return
+        network_result = self._start_network_for_unlocked_session()
+        if network_result is None:
+            return
+        if self.login_window is not None and self.core.mode == "client":
+            self.login_window.show_enrollment()
+            return
+        self.show_main(sync_warning=network_result)
 
     @QtCore.Slot(str, str)
     def enroll(self, token_and_hash: str, callsign: str) -> None:
