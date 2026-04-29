@@ -1,6 +1,7 @@
 """Reusable PySide6 map coordinate pickers for desktop workflows."""
 from __future__ import annotations
 
+import dataclasses
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -27,6 +28,13 @@ from talon_desktop.map_tiles import (
 )
 
 _log = get_logger("desktop.map_picker")
+
+
+@dataclasses.dataclass(frozen=True)
+class DraftMapOverlay:
+    label: str
+    mode: typing.Literal["point", "polygon", "route"]
+    points: tuple[tuple[float, float], ...]
 
 
 class MapPickView(QtWidgets.QGraphicsView):
@@ -181,6 +189,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         title: str,
         mode: typing.Literal["point", "polygon", "route"],
         initial_points: typing.Iterable[tuple[float, float]] = (),
+        draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]] = (),
         minimum_points: int | None = None,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
@@ -189,6 +198,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self._mode = mode
         self._minimum_points = minimum_points or (3 if mode == "polygon" else 1)
         self._points = [(_clamp_lat(lat), _clamp_lon(lon)) for lat, lon in initial_points]
+        self._draft_overlays = _normalise_draft_overlays(draft_overlays)
         self._context: object | None = None
         self._sitrep_entries: list[object] = []
         self._bounds = DEFAULT_MAP_BOUNDS
@@ -201,7 +211,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self._install_tile_cache()
 
         self.setWindowTitle(title)
-        self.setMinimumSize(840, 620)
+        self.setMinimumSize(760, 520)
 
         self._load_context()
         self._bounds = self._initial_bounds()
@@ -218,7 +228,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self.view.setRenderHints(
             QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing
         )
-        self.view.setMinimumSize(760, 460)
+        self.view.setMinimumSize(520, 340)
         self.view.locationClicked.connect(self._add_point)
         self.view.zoomRequested.connect(self._zoom_at_scene_point)
         self.view.panRequested.connect(self._pan_by_scene_delta)
@@ -309,8 +319,18 @@ class MapCoordinateDialog(QtWidgets.QDialog):
                 context_loaded = True
             except Exception as exc:
                 _log.debug("Map picker overlay bounds unavailable: %s", exc)
-        if self._points:
-            bounds = _expand_bounds(bounds, self._points) if context_loaded else _bounds_for_points(self._points)
+        draft_points = [
+            point
+            for overlay in self._draft_overlays
+            for point in overlay.points
+        ]
+        all_points = [*self._points, *draft_points]
+        if all_points:
+            bounds = (
+                _expand_bounds(bounds, all_points)
+                if context_loaded
+                else _bounds_for_points(all_points)
+            )
         return bounds
 
     def _render(self) -> None:
@@ -318,6 +338,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self._draw_background()
         self._draw_tile_layer()
         self._draw_context_overlays()
+        self._draw_draft_overlays()
         self._draw_selection()
         self._scene.setSceneRect(0, 0, self._scene_width, self._scene_height)
 
@@ -447,6 +468,54 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             )
             item.setToolTip(f"{sitrep.level} SITREP #{sitrep.id}")
             item.setZValue(9)
+
+    def _draw_draft_overlays(self) -> None:
+        for overlay in self._draft_overlays:
+            scene_points = [
+                QtCore.QPointF(
+                    *scene_point_for_lat_lon(
+                        self._bounds,
+                        lat,
+                        lon,
+                        scene_width=self._scene_width,
+                        scene_height=self._scene_height,
+                        scene_margin=self._scene_margin,
+                    )
+                )
+                for lat, lon in overlay.points
+            ]
+            if not scene_points:
+                continue
+            pen = QtGui.QPen(QtGui.QColor(255, 223, 110, 175), 2)
+            pen.setStyle(QtCore.Qt.DashLine)
+            fill = QtGui.QBrush(QtGui.QColor(255, 223, 110, 34))
+            if overlay.mode == "polygon" and len(scene_points) >= 3:
+                item = self._scene.addPolygon(QtGui.QPolygonF(scene_points), pen, fill)
+                item.setZValue(14)
+            elif overlay.mode == "route" and len(scene_points) >= 2:
+                path = QtGui.QPainterPath()
+                path.moveTo(scene_points[0])
+                for point in scene_points[1:]:
+                    path.lineTo(point)
+                item = self._scene.addPath(path, pen)
+                item.setZValue(14)
+            else:
+                point = scene_points[0]
+                item = self._scene.addEllipse(
+                    point.x() - 7,
+                    point.y() - 7,
+                    14,
+                    14,
+                    pen,
+                    QtGui.QBrush(QtGui.QColor(255, 223, 110, 155)),
+                )
+                item.setZValue(15)
+            item.setToolTip(overlay.label)
+            label = self._scene.addText(overlay.label)
+            label.setDefaultTextColor(QtGui.QColor("#ffdf6e"))
+            label.setZValue(16)
+            anchor = scene_points[0]
+            label.setPos(anchor.x() + 8, anchor.y() - 24)
 
     def _draw_selection(self) -> None:
         if not self._points:
@@ -589,6 +658,7 @@ def pick_point_on_map(
     title: str,
     initial_lat: float | None = None,
     initial_lon: float | None = None,
+    draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]] = (),
     parent: QtWidgets.QWidget | None = None,
 ) -> tuple[float, float] | None:
     initial = []
@@ -599,6 +669,7 @@ def pick_point_on_map(
         title=title,
         mode="point",
         initial_points=initial,
+        draft_overlays=draft_overlays,
         parent=parent,
     )
     if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -612,6 +683,7 @@ def pick_path_on_map(
     title: str,
     mode: typing.Literal["polygon", "route"],
     initial_points: typing.Iterable[tuple[float, float]] = (),
+    draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]] = (),
     parent: QtWidgets.QWidget | None = None,
 ) -> list[tuple[float, float]] | None:
     dialog = MapCoordinateDialog(
@@ -619,6 +691,7 @@ def pick_path_on_map(
         title=title,
         mode=mode,
         initial_points=initial_points,
+        draft_overlays=draft_overlays,
         parent=parent,
     )
     if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -628,6 +701,34 @@ def pick_path_on_map(
 
 def format_coordinate(lat: float, lon: float) -> str:
     return f"{lat:.6f}, {lon:.6f}"
+
+
+def _normalise_draft_overlays(
+    overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]],
+) -> tuple[DraftMapOverlay, ...]:
+    result: list[DraftMapOverlay] = []
+    for overlay in overlays:
+        if isinstance(overlay, DraftMapOverlay):
+            candidate = overlay
+        else:
+            mode = str(overlay.get("mode", "point"))
+            if mode not in {"point", "polygon", "route"}:
+                continue
+            points = tuple(
+                (_clamp_lat(lat), _clamp_lon(lon))
+                for lat, lon in typing.cast(
+                    typing.Iterable[tuple[float, float]],
+                    overlay.get("points", ()),
+                )
+            )
+            candidate = DraftMapOverlay(
+                label=str(overlay.get("label", "Draft")),
+                mode=typing.cast(typing.Literal["point", "polygon", "route"], mode),
+                points=points,
+            )
+        if candidate.points:
+            result.append(candidate)
+    return tuple(result)
 
 
 def _expand_bounds(bounds: MapBounds, points: typing.Iterable[tuple[float, float]]) -> MapBounds:

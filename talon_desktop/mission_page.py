@@ -18,7 +18,12 @@ from talon_desktop.missions import (
     parse_coordinate_lines,
     server_actions_for_status,
 )
-from talon_desktop.map_picker import format_coordinate, pick_path_on_map, pick_point_on_map
+from talon_desktop.map_picker import (
+    DraftMapOverlay,
+    format_coordinate,
+    pick_path_on_map,
+    pick_point_on_map,
+)
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.missions")
@@ -304,6 +309,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
             title="AO Polygon",
             mode="polygon",
             initial_points=points,
+            draft_overlays=self._draft_overlays(exclude_widget=self.ao_field),
             parent=self,
         )
         if selected is not None:
@@ -319,6 +325,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
             title="Route / Waypoints",
             mode="route",
             initial_points=points,
+            draft_overlays=self._draft_overlays(exclude_widget=self.route_field),
             parent=self,
         )
         if selected is not None:
@@ -346,6 +353,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
             title=title,
             initial_lat=initial_lat,
             initial_lon=initial_lon,
+            draft_overlays=self._draft_overlays(exclude_widget=field),
             parent=self,
         )
         if selected is None:
@@ -369,6 +377,93 @@ class MissionCreateDialog(QtWidgets.QDialog):
         except ValueError as exc:
             self.status_label.setText(str(exc))
             return None
+
+    def _draft_overlays(
+        self,
+        *,
+        exclude_widget: QtWidgets.QWidget | None = None,
+    ) -> tuple[DraftMapOverlay, ...]:
+        overlays: list[DraftMapOverlay] = []
+        self._append_path_overlay(
+            overlays,
+            label="Draft AO",
+            mode="polygon",
+            editor=self.ao_field,
+            minimum_points=3,
+            exclude_widget=exclude_widget,
+        )
+        self._append_path_overlay(
+            overlays,
+            label="Draft Route",
+            mode="route",
+            editor=self.route_field,
+            minimum_points=1,
+            exclude_widget=exclude_widget,
+        )
+        self._append_point_overlay(
+            overlays,
+            label="Draft Staging Area",
+            field=self.staging_area_field,
+            exclude_widget=exclude_widget,
+        )
+        self._append_point_overlay(
+            overlays,
+            label="Draft Demob Point",
+            field=self.demob_point_field,
+            exclude_widget=exclude_widget,
+        )
+        for key, field in self._key_location_fields.items():
+            self._append_point_overlay(
+                overlays,
+                label=f"Draft {key.replace('_', ' ').title()}",
+                field=field,
+                exclude_widget=exclude_widget,
+            )
+        return tuple(overlays)
+
+    @staticmethod
+    def _append_path_overlay(
+        overlays: list[DraftMapOverlay],
+        *,
+        label: str,
+        mode: typing.Literal["polygon", "route"],
+        editor: QtWidgets.QPlainTextEdit,
+        minimum_points: int,
+        exclude_widget: QtWidgets.QWidget | None,
+    ) -> None:
+        if editor is exclude_widget or not editor.toPlainText().strip():
+            return
+        try:
+            points = parse_coordinate_lines(
+                editor.toPlainText(),
+                label=label,
+                minimum_points=minimum_points,
+                empty_ok=False,
+            )
+        except ValueError:
+            return
+        overlays.append(DraftMapOverlay(label=label, mode=mode, points=tuple(points)))
+
+    @staticmethod
+    def _append_point_overlay(
+        overlays: list[DraftMapOverlay],
+        *,
+        label: str,
+        field: QtWidgets.QLineEdit,
+        exclude_widget: QtWidgets.QWidget | None,
+    ) -> None:
+        if field is exclude_widget or not field.text().strip():
+            return
+        try:
+            points = parse_coordinate_lines(
+                field.text(),
+                label=label,
+                minimum_points=1,
+                empty_ok=False,
+            )
+        except ValueError:
+            return
+        overlays.append(DraftMapOverlay(label=label, mode="point", points=tuple(points[:1])))
 
     def _activation_text(self) -> str:
         if not self.activation_enabled.isChecked():

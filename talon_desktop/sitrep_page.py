@@ -22,6 +22,7 @@ from talon_desktop.sitreps import (
     should_play_audio,
     sitrep_template_for_key,
 )
+from talon_desktop.map_picker import format_coordinate, pick_point_on_map
 
 _log = get_logger("desktop.sitreps")
 
@@ -117,6 +118,8 @@ class SitrepPage(QtWidgets.QWidget):
         self.lat_field.setPlaceholderText("Latitude")
         self.lon_field = QtWidgets.QLineEdit()
         self.lon_field.setPlaceholderText("Longitude")
+        self.pick_location_button = QtWidgets.QPushButton("Pick on Map")
+        self.pick_location_button.clicked.connect(self._pick_location)
         self.location_precision_combo = QtWidgets.QComboBox()
         for label in ("", "general", "approximate", "exact"):
             self.location_precision_combo.addItem(label or "None", label)
@@ -203,7 +206,7 @@ class SitrepPage(QtWidgets.QWidget):
         feed_layout.addWidget(filter_widget)
         feed_layout.addWidget(self.feed, stretch=1)
         feed_panel = _panel("Operational Feed", feed_body, ("FLASH", "IMMEDIATE"))
-        feed_panel.setMinimumWidth(390)
+        feed_panel.setMinimumWidth(260)
 
         composer = QtWidgets.QWidget()
         form = QtWidgets.QGridLayout(composer)
@@ -222,6 +225,7 @@ class SitrepPage(QtWidgets.QWidget):
         coord_layout.setSpacing(8)
         coord_layout.addWidget(self.lat_field)
         coord_layout.addWidget(self.lon_field)
+        coord_layout.addWidget(self.pick_location_button)
         form.addWidget(_field_widget("Lat / Lon", coord_row), 3, 0)
         location_meta_row = QtWidgets.QWidget()
         location_meta_layout = QtWidgets.QHBoxLayout(location_meta_row)
@@ -248,7 +252,7 @@ class SitrepPage(QtWidgets.QWidget):
         action_holder.setLayout(action_row)
         form.addWidget(action_holder, 8, 0, 1, 2)
         composer_panel = _panel("Composer", composer, ("Location Native",))
-        composer_panel.setMinimumWidth(340)
+        composer_panel.setMinimumWidth(260)
 
         detail_card = QtWidgets.QFrame()
         detail_card.setObjectName("sitrepDetailCard")
@@ -281,7 +285,7 @@ class SitrepPage(QtWidgets.QWidget):
             detail,
             extra_widgets=(self.detail_status_tag,),
         )
-        detail_panel.setMinimumWidth(310)
+        detail_panel.setMinimumWidth(240)
 
         splitter = _SitrepCommandSplitter()
         splitter.addWidget(feed_panel)
@@ -290,7 +294,7 @@ class SitrepPage(QtWidgets.QWidget):
         splitter.setStretchFactor(0, 5)
         splitter.setStretchFactor(1, 4)
         splitter.setStretchFactor(2, 4)
-        splitter.setSizes([520, 400, 360])
+        splitter.setSizes([420, 340, 300])
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
@@ -432,6 +436,44 @@ class SitrepPage(QtWidgets.QWidget):
         self.location_precision_combo.setCurrentIndex(0)
         self.location_source_combo.setCurrentIndex(0)
         self.sensitivity_combo.setCurrentIndex(0)
+
+    def _pick_location(self) -> None:
+        try:
+            initial_lat = _optional_coordinate(
+                self.lat_field.text(),
+                "SITREP latitude",
+                -90.0,
+                90.0,
+            )
+            initial_lon = _optional_coordinate(
+                self.lon_field.text(),
+                "SITREP longitude",
+                -180.0,
+                180.0,
+            )
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        if (initial_lat is None) != (initial_lon is None):
+            self.status_label.setText(
+                "Both latitude and longitude are required for an existing map point."
+            )
+            return
+        selected = pick_point_on_map(
+            core=self._core,
+            title=self.location_label_field.text().strip() or "SITREP Location",
+            initial_lat=initial_lat,
+            initial_lon=initial_lon,
+            parent=self,
+        )
+        if selected is None:
+            return
+        formatted = format_coordinate(*selected).split(", ")
+        self.lat_field.setText(formatted[0])
+        self.lon_field.setText(formatted[1])
+        self._set_combo_value(self.location_precision_combo, "exact")
+        self._set_combo_value(self.location_source_combo, "map")
+        self.status_label.clear()
 
     def _filter_payload(self) -> dict[str, object]:
         return build_filter_payload(
@@ -789,6 +831,12 @@ class SitrepPage(QtWidgets.QWidget):
         index = combo.findData(value)
         combo.setCurrentIndex(index if index >= 0 else 0)
 
+    @staticmethod
+    def _set_combo_value(combo: QtWidgets.QComboBox, value: str) -> None:
+        index = combo.findData(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
     def _selected_template_key(self) -> str:
         key = self._selected_template_id()
         return "" if key == DEFAULT_TEMPLATE_KEY else key
@@ -1006,7 +1054,7 @@ class _SitrepCommandSplitter(QtWidgets.QSplitter):
             return
         sizes = self.sizes()
         if len(sizes) != 3 or sizes[2] < 240 or min(sizes) <= 0:
-            width = max(1180, sum(sizes) or self.width())
+            width = max(780, sum(sizes) or self.width())
             self.setSizes([int(width * 0.42), int(width * 0.31), int(width * 0.27)])
 
 
@@ -1106,3 +1154,21 @@ def _as_text(value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _optional_coordinate(
+    value: str,
+    label: str,
+    minimum: float,
+    maximum: float,
+) -> float | None:
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        parsed = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a number.") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"{label} must be between {minimum:g} and {maximum:g}.")
+    return parsed

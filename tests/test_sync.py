@@ -10,7 +10,7 @@ import pytest
 
 from talon.db.connection import close_db, open_db
 from talon.db.migrations import apply_migrations
-from talon.documents import cache_document_download
+from talon.documents import DocumentError, cache_document_download
 from talon.network import protocol as proto
 from talon.network import registry
 from talon.network.client_sync import ClientSyncManager
@@ -901,6 +901,35 @@ class TestClientServerPushIntegration:
                 )
                 is False
             )
+        finally:
+            close_db(client_conn)
+
+    def test_document_fetch_timeout_clears_pending_request(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_document_timeout.db", test_key)
+        try:
+            _insert_document_row(
+                client_conn,
+                doc_id=5,
+                filename="field-report.txt",
+                plaintext=b"field report",
+            )
+            manager = _make_client_manager(client_conn, test_key, operator_id=2)
+            manager._cfg.read_dict(
+                {"documents": {"storage_path": str(tmp_path / "documents")}}
+            )
+            manager._link = object()
+            sent: list[bytes] = []
+            manager._document_transfers._smart_send = (
+                lambda _link, data: sent.append(data)
+            )
+
+            with pytest.raises(DocumentError, match="Timed out waiting"):
+                manager.fetch_document(5, timeout_s=0.01)
+
+            assert sent
+            assert 5 not in manager._pending_document_requests
         finally:
             close_db(client_conn)
 

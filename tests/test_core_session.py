@@ -239,6 +239,14 @@ def test_core_session_document_delete_is_server_only(tmp_path: pathlib.Path) -> 
     session.close()
 
 
+def test_document_transfer_timeout_scales_with_size() -> None:
+    import talon_core.session as session_module
+
+    assert session_module._document_transfer_timeout_s(0) == pytest.approx(60.0)
+    assert session_module._document_transfer_timeout_s(254 * 1024) == pytest.approx(314.0)
+    assert session_module._document_transfer_timeout_s(50 * 1024 * 1024) == pytest.approx(1800.0)
+
+
 def test_core_session_phase1_domain_boundary(tmp_path: pathlib.Path) -> None:
     config_path = _write_config(tmp_path, "server")
     session = TalonCoreSession(config_path=config_path).start()

@@ -626,6 +626,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._root_splitter.addWidget(self.stack)
         self._root_splitter.setStretchFactor(1, 1)
         self.setCentralWidget(self._root_splitter)
+        self.setMinimumSize(320, 240)
         self._sitrep_alert_overlay = SitrepAlertOverlay(self.stack)
         self.statusBar().showMessage("Core unlocked.")
         self.network_method_badge = QtWidgets.QLabel("Network method unknown")

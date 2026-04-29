@@ -81,10 +81,15 @@ def load_map_context(
     assets = load_assets(conn, limit=limit)
     assignments = list_assignments(conn, active_only=True, limit=limit)
     if mission_id is not None:
+        assets = [
+            asset
+            for asset in assets
+            if asset.mission_id == mission_id
+        ]
         assignments = [
             assignment
             for assignment in assignments
-            if assignment.mission_id is None or assignment.mission_id == mission_id
+            if assignment.mission_id == mission_id
         ]
     zones = load_zones(conn, mission_id=mission_id, limit=limit)
     waypoints = load_waypoints_for_map(conn, mission_id=mission_id, limit=limit)

@@ -192,8 +192,13 @@ class ClientDocumentTransfers:
                 )
 
         if not state["event"].wait(timeout=timeout_s):
+            with manager._document_request_lock:
+                current = manager._pending_document_requests.get(doc_id)
+                if current is state:
+                    del manager._pending_document_requests[doc_id]
             raise DocumentError(
-                "Timed out waiting for the server to transfer the document."
+                "Timed out waiting for the server to transfer the document "
+                f"after {timeout_s:.0f} seconds."
             )
 
         with manager._document_request_lock:

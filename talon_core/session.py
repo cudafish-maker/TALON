@@ -38,6 +38,9 @@ from talon_core.services.events import DomainEvent
 
 Mode = typing.Literal["server", "client"]
 EventHandler = typing.Callable[[DomainEvent], None]
+_DOCUMENT_TRANSFER_MIN_TIMEOUT_S = 60.0
+_DOCUMENT_TRANSFER_MAX_TIMEOUT_S = 1800.0
+_DOCUMENT_TRANSFER_BYTES_PER_SECOND_FLOOR = 1024.0
 
 
 class CoreSessionError(RuntimeError):
@@ -1500,7 +1503,7 @@ class TalonCoreSession:
         *,
         document_id: int,
         downloader_id: typing.Optional[int] = None,
-        timeout_s: float = 60.0,
+        timeout_s: typing.Optional[float] = None,
         storage_root: typing.Optional[pathlib.Path] = None,
     ) -> DocumentDownloadResult:
         from talon_core.documents import DocumentError, download_document, get_document
@@ -1511,7 +1514,16 @@ class TalonCoreSession:
                 raise DocumentError(
                     "Document download requires an active client sync session."
                 )
-            plaintext = self._client_sync.fetch_document(doc_id, timeout_s=timeout_s)
+            doc = get_document(self._conn, doc_id)
+            effective_timeout = (
+                _document_transfer_timeout_s(getattr(doc, "size_bytes", 0))
+                if timeout_s is None
+                else float(timeout_s)
+            )
+            plaintext = self._client_sync.fetch_document(
+                doc_id,
+                timeout_s=effective_timeout,
+            )
             return DocumentDownloadResult(get_document(self._conn, doc_id), plaintext)
 
         if downloader_id is None:
@@ -2062,3 +2074,17 @@ class TalonCoreSession:
     def __exit__(self, exc_type, exc, tb) -> bool:
         self.close()
         return False
+
+
+def _document_transfer_timeout_s(size_bytes: typing.Any) -> float:
+    try:
+        size = max(0, int(size_bytes))
+    except (TypeError, ValueError):
+        size = 0
+    scaled = _DOCUMENT_TRANSFER_MIN_TIMEOUT_S + (
+        size / _DOCUMENT_TRANSFER_BYTES_PER_SECOND_FLOOR
+    )
+    return min(
+        _DOCUMENT_TRANSFER_MAX_TIMEOUT_S,
+        max(_DOCUMENT_TRANSFER_MIN_TIMEOUT_S, scaled),
+    )

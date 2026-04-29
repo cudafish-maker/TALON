@@ -50,8 +50,33 @@ def test_load_map_context_filters_mission_scoped_overlays(tmp_db):
         lat=42.9,
         lon=-71.1,
     )
+    mission_a_asset = create_asset(
+        conn,
+        author_id=1,
+        category="vehicle",
+        label="Mission A truck",
+        lat=43.05,
+        lon=-71.05,
+    )
+    mission_b_asset = create_asset(
+        conn,
+        author_id=1,
+        category="vehicle",
+        label="Mission B truck",
+        lat=44.05,
+        lon=-72.05,
+    )
     mission_a = create_mission(conn, title="Mission A", created_by=1)
     mission_b = create_mission(conn, title="Mission B", created_by=1)
+    conn.execute(
+        "UPDATE assets SET mission_id = ? WHERE id = ?",
+        (mission_a.id, mission_a_asset),
+    )
+    conn.execute(
+        "UPDATE assets SET mission_id = ? WHERE id = ?",
+        (mission_b.id, mission_b_asset),
+    )
+    conn.commit()
     create_zone(
         conn,
         zone_type="AO",
@@ -73,7 +98,7 @@ def test_load_map_context_filters_mission_scoped_overlays(tmp_db):
 
     context = load_map_context(conn, mission_id=mission_a.id)
 
-    assert [asset.label for asset in context.assets] == ["Global RP"]
+    assert [asset.label for asset in context.assets] == ["Mission A truck"]
     assert [zone.label for zone in context.zones] == ["A AO"]
     assert [wp.mission_id for wp in context.waypoints] == [mission_a.id]
 

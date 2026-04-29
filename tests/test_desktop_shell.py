@@ -916,12 +916,25 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtWidgets
 
-from talon_desktop.map_picker import MapCoordinateDialog
+from talon_desktop.map_picker import DraftMapOverlay, MapCoordinateDialog
 from talon_desktop.map_tiles import TILE_LAYERS_BY_KEY, build_tile_plan
 
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-dialog = MapCoordinateDialog(core=None, title="Picker", mode="point")
+dialog = MapCoordinateDialog(
+    core=None,
+    title="Picker",
+    mode="point",
+    draft_overlays=[
+        DraftMapOverlay(
+            label="Draft ICP",
+            mode="point",
+            points=((42.0, -71.0),),
+        )
+    ],
+)
 try:
+    assert dialog._draft_overlays[0].label == "Draft ICP"
+    assert any(item.toolTip() == "Draft ICP" for item in dialog._scene.items())
     before = dialog._bounds
     before_generation = dialog._tile_generation
     before_plan = build_tile_plan(TILE_LAYERS_BY_KEY["osm"], before)
@@ -1014,30 +1027,39 @@ class FakeCore:
 
     def __init__(self) -> None:
         self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
+        self.map_filters = []
 
     def read_model(self, name, filters=None):
         if name == "map.context":
+            self.map_filters.append(dict(filters or {}))
+            selected_mission_id = (filters or {}).get("mission_id")
+            assets = [
+                types.SimpleNamespace(
+                    id=1,
+                    label="Relay",
+                    category="radio",
+                    verified=True,
+                    mission_id=7,
+                    lat=39.953,
+                    lon=-75.163,
+                ),
+                types.SimpleNamespace(
+                    id=2,
+                    label="Cache",
+                    category="supply",
+                    verified=False,
+                    mission_id=None,
+                    lat=40.5,
+                    lon=-75.5,
+                ),
+            ]
+            if selected_mission_id is not None:
+                assets = [
+                    asset for asset in assets
+                    if asset.mission_id == selected_mission_id
+                ]
             return types.SimpleNamespace(
-                assets=[
-                    types.SimpleNamespace(
-                        id=1,
-                        label="Relay",
-                        category="radio",
-                        verified=True,
-                        mission_id=7,
-                        lat=39.953,
-                        lon=-75.163,
-                    ),
-                    types.SimpleNamespace(
-                        id=2,
-                        label="Cache",
-                        category="supply",
-                        verified=False,
-                        mission_id=None,
-                        lat=40.5,
-                        lon=-75.5,
-                    ),
-                ],
+                assets=assets,
                 zones=[],
                 waypoints=[],
                 missions=[
@@ -1049,7 +1071,8 @@ class FakeCore:
                 ],
             )
         if name == "sitreps.list":
-            return [
+            selected_mission_id = (filters or {}).get("mission_id")
+            sitreps = [
                 types.SimpleNamespace(
                     id=9,
                     level="ROUTINE",
@@ -1058,9 +1081,16 @@ class FakeCore:
                     mission_id=7,
                 )
             ]
+            if selected_mission_id is not None:
+                sitreps = [
+                    sitrep for sitrep in sitreps
+                    if sitrep.mission_id == selected_mission_id
+                ]
+            return sitreps
         raise KeyError(name)
 
-page = MapPage(FakeCore())
+core = FakeCore()
+page = MapPage(core)
 try:
     page.refresh()
     assert page.left_panel.objectName() == "mapLeftPanel"
@@ -1093,6 +1123,16 @@ try:
         str(item.data(0)) == "asset:2"
         for item in page._scene.selectedItems()
     )
+
+    page.mission_panel_list.setCurrentRow(0)
+    app.processEvents()
+    assert page.mission_filter.currentData() == 7
+    assert core.map_filters[-1] == {"mission_id": 7}
+    assert page.asset_panel_list.count() == 1
+    assert page.asset_panel_list.item(0).text().startswith("Relay")
+    mission_bounds = page._view_bounds
+    assert mission_bounds.min_lat < 39.953 < mission_bounds.max_lat
+    assert mission_bounds.min_lon < -75.163 < mission_bounds.max_lon
 
     page._toggle_panel("left")
     assert page.left_panel.isHidden()
@@ -1211,9 +1251,19 @@ def test_desktop_community_safety_helpers() -> None:
         title="Oak Loop",
         assigned_operator_ids=[2],
         required_skills=["medic"],
+        lat_text="40.123456",
+        lon_text="-75.25",
     )
     assert assignment_payload["assignment_type"] == "foot_patrol"
     assert assignment_payload["assigned_operator_ids"] == [2]
+    assert assignment_payload["lat"] == pytest.approx(40.123456)
+    assert assignment_payload["lon"] == pytest.approx(-75.25)
+    with pytest.raises(ValueError, match="Both latitude and longitude"):
+        build_assignment_payload(
+            assignment_type="foot_patrol",
+            title="Oak Loop",
+            lat_text="40.123456",
+        )
 
     checkin_payload = build_checkin_payload(
         assignment_id=7,

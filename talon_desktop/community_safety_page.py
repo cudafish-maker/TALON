@@ -28,6 +28,7 @@ from talon_desktop.community_safety import (
     incident_items_from_entries,
     operator_status_items_from_board,
 )
+from talon_desktop.map_picker import format_coordinate, pick_point_on_map
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.community_safety")
@@ -293,6 +294,12 @@ class AssignmentPage(QtWidgets.QWidget):
             f"Priority: {assignment.priority}",
             f"Mission: {detail.get('mission_title', '') or 'None'}",
             f"Location: {assignment.location_label or 'Not set'}",
+            "Map point: "
+            + (
+                f"{assignment.lat:.6f}, {assignment.lon:.6f}"
+                if assignment.lat is not None and assignment.lon is not None
+                else "Not set"
+            ),
             f"Protected label: {assignment.protected_label or 'None'}",
             f"Lead: {assignment.team_lead or 'Unassigned'}",
             f"Backup: {assignment.backup_operator or 'Open'}",
@@ -576,6 +583,8 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
         self.title_field = QtWidgets.QLineEdit()
         self.protected_field = QtWidgets.QLineEdit()
         self.location_field = QtWidgets.QLineEdit()
+        self.location_point_field = QtWidgets.QLineEdit()
+        self.location_point_field.setReadOnly(True)
         self.precision_field = QtWidgets.QComboBox()
         self.precision_field.addItems(["general", "exact"])
         self.reason_field = QtWidgets.QLineEdit()
@@ -605,6 +614,8 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
             self.skill_list.addItem(skill)
         self.mission_combo = QtWidgets.QComboBox()
         self.mission_combo.addItem("None", None)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
 
         self._load_selectors()
 
@@ -615,7 +626,8 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
         form.addRow("Priority", self.priority_combo)
         form.addRow("Mission", self.mission_combo)
         form.addRow("Protected label", self.protected_field)
-        form.addRow("Location", self.location_field)
+        form.addRow("Location label", self.location_field)
+        form.addRow("Map point", self._location_point_row())
         form.addRow("Location precision", self.precision_field)
         form.addRow("Support reason", self.reason_field)
         form.addRow("Consent/source", self.consent_field)
@@ -630,6 +642,7 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
         form.addRow("Overdue threshold", self.threshold_spin)
         form.addRow("Handoff notes", self.handoff_field)
         form.addRow("Risk notes", self.risk_field)
+        form.addRow("", self.status_label)
 
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
@@ -648,6 +661,7 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
         layout.addWidget(buttons)
 
     def payload(self) -> dict[str, object]:
+        lat_text, lon_text = _coordinate_parts(self.location_point_field.text())
         return build_assignment_payload(
             assignment_type=str(self.type_combo.currentData()),
             title=self.title_field.text(),
@@ -673,7 +687,17 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
             handoff_notes=self.handoff_field.toPlainText(),
             risk_notes=self.risk_field.toPlainText(),
             mission_id=self._combo_int(self.mission_combo),
+            lat_text=lat_text,
+            lon_text=lon_text,
         )
+
+    def accept(self) -> None:
+        try:
+            self.payload()
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        super().accept()
 
     def _load_selectors(self) -> None:
         try:
@@ -689,6 +713,42 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
                 self.mission_combo.addItem(str(getattr(mission, "title", "")), int(mission.id))
         except Exception as exc:
             _log.warning("Could not load assignment dialog selectors: %s", exc)
+
+    def _location_point_row(self) -> QtWidgets.QWidget:
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        pick_button = QtWidgets.QPushButton("Pick on Map")
+        clear_button = QtWidgets.QPushButton("Clear")
+        pick_button.clicked.connect(self._pick_location)
+        clear_button.clicked.connect(self.location_point_field.clear)
+        layout.addWidget(self.location_point_field, stretch=1)
+        layout.addWidget(pick_button)
+        layout.addWidget(clear_button)
+        return container
+
+    def _pick_location(self) -> None:
+        try:
+            lat_text, lon_text = _coordinate_parts(self.location_point_field.text())
+            initial_lat = float(lat_text) if lat_text else None
+            initial_lon = float(lon_text) if lon_text else None
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        selected = pick_point_on_map(
+            core=self._core,
+            title=self.location_field.text().strip() or "Assignment Location",
+            initial_lat=initial_lat,
+            initial_lon=initial_lon,
+            parent=self,
+        )
+        if selected is None:
+            return
+        self.location_point_field.setText(format_coordinate(*selected))
+        precision_index = self.precision_field.findText("exact")
+        if precision_index >= 0:
+            self.precision_field.setCurrentIndex(precision_index)
+        self.status_label.clear()
 
     @staticmethod
     def _combo_int(combo: QtWidgets.QComboBox) -> int | None:
@@ -870,6 +930,16 @@ class IncidentCreateDialog(QtWidgets.QDialog):
     def _combo_int(combo: QtWidgets.QComboBox) -> int | None:
         value = combo.currentData()
         return int(value) if value is not None else None
+
+
+def _coordinate_parts(text: str) -> tuple[str, str]:
+    raw = text.strip()
+    if not raw:
+        return "", ""
+    parts = [part.strip() for part in raw.split(",")]
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError("Assignment map point must be latitude, longitude.")
+    return parts[0], parts[1]
 
 
 class _MetricBox(QtWidgets.QFrame):

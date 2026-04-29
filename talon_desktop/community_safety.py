@@ -264,6 +264,8 @@ def build_assignment_payload(
     handoff_notes: str = "",
     risk_notes: str = "",
     mission_id: int | None = None,
+    lat_text: str = "",
+    lon_text: str = "",
 ) -> dict[str, object]:
     if assignment_type not in ASSIGNMENT_TYPES:
         raise ValueError("Select a valid assignment type.")
@@ -273,6 +275,10 @@ def build_assignment_payload(
         raise ValueError("Select a valid priority.")
     if not title.strip():
         raise ValueError("Assignment title is required.")
+    lat = _optional_coordinate(lat_text, "latitude", -90.0, 90.0)
+    lon = _optional_coordinate(lon_text, "longitude", -180.0, 180.0)
+    if (lat is None) != (lon is None):
+        raise ValueError("Both latitude and longitude are required for a map point.")
     return {
         "assignment_type": assignment_type,
         "title": title.strip(),
@@ -295,6 +301,8 @@ def build_assignment_payload(
         "handoff_notes": handoff_notes.strip(),
         "risk_notes": risk_notes.strip(),
         "mission_id": mission_id,
+        "lat": lat,
+        "lon": lon,
     }
 
 
@@ -350,3 +358,23 @@ def build_incident_payload(
         "linked_asset_id": linked_asset_id,
         "linked_sitrep_id": linked_sitrep_id,
     }
+
+
+def _optional_coordinate(
+    value: str,
+    label: str,
+    minimum: float,
+    maximum: float,
+) -> float | None:
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        parsed = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"Assignment {label} must be a number.") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(
+            f"Assignment {label} must be between {minimum:g} and {maximum:g}."
+        )
+    return parsed

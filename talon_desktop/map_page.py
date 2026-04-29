@@ -244,7 +244,7 @@ class MapPage(QtWidgets.QWidget):
         self.view.setRenderHints(
             QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing
         )
-        self.view.setMinimumSize(480, 420)
+        self.view.setMinimumSize(320, 280)
         self.view.zoomRequested.connect(self._zoom_at_scene_point)
         self.view.panRequested.connect(self._pan_by_scene_delta)
         self.view.sceneClicked.connect(self._select_overlay_at_scene_point)
@@ -418,6 +418,9 @@ class MapPage(QtWidgets.QWidget):
             QtWidgets.QAbstractItemView.SingleSelection
         )
         self.mission_panel_list.setMinimumHeight(72)
+        self.mission_panel_list.itemSelectionChanged.connect(
+            self._select_mission_from_panel
+        )
 
         self.sitrep_panel_count = QtWidgets.QLabel("0")
         self.sitrep_panel_count.setObjectName("sideMode")
@@ -559,15 +562,25 @@ class MapPage(QtWidgets.QWidget):
         finally:
             self.asset_panel_list.blockSignals(False)
 
+        selected_mission_id = self._selected_mission_id()
         self.mission_panel_count.setText(str(len(missions)))
+        self.mission_panel_list.blockSignals(True)
         self.mission_panel_list.clear()
-        for mission in missions:
-            mission_id = getattr(mission, "id", "")
-            title = str(getattr(mission, "title", "Mission"))
-            status = str(getattr(mission, "status", "")).replace("_", " ").upper()
-            item = QtWidgets.QListWidgetItem(f"{title}\n#{mission_id} - {status}")
-            item.setData(QtCore.Qt.UserRole, f"mission:{mission_id}")
-            self.mission_panel_list.addItem(item)
+        try:
+            for mission in missions:
+                mission_id = getattr(mission, "id", "")
+                title = str(getattr(mission, "title", "Mission"))
+                status = str(getattr(mission, "status", "")).replace("_", " ").upper()
+                item = QtWidgets.QListWidgetItem(f"{title}\n#{mission_id} - {status}")
+                item.setData(QtCore.Qt.UserRole, f"mission:{mission_id}")
+                self.mission_panel_list.addItem(item)
+                if (
+                    selected_mission_id is not None
+                    and str(mission_id) == str(selected_mission_id)
+                ):
+                    self.mission_panel_list.setCurrentItem(item)
+        finally:
+            self.mission_panel_list.blockSignals(False)
 
         self.sitrep_panel_count.setText(str(len(sitreps)))
         self.sitrep_panel_list.clear()
@@ -618,6 +631,22 @@ class MapPage(QtWidgets.QWidget):
         )
         self._render_bundle(self._bundle)
         self._select_overlay_by_key(f"asset:{asset_id}")
+
+    def _select_mission_from_panel(self) -> None:
+        item = self.mission_panel_list.currentItem()
+        if item is None:
+            return
+        value = str(item.data(QtCore.Qt.UserRole) or "")
+        if not value.startswith("mission:"):
+            return
+        try:
+            mission_id = int(value.split(":", 1)[1])
+        except ValueError:
+            return
+        index = self.mission_filter.findData(mission_id)
+        if index < 0 or index == self.mission_filter.currentIndex():
+            return
+        self.mission_filter.setCurrentIndex(index)
 
     def _asset_by_id(self, asset_id: int) -> object | None:
         context = self._map_context
@@ -731,9 +760,15 @@ class MapPage(QtWidgets.QWidget):
             self._draw_route(route)
         for waypoint in bundle.waypoints:
             self._draw_waypoint(waypoint)
+        selected_mission_id = self._selected_mission_id()
         assets = [
             asset for asset in bundle.assets
-            if self._visible_asset_ids is None or asset.id in self._visible_asset_ids
+            if self._visible_asset_ids is None
+            or asset.id in self._visible_asset_ids
+            or (
+                selected_mission_id is not None
+                and asset.mission_id == selected_mission_id
+            )
         ]
         visible_asset_ids = {asset.id for asset in assets}
         for asset in assets:
