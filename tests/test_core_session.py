@@ -9,7 +9,11 @@ from talon.documents import DocumentError
 from talon_core import CoreSessionError, TalonCoreSession
 from talon_core.network.rns_config import (
     default_reticulum_config,
+    i2pd_client_config,
+    i2pd_server_config,
     reticulum_acceptance_path,
+    yggdrasil_client_config,
+    yggdrasil_server_config,
 )
 
 TEST_KEY = bytes(range(32))
@@ -794,6 +798,53 @@ def test_core_reticulum_validation_reports_talon_warnings(
         session.validate_reticulum_config_text(missing_target).warnings
     )
     assert "Missing Target has no target_host" in missing_target_warnings
+
+    session.close()
+
+
+def test_core_reticulum_yggdrasil_and_i2pd_templates_validate(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    yggdrasil_server = yggdrasil_server_config(device="tun0", port=4343)
+    assert "TALON Yggdrasil Server" in yggdrasil_server
+    assert "type = TCPServerInterface" in yggdrasil_server
+    assert "device = tun0" in yggdrasil_server
+    assert session.validate_reticulum_config_text(yggdrasil_server).valid is True
+
+    i2pd_server = i2pd_server_config()
+    assert "TALON i2pd Server" in i2pd_server
+    assert "type = I2PInterface" in i2pd_server
+    assert session.validate_reticulum_config_text(i2pd_server).valid is True
+    session.close()
+
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    yggdrasil_client = yggdrasil_client_config(
+        "201:5d78:af73:5caf:a4de:a79f:3278:71e5",
+        port=4343,
+    )
+    assert "TALON Yggdrasil Client" in yggdrasil_client
+    assert (
+        "target_host = 201:5d78:af73:5caf:a4de:a79f:3278:71e5"
+        in yggdrasil_client
+    )
+    assert session.validate_reticulum_config_text(yggdrasil_client).valid is True
+
+    i2pd_client = i2pd_client_config(
+        "5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p"
+    )
+    assert "TALON i2pd Client" in i2pd_client
+    assert (
+        "peers = 5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p"
+        in i2pd_client
+    )
+    assert session.validate_reticulum_config_text(i2pd_client).valid is True
 
     session.close()
 

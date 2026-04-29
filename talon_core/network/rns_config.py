@@ -213,6 +213,12 @@ def validate_reticulum_config_text(
                     warnings=warnings,
                     errors=errors,
                 )
+            elif interface_type == "I2PInterface":
+                _validate_i2p(
+                    interface_name,
+                    interface,
+                    warnings=warnings,
+                )
         if enabled_interfaces == 0:
             warnings.append("No enabled Reticulum interfaces are configured.")
 
@@ -358,6 +364,58 @@ def tcp_client_config(host: str, *, port: int = 4242) -> str:
     )
 
 
+def yggdrasil_server_config(*, device: str = "tun0", port: int = 4343) -> str:
+    return _base_config(
+        mode="server",
+        interfaces=(
+            "  [[TALON Yggdrasil Server]]\n"
+            "    type = TCPServerInterface\n"
+            "    enabled = Yes\n"
+            f"    device = {device.strip() or 'tun0'}\n"
+            f"    listen_port = {int(port)}\n"
+            "    prefer_ipv6 = Yes\n"
+        ),
+    )
+
+
+def yggdrasil_client_config(address: str, *, port: int = 4343) -> str:
+    return _base_config(
+        mode="client",
+        interfaces=(
+            "  [[TALON Yggdrasil Client]]\n"
+            "    type = TCPClientInterface\n"
+            "    enabled = Yes\n"
+            f"    target_host = {address.strip()}\n"
+            f"    target_port = {int(port)}\n"
+        ),
+    )
+
+
+def i2pd_server_config() -> str:
+    return _base_config(
+        mode="server",
+        interfaces=(
+            "  [[TALON i2pd Server]]\n"
+            "    type = I2PInterface\n"
+            "    enabled = Yes\n"
+            "    connectable = Yes\n"
+        ),
+    )
+
+
+def i2pd_client_config(peer: str) -> str:
+    return _base_config(
+        mode="client",
+        interfaces=(
+            "  [[TALON i2pd Client]]\n"
+            "    type = I2PInterface\n"
+            "    enabled = Yes\n"
+            "    connectable = No\n"
+            f"    peers = {peer.strip()}\n"
+        ),
+    )
+
+
 def _base_config(*, mode: Mode, interfaces: str) -> str:
     enable_transport = "True" if mode == "server" else "False"
     return (
@@ -431,6 +489,23 @@ def _validate_tcp_client(
         _validate_port(port, f"{interface_name} target_port", errors)
 
 
+def _validate_i2p(
+    interface_name: str,
+    interface: typing.Mapping[str, typing.Any],
+    *,
+    warnings: list[str],
+) -> None:
+    peers = _as_list(interface.get("peers"))
+    connectable = _as_bool(interface.get("connectable"), default=False)
+    if not connectable and not peers:
+        warnings.append(f"{interface_name} is not connectable and has no peers.")
+    for peer in peers:
+        if not peer.lower().endswith(".b32.i2p"):
+            warnings.append(
+                f"{interface_name} peer {peer!r} does not look like a .b32.i2p address."
+            )
+
+
 def _validate_port(value: object, label: str, errors: list[str]) -> None:
     try:
         port = int(str(value).strip())
@@ -450,6 +525,14 @@ def _as_bool(value: object, *, default: bool) -> bool:
     if lowered in _FALSE_VALUES:
         return False
     return default
+
+
+def _as_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
 def _backup_path(path: pathlib.Path) -> pathlib.Path:

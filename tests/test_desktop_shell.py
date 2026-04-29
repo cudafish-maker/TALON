@@ -517,6 +517,39 @@ sys.stderr.flush()
 os._exit(0)
 """
 
+_QT_RETICULUM_CONFIG_BUTTONS_SCRIPT = r"""
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_desktop.reticulum_config_dialog import ReticulumConfigDialog
+
+config_path = sys.argv[1]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+dialog = None
+try:
+    core.unlock_with_key(bytes(range(32)))
+    dialog = ReticulumConfigDialog(core)
+    texts = sorted(
+        button.text() for button in dialog.findChildren(QtWidgets.QPushButton)
+    )
+    print("|".join(texts))
+finally:
+    if dialog is not None:
+        dialog.close()
+    core.close()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
 _QT_SETTINGS_SMOKE_SCRIPT = r"""
 import os
 import sys
@@ -946,6 +979,23 @@ def test_qt_unaccepted_reticulum_config_opens_setup_before_network_start(
     assert "config-dialog-opened" in result.stdout
     assert "config-dialog-accepted" in result.stdout
     assert "unaccepted-config-gate-continued" in result.stdout
+
+
+def test_qt_reticulum_config_buttons_use_operator_transport_names(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_RETICULUM_CONFIG_BUTTONS_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="config-buttons",
+        timeout=30,
+    )
+
+    assert "Yggdrasil Server" in result.stdout
+    assert "Yggdrasil Client" in result.stdout
+    assert "i2pd Server" in result.stdout
+    assert "i2pd Client" in result.stdout
 
 
 @pytest.mark.parametrize(

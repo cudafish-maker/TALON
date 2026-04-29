@@ -7,8 +7,12 @@ from talon_core import TalonCoreSession
 from talon_core.network.rns_config import (
     auto_interface_config,
     default_reticulum_config,
+    i2pd_client_config,
+    i2pd_server_config,
     tcp_client_config,
     tcp_server_config,
+    yggdrasil_client_config,
+    yggdrasil_server_config,
 )
 
 
@@ -48,6 +52,18 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         self.tcp_server_button.clicked.connect(self._use_tcp_server_template)
         self.tcp_client_button = QtWidgets.QPushButton("TCP Client")
         self.tcp_client_button.clicked.connect(self._use_tcp_client_template)
+        self.yggdrasil_server_button = QtWidgets.QPushButton("Yggdrasil Server")
+        self.yggdrasil_server_button.clicked.connect(
+            self._use_yggdrasil_server_template
+        )
+        self.yggdrasil_client_button = QtWidgets.QPushButton("Yggdrasil Client")
+        self.yggdrasil_client_button.clicked.connect(
+            self._use_yggdrasil_client_template
+        )
+        self.i2pd_server_button = QtWidgets.QPushButton("i2pd Server")
+        self.i2pd_server_button.clicked.connect(self._use_i2pd_server_template)
+        self.i2pd_client_button = QtWidgets.QPushButton("i2pd Client")
+        self.i2pd_client_button.clicked.connect(self._use_i2pd_client_template)
         self.import_button = QtWidgets.QPushButton("Import ~/.reticulum/config")
         self.import_button.clicked.connect(self._import_default_config)
 
@@ -58,6 +74,13 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         template_row.addWidget(self.tcp_client_button)
         template_row.addStretch(1)
         template_row.addWidget(self.import_button)
+
+        overlay_row = QtWidgets.QHBoxLayout()
+        overlay_row.addWidget(self.yggdrasil_server_button)
+        overlay_row.addWidget(self.yggdrasil_client_button)
+        overlay_row.addWidget(self.i2pd_server_button)
+        overlay_row.addWidget(self.i2pd_client_button)
+        overlay_row.addStretch(1)
 
         self.validate_button = QtWidgets.QPushButton("Validate")
         self.validate_button.clicked.connect(self._validate_current_text)
@@ -79,6 +102,7 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         layout.addWidget(self.heading)
         layout.addWidget(self.path_label)
         layout.addLayout(template_row)
+        layout.addLayout(overlay_row)
         layout.addWidget(self.editor, stretch=1)
         layout.addWidget(self.validation_panel)
         layout.addLayout(action_row)
@@ -215,3 +239,61 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         if not ok:
             return
         self.editor.setPlainText(tcp_client_config(host, port=port))
+
+    def _use_yggdrasil_server_template(self) -> None:
+        device, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Yggdrasil Device",
+            "Yggdrasil device",
+            QtWidgets.QLineEdit.Normal,
+            "tun0",
+        )
+        device = device.strip()
+        if not ok or not device:
+            return
+        port, ok = QtWidgets.QInputDialog.getInt(
+            self,
+            "Yggdrasil Port",
+            "Port",
+            4343,
+            1,
+            65535,
+        )
+        if not ok:
+            return
+        self.editor.setPlainText(yggdrasil_server_config(device=device, port=port))
+
+    def _use_yggdrasil_client_template(self) -> None:
+        address, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Yggdrasil Address",
+            "Server Yggdrasil address",
+        )
+        address = address.strip()
+        if not ok or not address:
+            return
+        port, ok = QtWidgets.QInputDialog.getInt(
+            self,
+            "Yggdrasil Port",
+            "Port",
+            4343,
+            1,
+            65535,
+        )
+        if not ok:
+            return
+        self.editor.setPlainText(yggdrasil_client_config(address, port=port))
+
+    def _use_i2pd_server_template(self) -> None:
+        self.editor.setPlainText(i2pd_server_config())
+
+    def _use_i2pd_client_template(self) -> None:
+        peer, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "i2pd Peer",
+            "Peer .b32.i2p address",
+        )
+        peer = peer.strip()
+        if not ok or not peer:
+            return
+        self.editor.setPlainText(i2pd_client_config(peer))
