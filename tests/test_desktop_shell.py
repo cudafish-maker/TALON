@@ -1269,6 +1269,39 @@ def test_desktop_navigation_keeps_admin_sections_server_only() -> None:
     assert {"enrollment", "clients", "audit", "keys"}.issubset(server_keys)
 
 
+def test_desktop_custom_icons_cover_navigation_and_asset_categories() -> None:
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    from PySide6 import QtWidgets
+
+    from talon_core.assets import CATEGORY_LABEL
+    from talon_desktop.icons import (
+        ASSET_ICON_CATEGORIES,
+        NAV_ICON_KEYS,
+        asset_marker_pixmap,
+        desktop_nav_icon,
+    )
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert app is not None
+
+    assert {item.key for item in navigation_items("server")} <= NAV_ICON_KEYS
+    assert set(CATEGORY_LABEL) <= ASSET_ICON_CATEGORIES
+
+    for item in navigation_items("server"):
+        icon = desktop_nav_icon(item.key)
+        assert not icon.isNull()
+        assert not icon.pixmap(24, 24).isNull()
+
+    for category in CATEGORY_LABEL:
+        verified = asset_marker_pixmap(category, verified=True)
+        unverified = asset_marker_pixmap(category, verified=False)
+        selected = asset_marker_pixmap(category, verified=False, selected=True)
+        assert not verified.isNull()
+        assert not unverified.isNull()
+        assert not selected.isNull()
+
+
 def test_desktop_event_mapping_refreshes_documents_section() -> None:
     update = desktop_update_from_event(record_changed("documents", 42))
 

@@ -21,6 +21,7 @@ from talon_desktop.map_data import (
     ZoneOverlay,
     build_map_overlays,
 )
+from talon_desktop.icons import asset_marker_pixmap
 from talon_desktop.map_scene_tiles import MapTileSceneRenderer
 from talon_desktop.map_tiles import (
     TILE_LAYERS,
@@ -43,6 +44,7 @@ _ZONE_COLORS = {
 }
 _ASSET_FOCUS_MIN_LAT_SPAN = 0.01
 _ASSET_FOCUS_MAX_LAT_SPAN = 0.05
+_ASSET_MARKER_SIZE = 32
 
 
 class MapGraphicsView(QtWidgets.QGraphicsView):
@@ -171,6 +173,39 @@ class MapRightPanelSplitter(QtWidgets.QSplitter):
         restored = super().restoreState(state)
         self.setOrientation(QtCore.Qt.Vertical)
         return restored
+
+
+class AssetMarkerItem(QtWidgets.QGraphicsPixmapItem):
+    """Selectable asset marker that preserves verification state while selected."""
+
+    def __init__(self, asset: AssetOverlay) -> None:
+        super().__init__()
+        self._category = asset.category
+        self._verified = asset.verified
+        self._sync_pixmap(selected=False)
+        self.setPos(asset.point.x, asset.point.y)
+
+    def itemChange(
+        self,
+        change: QtWidgets.QGraphicsItem.GraphicsItemChange,
+        value: object,
+    ) -> object:
+        if (
+            change
+            == QtWidgets.QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged
+        ):
+            self._sync_pixmap(selected=bool(value))
+        return super().itemChange(change, value)
+
+    def _sync_pixmap(self, *, selected: bool) -> None:
+        pixmap = asset_marker_pixmap(
+            self._category,
+            verified=self._verified,
+            selected=selected,
+            size=_ASSET_MARKER_SIZE,
+        )
+        self.setPixmap(pixmap)
+        self.setOffset(-pixmap.width() / 2, -pixmap.height() / 2)
 
 
 class MapPage(QtWidgets.QWidget):
@@ -891,15 +926,8 @@ class MapPage(QtWidgets.QWidget):
         )
 
     def _draw_asset(self, asset: AssetOverlay) -> None:
-        color = QtGui.QColor("#2ecc71") if asset.verified else QtGui.QColor("#e67e22")
-        item = self._scene.addEllipse(
-            asset.point.x - 8,
-            asset.point.y - 8,
-            16,
-            16,
-            QtGui.QPen(QtGui.QColor("#ecf0f1"), 2),
-            QtGui.QBrush(color),
-        )
+        item = AssetMarkerItem(asset)
+        self._scene.addItem(item)
         self._register_item(
             item,
             key=f"asset:{asset.id}",

@@ -20,6 +20,7 @@ from talon_desktop.logs import (
     desktop_log_buffer,
     install_desktop_log_buffer,
 )
+from talon_desktop.icons import desktop_nav_icon
 from talon_desktop.map_page import MapPage
 from talon_desktop.mission_page import MissionPage
 from talon_desktop.navigation import DesktopNavItem, navigation_items
@@ -514,22 +515,7 @@ class DesktopNavRail(QtWidgets.QWidget):
             button.setToolTip(tooltip)
 
     def _icon_for(self, key: str) -> QtGui.QIcon:
-        style = self.style()
-        icons = {
-            "dashboard": QtWidgets.QStyle.SP_ComputerIcon,
-            "map": QtWidgets.QStyle.SP_DialogOpenButton,
-            "sitreps": QtWidgets.QStyle.SP_MessageBoxWarning,
-            "assets": QtWidgets.QStyle.SP_DriveNetIcon,
-            "missions": QtWidgets.QStyle.SP_ArrowForward,
-            "chat": QtWidgets.QStyle.SP_FileDialogDetailedView,
-            "documents": QtWidgets.QStyle.SP_FileIcon,
-            "operators": QtWidgets.QStyle.SP_DirHomeIcon,
-            "enrollment": QtWidgets.QStyle.SP_FileDialogNewFolder,
-            "clients": QtWidgets.QStyle.SP_DirIcon,
-            "audit": QtWidgets.QStyle.SP_FileDialogInfoView,
-            "keys": QtWidgets.QStyle.SP_DialogYesButton,
-        }
-        return style.standardIcon(icons.get(key, QtWidgets.QStyle.SP_FileIcon))
+        return desktop_nav_icon(key)
 
 
 class CurrentPageStack(QtWidgets.QStackedWidget):
