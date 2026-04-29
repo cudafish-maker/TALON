@@ -119,6 +119,8 @@ try:
     assert dashboard.heading.text() == "Dashboard"
     assert dashboard.summary.text() == "Core session and operational summary."
     assert dashboard.findChildren(MapPage) == []
+    assert window.network_setup_button.text() == "Network Setup"
+    assert window.network_setup_button.isEnabled()
     assert window.nav.is_expanded() is True
     window.nav.toggle()
     assert window.nav.is_expanded() is False
@@ -521,6 +523,63 @@ try:
         raise AssertionError(runtime.login_window.status_label.text())
     assert events == ["config-reject", "config-accept", "reticulum", "sync"], events
     print("network-setup-retry-ok")
+finally:
+    if runtime.main_window is not None:
+        runtime.main_window.close()
+    if runtime.login_window is not None:
+        runtime.login_window.close()
+    runtime.shutdown()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
+_QT_MAIN_NETWORK_SETUP_SCRIPT = r"""
+import os
+import sys
+import time
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core import TalonCoreSession
+import talon_desktop.app as app_module
+from talon_desktop.app import DesktopRuntime, MainWindow
+
+config_path = sys.argv[1]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+runtime = DesktopRuntime(core, start_sync=False)
+events = []
+try:
+    class FakeReticulumConfigDialog:
+        def __init__(self, core, parent=None):
+            assert core.is_unlocked is True
+            assert isinstance(parent, MainWindow)
+            events.append("main-parent")
+        def exec(self):
+            events.append("accepted")
+            return QtWidgets.QDialog.Accepted
+    app_module.ReticulumConfigDialog = FakeReticulumConfigDialog
+    runtime.show_login()
+    runtime.unlock("DesktopSmoke-1")
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        app.processEvents()
+        if runtime.main_window is not None:
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError("main window did not open")
+    runtime.main_window.network_setup_button.click()
+    app.processEvents()
+    assert events == ["main-parent", "accepted"], events
+    assert runtime.main_window.network_setup_button.isEnabled()
+    assert runtime.main_window.statusBar().currentMessage() == "Network settings saved."
+    print("main-network-setup-ok")
 finally:
     if runtime.main_window is not None:
         runtime.main_window.close()
@@ -1063,6 +1122,20 @@ def test_qt_client_network_setup_button_recovers_after_setup_reject(
     )
 
     assert "network-setup-retry-ok" in result.stdout
+
+
+def test_qt_main_window_network_setup_button_opens_setup(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_MAIN_NETWORK_SETUP_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="main-network-setup",
+        timeout=30,
+    )
+
+    assert "main-network-setup-ok" in result.stdout
 
 
 def test_qt_unaccepted_reticulum_config_opens_setup_before_network_start(

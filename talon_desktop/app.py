@@ -521,6 +521,8 @@ class DesktopNavRail(QtWidgets.QWidget):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    networkSetupRequested = QtCore.Signal()
+
     def __init__(
         self,
         core: TalonCoreSession,
@@ -585,6 +587,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self._root_splitter)
         self._sitrep_alert_overlay = SitrepAlertOverlay(self.stack)
         self.statusBar().showMessage("Core unlocked.")
+        self.network_setup_button = QtWidgets.QPushButton("Network Setup")
+        self.network_setup_button.setObjectName("statusButton")
+        self.network_setup_button.clicked.connect(self.networkSetupRequested.emit)
         self._log_button = QtWidgets.QPushButton("Logs")
         self._log_button.setObjectName("statusButton")
         self._log_button.clicked.connect(self._show_logs)
@@ -594,6 +599,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._font_button = QtWidgets.QPushButton("Font")
         self._font_button.setObjectName("statusButton")
         self._font_button.clicked.connect(self._show_font_scale_dialog)
+        self.statusBar().addPermanentWidget(self.network_setup_button)
         self.statusBar().addPermanentWidget(self._theme_button)
         self.statusBar().addPermanentWidget(self._font_button)
         self.statusBar().addPermanentWidget(self._log_button)
@@ -620,6 +626,12 @@ class MainWindow(QtWidgets.QMainWindow):
         page = self._pages.get(section_key)
         if page is not None and hasattr(page, "refresh"):
             page.refresh()
+
+    def set_network_setup_busy(self, busy: bool) -> None:
+        self.network_setup_button.setDisabled(busy)
+
+    def show_network_status(self, message: str, timeout_ms: int = 8000) -> None:
+        self.statusBar().showMessage(message, timeout_ms)
 
     def _on_nav_changed(self, row: int) -> None:
         if row < 0:
@@ -1034,8 +1046,12 @@ class DesktopRuntime(QtCore.QObject):
 
     @QtCore.Slot()
     def configure_network(self) -> None:
-        parent = self.login_window if self.login_window is not None else self.main_window
-        if self.login_window is not None:
+        parent = self.main_window if self.main_window is not None else self.login_window
+        using_main_window = self.main_window is not None
+        if self.main_window is not None:
+            self.main_window.set_network_setup_busy(True)
+            self.main_window.show_network_status("Opening network setup...", 0)
+        elif self.login_window is not None:
             self.login_window.set_busy(True, "Opening network setup...")
         try:
             if not self.core.is_unlocked:
@@ -1043,26 +1059,49 @@ class DesktopRuntime(QtCore.QObject):
                     self.login_window.show_error(
                         "Unlock the database before network setup."
                     )
+                if self.main_window is not None:
+                    self.main_window.show_network_status(
+                        "Unlock the database before network setup."
+                    )
+                    self.main_window.set_network_setup_busy(False)
                 return
             dialog = ReticulumConfigDialog(self.core, parent)
             accepted = dialog.exec() == QtWidgets.QDialog.Accepted
         except Exception as exc:
             if self.login_window is not None:
                 self.login_window.show_error(f"Reticulum setup failed: {exc}")
+            if self.main_window is not None:
+                self.main_window.show_network_status(f"Reticulum setup failed: {exc}")
+                self.main_window.set_network_setup_busy(False)
             return
-        if self.login_window is not None:
+        if self.main_window is not None:
+            self.main_window.set_network_setup_busy(False)
+        elif self.login_window is not None:
             self.login_window.set_busy(False)
         if not accepted:
+            if self.main_window is not None:
+                self.main_window.show_network_status("Network setup cancelled.")
             return
         if self.core.reticulum_started:
             if self.login_window is not None:
                 self.login_window.set_network_status(
                     "Network settings saved. Restart TALON to use changes."
                 )
+            if self.main_window is not None:
+                self.main_window.show_network_status(
+                    "Network settings saved. Restart TALON to use changes."
+                )
             return
         if not self.start_sync:
             if self.login_window is not None:
                 self.login_window.set_network_status("Network settings saved.")
+            if self.main_window is not None:
+                self.main_window.show_network_status("Network settings saved.")
+            return
+        if using_main_window:
+            self.main_window.show_network_status(
+                "Network settings saved. Restart TALON to start networking."
+            )
             return
         network_result = self._start_network_for_unlocked_session()
         if network_result is None:
@@ -1100,6 +1139,7 @@ class DesktopRuntime(QtCore.QObject):
         if self.login_window is not None:
             self.login_window.hide()
         self.main_window = MainWindow(self.core, self.event_bridge)
+        self.main_window.networkSetupRequested.connect(self.configure_network)
         self.main_window.show()
         if sync_warning:
             self.main_window.statusBar().showMessage(
