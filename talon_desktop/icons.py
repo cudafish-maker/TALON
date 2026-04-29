@@ -31,6 +31,7 @@ _ASSET_PIXMAP_CACHE: dict[tuple[str, bool, bool, int], QtGui.QPixmap] = {}
 
 def desktop_nav_icon(key: str, *, size: int = 24) -> QtGui.QIcon:
     """Return a purpose-built monochrome nav icon for a desktop section."""
+    _require_gui_application()
     cache_key = (key, int(size))
     cached = _NAV_ICON_CACHE.get(cache_key)
     if cached is not None:
@@ -85,6 +86,7 @@ def asset_marker_pixmap(
     size: int = 32,
 ) -> QtGui.QPixmap:
     """Return a framed map marker pixmap for an asset category and state."""
+    _require_gui_application()
     normalized_category = category if category in ASSET_ICON_CATEGORIES else "custom"
     cache_key = (normalized_category, bool(verified), bool(selected), int(size))
     cached = _ASSET_PIXMAP_CACHE.get(cache_key)
@@ -146,6 +148,15 @@ def _nav_icon_colors(key: str) -> tuple[str, str, str, str]:
     if key == "incidents":
         return ("#ff5555", "#ff7777", "#ff7777", "#526068")
     return ("#aebbc2", "#d8dee9", "#8fbcbb", "#526068")
+
+
+def _require_gui_application() -> None:
+    app = QtGui.QGuiApplication.instance()
+    if not isinstance(app, QtGui.QGuiApplication):
+        raise RuntimeError(
+            "TALON desktop icons require a live QGuiApplication/QApplication "
+            "before QPixmap-backed icons can be rendered."
+        )
 
 
 def _nav_icon_pixmap(key: str, *, size: int, color: str) -> QtGui.QPixmap:

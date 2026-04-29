@@ -2,6 +2,7 @@ import pathlib
 import logging
 import os
 import subprocess
+import sys
 import types
 
 import pytest
@@ -1224,6 +1225,34 @@ finally:
     app.processEvents()
 """
 
+_QT_ICON_RENDER_SCRIPT = r"""
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core.assets import CATEGORY_LABEL
+from talon_desktop.icons import asset_marker_pixmap, desktop_nav_icon
+from talon_desktop.navigation import navigation_items
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+for item in navigation_items("server"):
+    icon = desktop_nav_icon(item.key)
+    assert not icon.isNull(), item.key
+    assert not icon.pixmap(24, 24).isNull(), item.key
+
+for category in CATEGORY_LABEL:
+    verified = asset_marker_pixmap(category, verified=True)
+    unverified = asset_marker_pixmap(category, verified=False)
+    selected = asset_marker_pixmap(category, verified=False, selected=True)
+    assert not verified.isNull(), category
+    assert not unverified.isNull(), category
+    assert not selected.isNull(), category
+
+print("icons-ok")
+"""
+
 
 def test_desktop_navigation_includes_documents_for_client_and_server() -> None:
     for mode in ("client", "server"):
@@ -1270,36 +1299,29 @@ def test_desktop_navigation_keeps_admin_sections_server_only() -> None:
 
 
 def test_desktop_custom_icons_cover_navigation_and_asset_categories() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    pytest.importorskip("PySide6")
-    from PySide6 import QtWidgets
-
     from talon_core.assets import CATEGORY_LABEL
     from talon_desktop.icons import (
         ASSET_ICON_CATEGORIES,
         NAV_ICON_KEYS,
-        asset_marker_pixmap,
-        desktop_nav_icon,
     )
-
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    assert app is not None
 
     assert {item.key for item in navigation_items("server")} <= NAV_ICON_KEYS
     assert set(CATEGORY_LABEL) <= ASSET_ICON_CATEGORIES
 
-    for item in navigation_items("server"):
-        icon = desktop_nav_icon(item.key)
-        assert not icon.isNull()
-        assert not icon.pixmap(24, 24).isNull()
-
-    for category in CATEGORY_LABEL:
-        verified = asset_marker_pixmap(category, verified=True)
-        unverified = asset_marker_pixmap(category, verified=False)
-        selected = asset_marker_pixmap(category, verified=False, selected=True)
-        assert not verified.isNull()
-        assert not unverified.isNull()
-        assert not selected.isNull()
+    env = os.environ.copy()
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    env["PYTHONPATH"] = str(pathlib.Path.cwd())
+    result = subprocess.run(
+        [sys.executable, "-c", _QT_ICON_RENDER_SCRIPT],
+        cwd=pathlib.Path.cwd(),
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "icons-ok" in result.stdout
 
 
 def test_desktop_event_mapping_refreshes_documents_section() -> None:
