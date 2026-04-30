@@ -406,6 +406,11 @@ def test_core_session_community_safety_commands_and_read_models(
         "(id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
         "VALUES (8, 'ASTER', 'aster-hash', '[\"medic\"]', '{\"role\":\"search\"}', 0, 9999999999, 0)"
     )
+    session.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+        "VALUES (9, 'BRAVO', 'bravo-hash', '[\"comms\"]', '{\"role\":\"support\"}', 0, 9999999999, 0)"
+    )
     session.conn.commit()
 
     mission_result = session.command(
@@ -430,15 +435,38 @@ def test_core_session_community_safety_commands_and_read_models(
             "required_skills": ["medic", "de-escalation"],
         },
     )
-    with pytest.raises(ValueError, match="assigned to this assignment"):
+    server_checkin = session.command(
+        "assignments.checkin",
+        {
+            "assignment_id": assignment_result.assignment_id,
+            "operator_id": 9,
+            "state": "ok",
+            "note": "Command post checked Bravo in on radio.",
+        },
+    )
+    assert server_checkin.checkin.operator_id == 9
+
+    session._mode = "client"
+    session._operator_id = 8
+    with pytest.raises(CoreSessionError, match="local operator"):
         session.command(
             "assignments.checkin",
             {
                 "assignment_id": assignment_result.assignment_id,
+                "operator_id": 9,
                 "state": "ok",
-                "note": "Server cannot check in for the assigned operator.",
+                "note": "Client cannot check in as another operator.",
             },
         )
+    with pytest.raises(CoreSessionError, match="server mode"):
+        session.command(
+            "assignments.update_status",
+            {
+                "assignment_id": assignment_result.assignment_id,
+                "status": "completed",
+            },
+        )
+    session._mode = "server"
 
     session._operator_id = 8
     checkin_result = session.command(

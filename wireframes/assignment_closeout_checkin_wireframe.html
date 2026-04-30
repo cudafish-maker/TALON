@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON Assignment Closeout And Server Check-In Wireframe</title>
+  <style>
+    :root {
+      --bg: #0f1417;
+      --panel: #171e22;
+      --panel-2: #20292e;
+      --line: #334047;
+      --text: #edf3f5;
+      --muted: #98a8ae;
+      --accent: #ffdf6e;
+      --green: #7fb069;
+      --red: #e74c3c;
+      --blue: #3498db;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #0b1012;
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.4;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 28px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 56px 56px,
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px) 0 0 / 56px 56px,
+        var(--bg);
+    }
+
+    .caption {
+      max-width: 1240px;
+      margin: 0 auto 18px;
+      color: var(--muted);
+    }
+
+    .caption h1 {
+      margin: 0 0 6px;
+      color: var(--text);
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .app {
+      max-width: 1240px;
+      min-height: 780px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 22px 60px rgba(0,0,0,.38);
+      position: relative;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #11181b;
+    }
+
+    .heading {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .spacer { flex: 1; }
+
+    .button {
+      min-height: 34px;
+      border: 1px solid #566973;
+      background: #243139;
+      color: var(--text);
+      padding: 7px 11px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      border-color: #d9bd5c;
+      color: #151a1d;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .button.danger {
+      border-color: #c2665e;
+      background: #3b2423;
+      color: #ffd2cd;
+    }
+
+    .summary {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      background: #141b1f;
+      font-size: 13px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #101619;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      padding: 10px;
+      min-height: 72px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .metric .value {
+      margin-top: 4px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .metric .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .body {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(440px, 1.4fr) minmax(320px, 1fr) 350px;
+    }
+
+    .pane {
+      min-width: 0;
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: #101619;
+      overflow: hidden;
+    }
+
+    .pane:last-child { border-right: 0; }
+
+    .pane-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      background: #141b1f;
+    }
+
+    .table-head,
+    .row {
+      display: grid;
+      align-items: center;
+      gap: 10px;
+      padding: 0 10px;
+    }
+
+    .assignments .table-head,
+    .assignments .row {
+      grid-template-columns: minmax(160px, 1.2fr) 95px 95px 110px 96px;
+    }
+
+    .operators .table-head,
+    .operators .row {
+      grid-template-columns: 100px 100px minmax(120px, 1fr);
+    }
+
+    .table-head {
+      min-height: 34px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+      background: #141b1f;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .row {
+      min-height: 46px;
+      border-bottom: 1px solid rgba(255,255,255,.055);
+      font-size: 13px;
+    }
+
+    .row.active {
+      border: 1px solid #60717a;
+      background: #1b252a;
+    }
+
+    .status {
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    .status.warn { color: var(--accent); }
+    .status.closed { color: #8fbcbb; }
+    .status.alert { color: #ffb0a9; }
+
+    .detail {
+      padding: 12px;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .detail h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .meta {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      gap: 10px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+
+    .detail-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .alerts {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      background: #141b1f;
+    }
+
+    .alert-row {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      color: var(--muted);
+    }
+
+    .modal {
+      position: absolute;
+      width: 430px;
+      border: 1px solid #5a6a72;
+      background: #11181b;
+      box-shadow: 0 18px 46px rgba(0,0,0,.5);
+      z-index: 5;
+    }
+
+    .modal.closeout {
+      right: 74px;
+      bottom: 88px;
+    }
+
+    .modal.checkin {
+      right: 528px;
+      bottom: 108px;
+    }
+
+    .modal-head {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .modal-body {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .input,
+    .select,
+    .textarea {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      background: #0f1417;
+      color: var(--text);
+      padding: 7px 9px;
+      font-size: 13px;
+    }
+
+    .textarea {
+      min-height: 82px;
+      white-space: pre-line;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .statusbar {
+      min-height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      background: #11181b;
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .page { padding: 14px; }
+      .metrics { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      .body { grid-template-columns: 1fr; }
+      .pane { min-height: 280px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .modal { position: static; width: auto; margin: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="caption">
+      <h1>Assignments Closeout And Server Check-In</h1>
+      <div>Approval wireframe: selected assignments get explicit server-only Close Out and Abort actions. Server mode can check in any active operator; operator/client mode can only check in as the local operator.</div>
+    </section>
+
+    <section class="app">
+      <header class="toolbar">
+        <div class="heading">Assignment Board</div>
+        <div class="spacer"></div>
+        <div class="select">All active</div>
+        <button class="button">Refresh</button>
+        <button class="button primary">New Assignment</button>
+      </header>
+
+      <div class="summary">8 assignment(s). Server-only closeout removes assignments from active operator availability calculations and returns assigned operators to Available.</div>
+
+      <section class="metrics">
+        <div class="metric"><div class="label">Active Patrols</div><div class="value">3</div><div class="sub">patrol, escort, welfare</div></div>
+        <div class="metric"><div class="label">Protective Details</div><div class="value">2</div><div class="sub">fixed posts and details</div></div>
+        <div class="metric"><div class="label">Overdue Check-ins</div><div class="value">1</div><div class="sub">past threshold</div></div>
+        <div class="metric"><div class="label">Needs Support</div><div class="value">1</div><div class="sub">support states</div></div>
+        <div class="metric"><div class="label">Closed Today</div><div class="value">4</div><div class="sub">completed or aborted</div></div>
+      </section>
+
+      <section class="body">
+        <section class="pane assignments">
+          <div class="pane-title"><span>Active Assignments</span><span>right-click or use detail actions</span></div>
+          <div class="table-head">
+            <div>Assignment</div><div>Type</div><div>Lead</div><div>Next Check-in</div><div>State</div>
+          </div>
+          <div class="row active">
+            <div>North Shelter patrol</div><div>Patrol</div><div>ASTER</div><div>Overdue 8 min</div><div class="status warn">Active</div>
+          </div>
+          <div class="row">
+            <div>Clinic entrance detail</div><div>Fixed post</div><div>BRAVO</div><div>14:45</div><div class="status">Active</div>
+          </div>
+          <div class="row">
+            <div>Food line escort</div><div>Escort</div><div>COMET</div><div>Needs acknowledgement</div><div class="status alert">Needs support</div>
+          </div>
+          <div class="row">
+            <div>Supply delivery complete</div><div>Supply</div><div>DELTA</div><div>Completed</div><div class="status closed">Completed</div>
+          </div>
+        </section>
+
+        <section class="pane operators">
+          <div class="pane-title"><span>Operator Status</span><span>freed on closeout</span></div>
+          <div class="table-head">
+            <div>Operator</div><div>State</div><div>Assignment</div>
+          </div>
+          <div class="row active"><div>ASTER</div><div class="status warn">Overdue</div><div>North Shelter patrol</div></div>
+          <div class="row"><div>SOL</div><div class="status">Assigned</div><div>North Shelter patrol</div></div>
+          <div class="row"><div>BRAVO</div><div class="status">Assigned</div><div>Clinic entrance detail</div></div>
+          <div class="row"><div>NOVA</div><div class="status closed">Available</div><div>Medic</div></div>
+        </section>
+
+        <aside class="pane">
+          <div class="pane-title"><span>Selected Assignment</span><span>#42</span></div>
+          <div class="detail">
+            <h2>North Shelter patrol</h2>
+            <div class="meta">
+              <div class="meta-row"><strong>Status</strong><span>Active</span></div>
+              <div class="meta-row"><strong>Assigned</strong><span>ASTER, SOL</span></div>
+              <div class="meta-row"><strong>Last check-in</strong><span>Delayed at 14:06</span></div>
+              <div class="meta-row"><strong>Next</strong><span>Overdue 8 min</span></div>
+              <div class="meta-row"><strong>Map point</strong><span>40.123456, -75.250000</span></div>
+            </div>
+            <div class="detail-actions">
+              <button class="button primary">Check-In</button>
+              <button class="button">Server Check-In</button>
+              <button class="button">Acknowledge</button>
+              <button class="button">Open Incident</button>
+              <button class="button primary">Close Out</button>
+              <button class="button danger">Abort</button>
+            </div>
+            <div class="alerts">
+              <div class="alert-row">Close Out is server-only, sets status to Completed, and returns assigned operators to Available.</div>
+              <div class="alert-row">Abort is server-only, sets status to Aborted, and also releases assigned operators.</div>
+              <div class="alert-row">Server Check-In can record any active operator; operator/client Check-In only uses the local operator.</div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <div class="modal checkin">
+        <div class="modal-head">Server Check-In</div>
+        <div class="modal-body">
+          <div class="field"><label>Assignment</label><div class="input">North Shelter patrol</div></div>
+          <div class="field"><label>Operator</label><div class="select">ASTER, BRAVO, COMET, DELTA, NOVA...</div></div>
+          <div class="field"><label>State</label><div class="select">OK</div></div>
+          <div class="field"><label>Note</label><div class="textarea">Radio check received by command post. Operator reports tasking complete and clear.</div></div>
+        </div>
+        <div class="modal-actions">
+          <button class="button">Cancel</button>
+          <button class="button primary">Record Check-In</button>
+        </div>
+      </div>
+
+      <div class="modal closeout">
+        <div class="modal-head">Close Out Assignment</div>
+        <div class="modal-body">
+          <div class="field"><label>Status</label><div class="select">Completed</div></div>
+          <div class="field"><label>Outcome Note</label><div class="textarea">Patrol completed. No unresolved support needs. Operators clear for reassignment.</div></div>
+          <div class="field"><label>Assigned Operators Released</label><div class="input">ASTER, SOL</div></div>
+        </div>
+        <div class="modal-actions">
+          <button class="button">Cancel</button>
+          <button class="button primary">Close Assignment</button>
+        </div>
+      </div>
+
+      <footer class="statusbar">
+        <span>Completed and aborted assignments no longer count against operator availability.</span>
+        <span>Server can check in any operator; clients can only check in as themselves.</span>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

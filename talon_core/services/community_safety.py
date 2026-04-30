@@ -133,6 +133,7 @@ def create_checkin_command(
     note: str = "",
     lat: typing.Optional[float] = None,
     lon: typing.Optional[float] = None,
+    require_assigned_operator: bool = True,
     sync_status: str = "synced",
 ) -> CheckInCommandResult:
     checkin = create_checkin(
@@ -143,6 +144,7 @@ def create_checkin_command(
         note=note,
         lat=lat,
         lon=lon,
+        require_assigned_operator=require_assigned_operator,
         sync_status=sync_status,
     )
     return CheckInCommandResult(

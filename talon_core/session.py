@@ -1281,11 +1281,24 @@ class TalonCoreSession:
                 update_assignment_status_command,
             )
 
+            if payload.get("status") in {"completed", "aborted"}:
+                self._require_server_mode("Assignment closeout")
             return update_assignment_status_command(self._conn, **payload)
         if name == "assignments.checkin":
             from talon_core.services.community_safety import create_checkin_command
 
-            payload.setdefault("operator_id", self.require_local_operator_id())
+            local_operator_id = self.require_local_operator_id()
+            if self.mode == "server":
+                payload.setdefault("operator_id", local_operator_id)
+                payload.setdefault("require_assigned_operator", False)
+            else:
+                requested_operator_id = int(payload.get("operator_id", local_operator_id))
+                if requested_operator_id != int(local_operator_id):
+                    raise CoreSessionError(
+                        "Client assignment check-in can only use the local operator."
+                    )
+                payload["operator_id"] = local_operator_id
+                payload["require_assigned_operator"] = True
             return create_checkin_command(self._conn, **payload)
         if name == "assignments.acknowledge_checkin":
             from talon_core.services.community_safety import acknowledge_checkin_command

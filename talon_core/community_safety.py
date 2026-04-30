@@ -224,6 +224,7 @@ def create_checkin(
     note: str = "",
     lat: typing.Optional[float] = None,
     lon: typing.Optional[float] = None,
+    require_assigned_operator: bool = True,
     sync_status: str = "synced",
 ) -> AssignmentCheckIn:
     state = _clean_choice(state, CHECKIN_STATES, "check-in state")
@@ -232,7 +233,7 @@ def create_checkin(
     if assignment is None:
         raise ValueError(f"Assignment {assignment_id} not found.")
     assigned_ids = {int(value) for value in assignment.assigned_operator_ids}
-    if assigned_ids and int(operator_id) not in assigned_ids:
+    if require_assigned_operator and assigned_ids and int(operator_id) not in assigned_ids:
         raise ValueError("Only an operator assigned to this assignment can check in.")
     lat = _optional_float(lat, "lat", -90.0, 90.0)
     lon = _optional_float(lon, "lon", -180.0, 180.0)

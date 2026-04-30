@@ -1473,6 +1473,124 @@ finally:
     app.processEvents()
 """
 
+_QT_ASSIGNMENT_CLOSEOUT_SCRIPT = r"""
+import os
+import pathlib
+import sys
+import types
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_desktop.community_safety_page import AssignmentPage, CheckInDialog
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+class FakeCore:
+    mode = "server"
+
+    def __init__(self) -> None:
+        self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
+        self.commands = []
+        self.operators = [
+            types.SimpleNamespace(id=8, callsign="ASTER", revoked=False, skills=["medic"], profile={}),
+            types.SimpleNamespace(id=9, callsign="BRAVO", revoked=False, skills=["comms"], profile={}),
+        ]
+        self.assignments = [
+            types.SimpleNamespace(
+                id=42,
+                title="North Shelter patrol",
+                assignment_type="foot_patrol",
+                status="active",
+                priority="ROUTINE",
+                team_lead="Aster",
+                backup_operator="Sol",
+                assigned_operator_ids=[8],
+                last_checkin_at=None,
+                last_checkin_state="",
+                checkin_interval_min=20,
+                overdue_threshold_min=5,
+                created_at=1_700_000_000,
+                support_reason="",
+                location_label="North Shelter",
+                lat=None,
+                lon=None,
+                mission_id=None,
+                protected_label="",
+                escalation_contact="",
+                handoff_notes="",
+            )
+        ]
+
+    def read_model(self, name, filters=None):
+        if name == "assignments.board":
+            return {
+                "assignments": self.assignments,
+                "operators": self.operators,
+                "sync": types.SimpleNamespace(pending_outbox_count=0),
+            }
+        if name == "assignments.detail":
+            return {
+                "assignment": self.assignments[0],
+                "checkins": [],
+                "incidents": [],
+                "mission_title": "",
+            }
+        if name == "operators.list":
+            return self.operators
+        raise KeyError(name)
+
+    def command(self, name, payload=None, **kwargs):
+        data = dict(payload or {})
+        data.update(kwargs)
+        self.commands.append((name, data))
+        if name == "assignments.update_status":
+            self.assignments[0].status = data["status"]
+            return types.SimpleNamespace(assignment_id=data["assignment_id"])
+        if name == "assignments.checkin":
+            return types.SimpleNamespace(checkin_id=5)
+        raise KeyError(name)
+
+
+core = FakeCore()
+page = AssignmentPage(core)
+try:
+    page.refresh()
+    assert page.checkin_button.text() == "Server Check-In"
+    assert not page.closeout_button.isHidden()
+    assert not page.abort_button.isHidden()
+
+    dialog = CheckInDialog(
+        page._items[0],
+        operators=core.operators,
+        allow_operator_choice=True,
+    )
+    try:
+        assert dialog.operator_combo.count() == 2
+        dialog.operator_combo.setCurrentIndex(1)
+        payload = dialog.payload()
+        assert payload["operator_id"] == 9
+    finally:
+        dialog.close()
+
+    QtWidgets.QMessageBox.question = staticmethod(
+        lambda *args, **kwargs: QtWidgets.QMessageBox.Yes
+    )
+    page._close_assignment("completed")
+    assert core.assignments[0].status == "completed"
+    assert core.commands[-1] == (
+        "assignments.update_status",
+        {"assignment_id": 42, "status": "completed"},
+    )
+
+    print("assignment-closeout-actions-ok")
+finally:
+    page.close()
+    app.processEvents()
+"""
+
 _QT_ICON_RENDER_SCRIPT = r"""
 import os
 
@@ -2024,6 +2142,20 @@ def test_qt_document_page_explorer_actions(tmp_path: pathlib.Path) -> None:
     )
 
     assert "document-explorer-actions-ok" in result.stdout
+
+
+def test_qt_assignment_closeout_and_server_checkin_actions(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_ASSIGNMENT_CLOSEOUT_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="assignment-closeout",
+        timeout=30,
+    )
+
+    assert "assignment-closeout-actions-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))

@@ -71,12 +71,20 @@ class AssignmentPage(QtWidgets.QWidget):
         self.refresh_button.clicked.connect(self.refresh)
         self.new_button = QtWidgets.QPushButton("New Assignment")
         self.new_button.clicked.connect(self._create_assignment)
-        self.checkin_button = QtWidgets.QPushButton("Check-In")
+        self.checkin_button = QtWidgets.QPushButton(
+            "Server Check-In" if self._core.mode == "server" else "Check-In"
+        )
         self.checkin_button.clicked.connect(self._create_checkin)
         self.ack_button = QtWidgets.QPushButton("Acknowledge")
         self.ack_button.clicked.connect(self._acknowledge_latest_checkin)
         self.incident_button = QtWidgets.QPushButton("Open Incident")
         self.incident_button.clicked.connect(self._create_incident_for_assignment)
+        self.closeout_button = QtWidgets.QPushButton("Close Out")
+        self.closeout_button.clicked.connect(lambda: self._close_assignment("completed"))
+        self.closeout_button.setVisible(self._core.mode == "server")
+        self.abort_button = QtWidgets.QPushButton("Abort")
+        self.abort_button.clicked.connect(lambda: self._close_assignment("aborted"))
+        self.abort_button.setVisible(self._core.mode == "server")
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
@@ -139,6 +147,8 @@ class AssignmentPage(QtWidgets.QWidget):
         action_row.addWidget(self.checkin_button)
         action_row.addWidget(self.ack_button)
         action_row.addWidget(self.incident_button)
+        action_row.addWidget(self.closeout_button)
+        action_row.addWidget(self.abort_button)
         right_layout.addLayout(action_row)
 
         body = QtWidgets.QSplitter()
@@ -278,9 +288,12 @@ class AssignmentPage(QtWidgets.QWidget):
     def _selection_changed(self) -> None:
         item = self._selected_item()
         has_selection = item is not None
+        is_open = bool(item is not None and item.status not in {"completed", "aborted"})
         self.checkin_button.setEnabled(has_selection)
         self.ack_button.setEnabled(has_selection)
         self.incident_button.setEnabled(has_selection)
+        self.closeout_button.setEnabled(self._core.mode == "server" and is_open)
+        self.abort_button.setEnabled(self._core.mode == "server" and is_open)
         if item is None:
             return
         try:
@@ -354,7 +367,12 @@ class AssignmentPage(QtWidgets.QWidget):
         item = self._selected_item()
         if item is None:
             return
-        dialog = CheckInDialog(item, parent=self)
+        dialog = CheckInDialog(
+            item,
+            parent=self,
+            operators=self._server_checkin_operators() if self._core.mode == "server" else (),
+            allow_operator_choice=self._core.mode == "server",
+        )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         try:
@@ -363,6 +381,48 @@ class AssignmentPage(QtWidgets.QWidget):
         except Exception as exc:
             _log.warning("Check-in failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "Check-In", str(exc))
+
+    def _server_checkin_operators(self) -> list[object]:
+        if self._core.mode != "server":
+            return []
+        try:
+            return [
+                operator
+                for operator in self._core.read_model("operators.list")
+                if not bool(getattr(operator, "revoked", False))
+            ]
+        except Exception as exc:
+            _log.warning("Could not load operators for server check-in: %s", exc)
+            return []
+
+    def _close_assignment(self, status: typing.Literal["completed", "aborted"]) -> None:
+        item = self._selected_item()
+        if self._core.mode != "server" or item is None:
+            return
+        if item.status in {"completed", "aborted"}:
+            return
+        label = "complete" if status == "completed" else "abort"
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Close Assignment" if status == "completed" else "Abort Assignment",
+            (
+                f"{label.title()} {item.title}? "
+                "Assigned operators will be available for reassignment."
+            ),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            return
+        try:
+            self._core.command(
+                "assignments.update_status",
+                {"assignment_id": item.id, "status": status},
+            )
+            self.refresh()
+        except Exception as exc:
+            _log.warning("Assignment closeout failed: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Assignment", str(exc))
 
     def _acknowledge_latest_checkin(self) -> None:
         item = self._selected_item()
@@ -795,10 +855,22 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
 
 
 class CheckInDialog(QtWidgets.QDialog):
-    def __init__(self, assignment: DesktopAssignmentItem, parent=None) -> None:
+    def __init__(
+        self,
+        assignment: DesktopAssignmentItem,
+        parent=None,
+        *,
+        operators: typing.Iterable[object] = (),
+        allow_operator_choice: bool = False,
+    ) -> None:
         super().__init__(parent)
         self._assignment = assignment
+        self._allow_operator_choice = allow_operator_choice
         self.setWindowTitle("Assignment Check-In")
+        self.operator_combo = QtWidgets.QComboBox()
+        self.operator_combo.setVisible(allow_operator_choice)
+        if allow_operator_choice:
+            self._load_operator_choices(operators)
         self.state_combo = QtWidgets.QComboBox()
         for state in CHECKIN_STATES:
             self.state_combo.addItem(CHECKIN_STATE_LABELS[state], state)
@@ -806,6 +878,8 @@ class CheckInDialog(QtWidgets.QDialog):
         self.note_field.setMinimumHeight(90)
         form = QtWidgets.QFormLayout()
         form.addRow("Assignment", QtWidgets.QLabel(assignment.title))
+        if allow_operator_choice:
+            form.addRow("Operator", self.operator_combo)
         form.addRow("State", self.state_combo)
         form.addRow("Note", self.note_field)
         buttons = QtWidgets.QDialogButtonBox(
@@ -818,11 +892,32 @@ class CheckInDialog(QtWidgets.QDialog):
         layout.addWidget(buttons)
 
     def payload(self) -> dict[str, object]:
-        return build_checkin_payload(
+        payload = build_checkin_payload(
             assignment_id=self._assignment.id,
             state=str(self.state_combo.currentData()),
             note=self.note_field.toPlainText(),
         )
+        if self._allow_operator_choice:
+            operator_id = self.operator_combo.currentData()
+            if operator_id is None:
+                raise ValueError("Operator is required for server check-in.")
+            payload["operator_id"] = int(operator_id)
+        return payload
+
+    def _load_operator_choices(self, operators: typing.Iterable[object]) -> None:
+        assigned = set(self._assignment.assigned_operator_ids)
+        first_assigned_index = -1
+        for operator in operators:
+            try:
+                operator_id = int(getattr(operator, "id"))
+            except (TypeError, ValueError):
+                continue
+            callsign = str(getattr(operator, "callsign", "") or f"#{operator_id}")
+            self.operator_combo.addItem(callsign, operator_id)
+            if operator_id in assigned and first_assigned_index < 0:
+                first_assigned_index = self.operator_combo.count() - 1
+        if first_assigned_index >= 0:
+            self.operator_combo.setCurrentIndex(first_assigned_index)
 
 
 class IncidentCreateDialog(QtWidgets.QDialog):
