@@ -30,6 +30,7 @@ class DesktopDocumentItem:
     sha256_hash: str
     hash_preview: str
     is_macro_risk: bool
+    folder_path: str
 
 
 def item_from_document_entry(entry: object) -> DesktopDocumentItem:
@@ -51,6 +52,7 @@ def item_from_document_entry(entry: object) -> DesktopDocumentItem:
         sha256_hash=sha256_hash,
         hash_preview=hash_preview(sha256_hash),
         is_macro_risk=is_macro_risk_filename(filename),
+        folder_path=str(getattr(document, "folder_path", "") or ""),
     )
 
 
@@ -62,6 +64,7 @@ def build_upload_payload(
     file_path: str | pathlib.Path,
     *,
     description: str = "",
+    folder_path: str = "",
 ) -> dict[str, object]:
     path = pathlib.Path(file_path)
     if not path.is_file():
@@ -75,6 +78,7 @@ def build_upload_payload(
         "raw_filename": path.name,
         "file_data": path.read_bytes(),
         "description": description.strip(),
+        "folder_path": folder_path.strip().strip("/"),
     }
 
 

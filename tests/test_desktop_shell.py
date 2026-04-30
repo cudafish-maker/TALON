@@ -940,7 +940,7 @@ from PySide6 import QtCore, QtWidgets
 from talon_core import TalonCoreSession
 from talon_desktop.app import CurrentPageStack, MainWindow
 from talon_desktop.qt_events import CoreEventBridge
-from talon_desktop.sitrep_page import SitrepPage
+from talon_desktop.sitrep_page import SitrepCreateDialog, SitrepPage
 
 config_path = sys.argv[1]
 settings_path = sys.argv[4]
@@ -973,17 +973,23 @@ try:
     assert isinstance(sitrep_page, SitrepPage)
     assert window.stack.currentWidget() is sitrep_page
     assert not sitrep_page.isHidden()
-    assert sitrep_page.template_combo.isVisibleTo(sitrep_page)
-    assert sitrep_page.apply_template_button.text() == "Apply"
-    assert not sitrep_page.findChildren(QtWidgets.QPushButton, "sitrepTemplateButton")
-    assert sitrep_page.pick_location_button.text() == "Map"
-    assert sitrep_page.pick_location_button.toolTip() == "Pick on Map"
+    assert sitrep_page.new_button.text() == "New SITREP"
+    assert not hasattr(sitrep_page, "template_combo")
 
-    index = sitrep_page.template_combo.findData("need_support")
+    dialog = SitrepCreateDialog(core, parent=sitrep_page)
+    dialog.show()
+    app.processEvents()
+    assert dialog.template_combo.isVisibleTo(dialog)
+    assert dialog.apply_template_button.text() == "Apply"
+    assert dialog.pick_location_button.text() == "Map"
+    assert dialog.pick_location_button.toolTip() == "Pick on Map"
+
+    index = dialog.template_combo.findData("need_support")
     assert index >= 0
-    sitrep_page.template_combo.setCurrentIndex(index)
-    sitrep_page.apply_template_button.click()
-    assert "Acknowledgement needed:" in sitrep_page.body_field.toPlainText()
+    dialog.template_combo.setCurrentIndex(index)
+    dialog.apply_template_button.click()
+    assert "Acknowledgement needed:" in dialog.body_field.toPlainText()
+    dialog.close()
 
     window.nav.setCurrentRow(map_row)
     app.processEvents()
@@ -1275,9 +1281,34 @@ print("icons-ok")
 
 
 def test_desktop_navigation_includes_documents_for_client_and_server() -> None:
-    for mode in ("client", "server"):
-        keys = {item.key for item in navigation_items(mode)}
-        assert {"documents", "assignments", "incidents"}.issubset(keys)
+    assert [item.key for item in navigation_items("server")] == [
+        "map",
+        "chat",
+        "missions",
+        "sitreps",
+        "incidents",
+        "assets",
+        "assignments",
+        "documents",
+        "operators",
+        "enrollment",
+        "clients",
+        "audit",
+        "keys",
+        "dashboard",
+    ]
+    assert [item.key for item in navigation_items("client")] == [
+        "map",
+        "chat",
+        "missions",
+        "sitreps",
+        "incidents",
+        "assets",
+        "assignments",
+        "documents",
+        "operators",
+        "dashboard",
+    ]
 
 
 def test_desktop_log_buffer_tracks_warning_count() -> None:
@@ -1433,6 +1464,33 @@ def test_desktop_community_safety_helpers() -> None:
     assert incident_payload["follow_up_needed"] is False
     assert incident_payload["linked_assignment_id"] == 7
 
+    follow_up_payload = build_incident_payload(
+        category="welfare_concern",
+        severity="PRIORITY",
+        narrative="Dog located with a broken leg.",
+        follow_up_needed=True,
+        follow_up_type="medical_support",
+        follow_up_action="Transport the dog to the emergency vet.",
+        follow_up_responsible="Aster",
+        follow_up_due="Immediate",
+        follow_up_urgency="immediate",
+        create_follow_up_assignment=True,
+    )
+    assert follow_up_payload["follow_up_needed"] is True
+    assert follow_up_payload["follow_up_type"] == "medical_support"
+    assert follow_up_payload["create_follow_up_assignment"] is True
+    with pytest.raises(ValueError, match="Follow-up next action"):
+        build_incident_payload(
+            category="welfare_concern",
+            severity="PRIORITY",
+            narrative="Dog located with a broken leg.",
+            follow_up_needed=True,
+            follow_up_type="medical_support",
+            follow_up_responsible="Aster",
+            follow_up_due="Immediate",
+            follow_up_urgency="immediate",
+        )
+
     incident = types.SimpleNamespace(
         id=9,
         category="welfare_concern",
@@ -1441,11 +1499,15 @@ def test_desktop_community_safety_helpers() -> None:
         occurred_at=1_700_000_900,
         location_label="Oak Loop",
         follow_up_needed=True,
+        follow_up_due="Immediate",
+        follow_up_responsible="Aster",
+        follow_up_action="Transport to emergency vet.",
         narrative="Follow-up needed.",
     )
     incident_item = incident_item_from_incident(incident)
     assert incident_item.category_label == "Welfare concern"
     assert incident_item.follow_up_needed is True
+    assert incident_item.follow_up_responsible == "Aster"
 
 
 def test_desktop_event_mapping_refreshes_asset_surfaces() -> None:
@@ -2239,7 +2301,13 @@ def test_map_overlays_project_assets_zones_routes_and_sitreps() -> None:
             lon=-74.95,
         ),
     ]
-    mission = types.SimpleNamespace(id=9, title="Route Mission")
+    mission = types.SimpleNamespace(
+        id=9,
+        title="Route Mission",
+        staging_area="40.030000, -75.020000",
+        demob_point="",
+        key_locations={"medical": "40.040000, -75.010000"},
+    )
     assignment = types.SimpleNamespace(
         id=6,
         title="North Gate watch",
@@ -2271,12 +2339,27 @@ def test_map_overlays_project_assets_zones_routes_and_sitreps() -> None:
         lat=40.02,
         lon=-75.03,
     )
+    incident = types.SimpleNamespace(
+        id=7,
+        title="Injured dog located",
+        category="medical",
+        severity="urgent",
+        follow_up_needed=True,
+        linked_mission_id=9,
+        linked_assignment_id=6,
+        linked_asset_id=None,
+        linked_sitrep_id=None,
+        location_label="North Gate",
+        lat=40.02,
+        lon=-75.03,
+    )
     context = types.SimpleNamespace(
         assets=[asset],
         zones=[zone],
         waypoints=waypoints,
         missions=[mission],
         assignments=[assignment],
+        incidents=[incident],
     )
 
     overlays = build_map_overlays(context, sitrep_entries=[sitrep, native_sitrep])
@@ -2285,6 +2368,9 @@ def test_map_overlays_project_assets_zones_routes_and_sitreps() -> None:
     assert overlays.assignments[0].title == "North Gate watch"
     assert overlays.zones[0].label == "AO"
     assert overlays.routes[0].mission_label == "Route Mission"
+    assert overlays.incidents[0].title == "Injured dog located"
+    assert overlays.incidents[0].linked_assignment_id == 6
+    assert [item.key for item in overlays.mission_locations] == ["staging_area", "medical"]
     assert [point.id for point in overlays.waypoints] == [3, 4]
     assert overlays.sitreps[0].body == "At cache"
     assert overlays.sitreps[0].point == overlays.assets[0].point
@@ -2324,6 +2410,47 @@ def test_map_projection_keeps_coordinates_inside_scene() -> None:
 
     assert 0 <= point.x <= 1000
     assert 0 <= point.y <= 700
+
+
+def test_map_auto_bounds_match_scene_aspect() -> None:
+    context = types.SimpleNamespace(
+        assets=[
+            types.SimpleNamespace(
+                id=1,
+                label="West",
+                category="team",
+                verified=True,
+                mission_id=None,
+                lat=40.0,
+                lon=-90.0,
+            ),
+            types.SimpleNamespace(
+                id=2,
+                label="East",
+                category="team",
+                verified=True,
+                mission_id=None,
+                lat=40.2,
+                lon=-70.0,
+            ),
+        ],
+        zones=[],
+        waypoints=[],
+        missions=[],
+        assignments=[],
+        incidents=[],
+    )
+    overlays = build_map_overlays(
+        context,
+        scene_width=1200.0,
+        scene_height=600.0,
+        scene_margin=0.0,
+    )
+    from talon_desktop.map_tiles import world_pixel
+
+    left, top = world_pixel(overlays.bounds.max_lat, overlays.bounds.min_lon, 20)
+    right, bottom = world_pixel(overlays.bounds.min_lat, overlays.bounds.max_lon, 20)
+    assert ((right - left) / (bottom - top)) == pytest.approx(2.0, rel=0.02)
 
 
 def test_map_projection_round_trips_scene_points() -> None:
@@ -2660,12 +2787,17 @@ def test_document_upload_payload_reads_file_and_strips_description(tmp_path: pat
     path = tmp_path / "brief.txt"
     path.write_bytes(b"field notes")
 
-    payload = build_document_upload_payload(path, description="  daily brief  ")
+    payload = build_document_upload_payload(
+        path,
+        description="  daily brief  ",
+        folder_path="Plans/Day 1",
+    )
 
     assert payload == {
         "raw_filename": "brief.txt",
         "file_data": b"field notes",
         "description": "daily brief",
+        "folder_path": "Plans/Day 1",
     }
 
 
@@ -2676,6 +2808,7 @@ def test_document_item_and_policy_helpers() -> None:
         mime_type="application/vnd.ms-word.document.macroEnabled.12",
         size_bytes=2048,
         description="Macro-capable briefing",
+        folder_path="Plans/Day 1",
         uploaded_by=1,
         uploaded_at=1_700_000_000,
         sha256_hash="abcdef1234567890abcdef1234567890",
@@ -2687,6 +2820,7 @@ def test_document_item_and_policy_helpers() -> None:
     assert item.filename == "status.docm"
     assert item.size_label == "2.0 KB"
     assert item.uploader_callsign == "SERVER"
+    assert item.folder_path == "Plans/Day 1"
     assert item.hash_preview == "abcdef1234567890abcdef12..."
     assert item.is_macro_risk is True
     assert is_macro_risk_filename("brief.xlsx") is True

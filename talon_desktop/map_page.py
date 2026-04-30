@@ -13,8 +13,10 @@ from talon_desktop.map_data import (
     SCENE_WIDTH,
     AssetOverlay,
     AssignmentOverlay,
+    IncidentOverlay,
     MapBounds,
     MapOverlayBundle,
+    MissionLocationOverlay,
     RouteOverlay,
     SitrepOverlay,
     WaypointOverlay,
@@ -36,7 +38,7 @@ from talon_desktop.map_tiles import (
 _log = get_logger("desktop.map")
 
 _ZONE_COLORS = {
-    "AO": QtGui.QColor(52, 152, 219, 70),
+    "AO": QtGui.QColor(231, 76, 60, 76),
     "DANGER": QtGui.QColor(231, 76, 60, 80),
     "RESTRICTED": QtGui.QColor(155, 89, 182, 75),
     "FRIENDLY": QtGui.QColor(46, 204, 113, 70),
@@ -68,13 +70,13 @@ class MapGraphicsView(QtWidgets.QGraphicsView):
         self._last_pan_pos = QtCore.QPoint()
         self._pending_pan_delta = QtCore.QPointF()
         self._pan_timer = QtCore.QTimer(self)
-        self._pan_timer.setInterval(16)
+        self._pan_timer.setInterval(50)
         self._pan_timer.setSingleShot(True)
         self._pan_timer.timeout.connect(self._emit_pending_pan)
         self._pending_zoom_delta = 0
         self._pending_zoom_point = QtCore.QPointF()
         self._zoom_timer = QtCore.QTimer(self)
-        self._zoom_timer.setInterval(24)
+        self._zoom_timer.setInterval(90)
         self._zoom_timer.setSingleShot(True)
         self._zoom_timer.timeout.connect(self._emit_pending_zoom)
 
@@ -336,6 +338,8 @@ class MapPage(QtWidgets.QWidget):
             f"{len(self._bundle.routes)} routes, "
             f"{len(self._bundle.waypoints)} waypoints, "
             f"{len(self._bundle.assignments)} assignments, "
+            f"{len(self._bundle.incidents)} incidents, "
+            f"{len(self._bundle.mission_locations)} mission locations, "
             f"{len(self._bundle.sitreps)} mapped SITREPs."
         )
 
@@ -778,6 +782,7 @@ class MapPage(QtWidgets.QWidget):
             "missions",
             "sitrep_followups",
             "sitreps",
+            "incidents",
             "waypoints",
             "zones",
         }:
@@ -808,8 +813,17 @@ class MapPage(QtWidgets.QWidget):
         visible_asset_ids = {asset.id for asset in assets}
         for asset in assets:
             self._draw_asset(asset)
+        for location in bundle.mission_locations:
+            if (
+                selected_mission_id is not None
+                and location.mission_id != selected_mission_id
+            ):
+                continue
+            self._draw_mission_location(location)
         for assignment in bundle.assignments:
             self._draw_assignment(assignment)
+        for incident in bundle.incidents:
+            self._draw_incident(incident)
         for sitrep in bundle.sitreps:
             if (
                 self._visible_asset_ids is not None
@@ -891,7 +905,7 @@ class MapPage(QtWidgets.QWidget):
         path.moveTo(first.x, first.y)
         for point in route.points[1:]:
             path.lineTo(point.x, point.y)
-        item = self._scene.addPath(path, QtGui.QPen(QtGui.QColor("#f1c40f"), 3))
+        item = self._scene.addPath(path, QtGui.QPen(QtGui.QColor("#3498db"), 3))
         self._register_item(
             item,
             key=f"mission:{route.mission_id}",
@@ -909,8 +923,8 @@ class MapPage(QtWidgets.QWidget):
             waypoint.point.y - 5,
             10,
             10,
-            QtGui.QPen(QtGui.QColor("#f39c12"), 2),
-            QtGui.QBrush(QtGui.QColor("#f1c40f")),
+            QtGui.QPen(QtGui.QColor("#1f6fa8"), 2),
+            QtGui.QBrush(QtGui.QColor("#3498db")),
         )
         self._register_item(
             item,
@@ -974,6 +988,136 @@ class MapPage(QtWidgets.QWidget):
                 f"Priority: {assignment.priority}\n"
                 f"Last check-in: {assignment.last_checkin_state or ''}\n"
                 f"Lat/Lon: {assignment.point.lat:.6f}, {assignment.point.lon:.6f}"
+            ),
+        )
+
+    def _draw_mission_location(self, location: MissionLocationOverlay) -> None:
+        x = location.point.x
+        y = location.point.y
+        pen = QtGui.QPen(QtGui.QColor("#ecf0f1"), 2)
+        key = location.key
+        if key in {"staging_area", "demob_point"}:
+            polygon = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(x, y - 10),
+                    QtCore.QPointF(x + 10, y),
+                    QtCore.QPointF(x, y + 10),
+                    QtCore.QPointF(x - 10, y),
+                ]
+            )
+            item = self._scene.addPolygon(
+                polygon,
+                pen,
+                QtGui.QBrush(QtGui.QColor("#3498db")),
+            )
+        elif key == "medical":
+            item = self._scene.addRect(
+                x - 10,
+                y - 10,
+                20,
+                20,
+                pen,
+                QtGui.QBrush(QtGui.QColor("#e74c3c")),
+            )
+            self._scene.addLine(x - 6, y, x + 6, y, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(18)
+            self._scene.addLine(x, y - 6, x, y + 6, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(18)
+        elif key == "evacuation":
+            item = self._scene.addPolygon(
+                QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(x, y - 12),
+                        QtCore.QPointF(x + 12, y + 10),
+                        QtCore.QPointF(x - 12, y + 10),
+                    ]
+                ),
+                pen,
+                QtGui.QBrush(QtGui.QColor("#f1c40f")),
+            )
+        elif key == "supply":
+            item = self._scene.addPolygon(
+                QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(x - 9, y - 8),
+                        QtCore.QPointF(x + 5, y - 8),
+                        QtCore.QPointF(x + 11, y),
+                        QtCore.QPointF(x + 5, y + 8),
+                        QtCore.QPointF(x - 9, y + 8),
+                        QtCore.QPointF(x - 13, y),
+                    ]
+                ),
+                pen,
+                QtGui.QBrush(QtGui.QColor("#8fbcbb")),
+            )
+        else:
+            item = self._scene.addRect(
+                x - 10,
+                y - 10,
+                20,
+                20,
+                pen,
+                QtGui.QBrush(QtGui.QColor("#1f2930")),
+            )
+            if key == "incident_command_post":
+                self._scene.addLine(x - 4, y + 6, x - 4, y - 8, pen).setZValue(18)
+                self._scene.addPolygon(
+                    QtGui.QPolygonF(
+                        [
+                            QtCore.QPointF(x - 4, y - 8),
+                            QtCore.QPointF(x + 7, y - 5),
+                            QtCore.QPointF(x - 4, y - 2),
+                        ]
+                    ),
+                    pen,
+                    QtGui.QBrush(QtGui.QColor("#e74c3c")),
+                ).setZValue(18)
+        item.setZValue(17)
+        self._register_item(
+            item,
+            key=f"mission-location:{location.mission_id}:{location.key}",
+            label=f"{location.label}: {location.mission_label}",
+            detail=(
+                f"{location.label}\n"
+                f"Mission #{location.mission_id}: {location.mission_label}\n"
+                f"Lat/Lon: {location.point.lat:.6f}, {location.point.lon:.6f}"
+            ),
+        )
+
+    def _draw_incident(self, incident: IncidentOverlay) -> None:
+        severity = incident.severity.lower()
+        color = QtGui.QColor("#e74c3c") if severity in {"critical", "urgent"} else QtGui.QColor("#f1c40f")
+        if not incident.follow_up_needed:
+            color = QtGui.QColor("#8fbcbb")
+        size = 18
+        x = incident.point.x
+        y = incident.point.y + 18
+        polygon = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(x, y - size / 2),
+                QtCore.QPointF(x + size / 2, y + size / 2),
+                QtCore.QPointF(x - size / 2, y + size / 2),
+            ]
+        )
+        item = self._scene.addPolygon(
+            polygon,
+            QtGui.QPen(QtGui.QColor("#0a0f11"), 2),
+            QtGui.QBrush(color),
+        )
+        self._register_item(
+            item,
+            key=f"incident:{incident.id}",
+            label=f"Incident #{incident.id}: {incident.title}",
+            detail=(
+                f"Incident #{incident.id}\n"
+                f"Title: {incident.title}\n"
+                f"Category: {incident.category}\n"
+                f"Severity: {incident.severity}\n"
+                f"Follow-up: {'Required' if incident.follow_up_needed else 'No'}\n"
+                f"Mission: {incident.linked_mission_id or ''}\n"
+                f"Assignment: {incident.linked_assignment_id or ''}\n"
+                f"Asset: {incident.linked_asset_id or ''}\n"
+                f"SITREP: {incident.linked_sitrep_id or ''}\n\n"
+                f"Location: {incident.location_label or 'map point'}\n"
+                f"Lat/Lon: {incident.point.lat:.6f}, {incident.point.lon:.6f}"
             ),
         )
 

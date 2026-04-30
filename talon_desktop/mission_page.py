@@ -1,9 +1,10 @@
 """PySide6 mission list, detail, create, and lifecycle page."""
 from __future__ import annotations
 
+import math
 import typing
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from talon_core import TalonCoreSession
 from talon_core.constants import SITREP_LEVELS
@@ -29,6 +30,240 @@ from talon_desktop.theme import configure_data_table
 _log = get_logger("desktop.missions")
 
 
+class MissionDraftPreview(QtWidgets.QGraphicsView):
+    """Side-by-side preview for mission geometry while the create form is edited."""
+
+    def __init__(self) -> None:
+        self._scene = QtWidgets.QGraphicsScene()
+        super().__init__(self._scene)
+        self.setRenderHints(
+            QtGui.QPainter.Antialiasing | QtGui.QPainter.TextAntialiasing
+        )
+        self.setMinimumWidth(420)
+        self.setMinimumHeight(520)
+        self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
+        self._scene.setSceneRect(0, 0, 420, 520)
+        self.update_from("", "", "", "", {})
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        size = self.viewport().size()
+        self._scene.setSceneRect(0, 0, size.width(), size.height())
+
+    def update_from(
+        self,
+        ao_text: str,
+        route_text: str,
+        staging_area: str,
+        demob_point: str,
+        key_locations: dict[str, str],
+    ) -> None:
+        width = max(1, self.viewport().width() or 420)
+        height = max(1, self.viewport().height() or 520)
+        self._scene.clear()
+        self._scene.setSceneRect(0, 0, width, height)
+        self._draw_background(width, height)
+
+        ao_points = self._parse_points(ao_text, "AO polygon", 3)
+        route_points = self._parse_points(route_text, "Route", 1)
+        named_points: list[tuple[str, str, tuple[float, float]]] = []
+        for label, text, icon in (
+            ("Staging Area", staging_area, "staging_area"),
+            ("Demob Point", demob_point, "demob_point"),
+        ):
+            point = self._parse_single_point(text, label)
+            if point is not None:
+                named_points.append((label, icon, point))
+        for key, label in (
+            ("incident_command_post", "Incident Command Post"),
+            ("staging_area", "Staging Area"),
+            ("medical", "Medical"),
+            ("evacuation", "Evacuation"),
+            ("supply", "Supply"),
+        ):
+            point = self._parse_single_point(key_locations.get(key, ""), label)
+            if point is not None:
+                named_points.append((label, key, point))
+
+        all_points = [*ao_points, *route_points, *(point for _label, _icon, point in named_points)]
+        bounds = self._bounds_for_points(all_points)
+        if len(ao_points) >= 3:
+            polygon = QtGui.QPolygonF(
+                [QtCore.QPointF(*self._project(point, bounds, width, height)) for point in ao_points]
+            )
+            self._scene.addPolygon(
+                polygon,
+                QtGui.QPen(QtGui.QColor("#e74c3c"), 2),
+                QtGui.QBrush(QtGui.QColor(231, 76, 60, 76)),
+            ).setZValue(5)
+        if len(route_points) >= 2:
+            path = QtGui.QPainterPath()
+            first = self._project(route_points[0], bounds, width, height)
+            path.moveTo(*first)
+            for point in route_points[1:]:
+                path.lineTo(*self._project(point, bounds, width, height))
+            self._scene.addPath(path, QtGui.QPen(QtGui.QColor("#3498db"), 3)).setZValue(8)
+        for index, point in enumerate(route_points, start=1):
+            x, y = self._project(point, bounds, width, height)
+            self._scene.addEllipse(
+                x - 5,
+                y - 5,
+                10,
+                10,
+                QtGui.QPen(QtGui.QColor("#ecf0f1"), 1),
+                QtGui.QBrush(QtGui.QColor("#3498db")),
+            ).setZValue(10)
+            self._draw_label(str(index), x + 8, y - 22, QtGui.QColor("#d7ecff"))
+        for label, icon, point in named_points:
+            x, y = self._project(point, bounds, width, height)
+            self._draw_location_icon(icon, x, y)
+            self._draw_label(label, x + 12, y - 22, QtGui.QColor("#ecf0f1"))
+
+    @staticmethod
+    def _parse_points(text: str, label: str, minimum_points: int) -> list[tuple[float, float]]:
+        if not text.strip():
+            return []
+        try:
+            return parse_coordinate_lines(
+                text,
+                label=label,
+                minimum_points=minimum_points,
+                empty_ok=False,
+            )
+        except ValueError:
+            return []
+
+    def _parse_single_point(self, text: str, label: str) -> tuple[float, float] | None:
+        points = self._parse_points(text, label, 1)
+        return points[0] if points else None
+
+    @staticmethod
+    def _bounds_for_points(points: list[tuple[float, float]]) -> tuple[float, float, float, float]:
+        if not points:
+            return 39.95, 40.05, -75.05, -74.95
+        lats = [lat for lat, _lon in points]
+        lons = [lon for _lat, lon in points]
+        min_lat, max_lat = min(lats), max(lats)
+        min_lon, max_lon = min(lons), max(lons)
+        if math.isclose(min_lat, max_lat):
+            min_lat -= 0.01
+            max_lat += 0.01
+        if math.isclose(min_lon, max_lon):
+            min_lon -= 0.01
+            max_lon += 0.01
+        lat_pad = (max_lat - min_lat) * 0.12
+        lon_pad = (max_lon - min_lon) * 0.12
+        return min_lat - lat_pad, max_lat + lat_pad, min_lon - lon_pad, max_lon + lon_pad
+
+    @staticmethod
+    def _project(
+        point: tuple[float, float],
+        bounds: tuple[float, float, float, float],
+        width: float,
+        height: float,
+    ) -> tuple[float, float]:
+        min_lat, max_lat, min_lon, max_lon = bounds
+        margin = 34.0
+        usable_w = max(1.0, width - margin * 2)
+        usable_h = max(1.0, height - margin * 2)
+        lat, lon = point
+        x = margin + ((lon - min_lon) / max(0.000001, max_lon - min_lon)) * usable_w
+        y = margin + ((max_lat - lat) / max(0.000001, max_lat - min_lat)) * usable_h
+        return x, y
+
+    def _draw_background(self, width: int, height: int) -> None:
+        self._scene.addRect(
+            0,
+            0,
+            width,
+            height,
+            QtGui.QPen(QtGui.QColor("#2f3437")),
+            QtGui.QBrush(QtGui.QColor("#101619")),
+        ).setZValue(-20)
+        pen = QtGui.QPen(QtGui.QColor(236, 240, 241, 30))
+        for x in range(80, int(width), 80):
+            self._scene.addLine(x, 0, x, height, pen).setZValue(-10)
+        for y in range(80, int(height), 80):
+            self._scene.addLine(0, y, width, y, pen).setZValue(-10)
+
+    def _draw_location_icon(self, icon: str, x: float, y: float) -> None:
+        pen = QtGui.QPen(QtGui.QColor("#ecf0f1"), 2)
+        brush = QtGui.QBrush(QtGui.QColor("#1f2930"))
+        if icon in {"staging_area", "demob_point"}:
+            polygon = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(x, y - 10),
+                    QtCore.QPointF(x + 10, y),
+                    QtCore.QPointF(x, y + 10),
+                    QtCore.QPointF(x - 10, y),
+                ]
+            )
+            self._scene.addPolygon(polygon, pen, QtGui.QBrush(QtGui.QColor("#3498db"))).setZValue(12)
+            return
+        if icon == "medical":
+            self._scene.addRect(x - 10, y - 10, 20, 20, pen, QtGui.QBrush(QtGui.QColor("#e74c3c"))).setZValue(12)
+            self._scene.addLine(x - 6, y, x + 6, y, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(13)
+            self._scene.addLine(x, y - 6, x, y + 6, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(13)
+            return
+        if icon == "evacuation":
+            polygon = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(x, y - 12),
+                    QtCore.QPointF(x + 12, y + 10),
+                    QtCore.QPointF(x - 12, y + 10),
+                ]
+            )
+            self._scene.addPolygon(polygon, pen, QtGui.QBrush(QtGui.QColor("#f1c40f"))).setZValue(12)
+            return
+        if icon == "supply":
+            polygon = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(x - 9, y - 8),
+                    QtCore.QPointF(x + 5, y - 8),
+                    QtCore.QPointF(x + 11, y),
+                    QtCore.QPointF(x + 5, y + 8),
+                    QtCore.QPointF(x - 9, y + 8),
+                    QtCore.QPointF(x - 13, y),
+                ]
+            )
+            self._scene.addPolygon(polygon, pen, QtGui.QBrush(QtGui.QColor("#8fbcbb"))).setZValue(12)
+            return
+        self._scene.addRect(x - 10, y - 10, 20, 20, pen, brush).setZValue(12)
+        if icon == "incident_command_post":
+            flag_pen = QtGui.QPen(QtGui.QColor("#ecf0f1"), 2)
+            self._scene.addLine(x - 4, y + 6, x - 4, y - 8, flag_pen).setZValue(13)
+            self._scene.addPolygon(
+                QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(x - 4, y - 8),
+                        QtCore.QPointF(x + 7, y - 5),
+                        QtCore.QPointF(x - 4, y - 2),
+                    ]
+                ),
+                flag_pen,
+                QtGui.QBrush(QtGui.QColor("#e74c3c")),
+            ).setZValue(13)
+
+    def _draw_label(self, text: str, x: float, y: float, color: QtGui.QColor) -> None:
+        label = self._scene.addText(text)
+        label.setDefaultTextColor(color)
+        rect = label.boundingRect()
+        bg = self._scene.addRect(
+            x - 4,
+            y - 2,
+            rect.width() + 8,
+            rect.height() + 4,
+            QtGui.QPen(QtCore.Qt.NoPen),
+            QtGui.QBrush(QtGui.QColor(10, 15, 17, 215)),
+        )
+        bg.setZValue(14)
+        label.setPos(x, y)
+        label.setZValue(15)
+
+
 class MissionCreateDialog(QtWidgets.QDialog):
     """Extended mission create workflow with assets, timing, map geometry, and support fields."""
 
@@ -43,27 +278,31 @@ class MissionCreateDialog(QtWidgets.QDialog):
         self._key_location_fields: dict[str, QtWidgets.QLineEdit] = {}
         self._constraint_checks: dict[str, QtWidgets.QCheckBox] = {}
         self.setWindowTitle("Mission")
-        self.setMinimumSize(820, 720)
+        self.setMinimumSize(1160, 760)
 
         self.title_field = QtWidgets.QLineEdit()
         self.description_field = QtWidgets.QTextEdit()
         self.description_field.setFixedHeight(96)
         self.type_combo = QtWidgets.QComboBox()
-        self.type_combo.setEditable(True)
         for mission_type in (
-            "Search / Rescue",
-            "Medical",
+            "Search and Rescue",
+            "Medical Support",
             "Logistics",
             "Damage Assessment",
             "Security",
             "Communications",
+            "Evacuation",
+            "Supply",
+            "Animal Recovery",
             "Custom",
         ):
             self.type_combo.addItem(mission_type, mission_type)
         self.priority_combo = QtWidgets.QComboBox()
         for level in SITREP_LEVELS:
             self.priority_combo.addItem(level, level)
-        self.lead_field = QtWidgets.QLineEdit()
+        self.lead_combo = QtWidgets.QComboBox()
+        self.lead_combo.setEditable(True)
+        self._load_leads()
         self.organization_field = QtWidgets.QLineEdit()
 
         self.activation_enabled = QtWidgets.QCheckBox("Set activation time")
@@ -72,7 +311,16 @@ class MissionCreateDialog(QtWidgets.QDialog):
         self.activation_time.setDisplayFormat("yyyy-MM-dd HH:mm")
         self.activation_time.setEnabled(False)
         self.activation_enabled.toggled.connect(self.activation_time.setEnabled)
-        self.operation_window_field = QtWidgets.QLineEdit()
+        self.operation_window_enabled = QtWidgets.QCheckBox("Set operation window")
+        now = QtCore.QDateTime.currentDateTime()
+        self.operation_start_time = QtWidgets.QDateTimeEdit(now)
+        self.operation_end_time = QtWidgets.QDateTimeEdit(now.addSecs(8 * 3600))
+        for editor in (self.operation_start_time, self.operation_end_time):
+            editor.setCalendarPopup(True)
+            editor.setDisplayFormat("yyyy-MM-dd HH:mm")
+            editor.setEnabled(False)
+        self.operation_window_enabled.toggled.connect(self.operation_start_time.setEnabled)
+        self.operation_window_enabled.toggled.connect(self.operation_end_time.setEnabled)
         self.max_duration_field = QtWidgets.QLineEdit()
         self.staging_area_field = QtWidgets.QLineEdit()
         self.demob_point_field = QtWidgets.QLineEdit()
@@ -108,6 +356,8 @@ class MissionCreateDialog(QtWidgets.QDialog):
         tabs.addTab(self._scroll_page(self._assets_tab()), "Assets")
         tabs.addTab(self._scroll_page(self._area_tab()), "Area / Route")
         tabs.addTab(self._scroll_page(self._support_tab()), "Support")
+        self.preview = MissionDraftPreview()
+        self._wire_preview_updates()
 
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setWordWrap(True)
@@ -121,10 +371,17 @@ class MissionCreateDialog(QtWidgets.QDialog):
         button_row.addWidget(self.cancel_button)
         button_row.addWidget(self.save_button)
 
+        content = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        content.addWidget(tabs)
+        content.addWidget(self.preview)
+        content.setStretchFactor(0, 3)
+        content.setStretchFactor(1, 2)
+
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(tabs, stretch=1)
+        layout.addWidget(content, stretch=1)
         layout.addWidget(self.status_label)
         layout.addLayout(button_row)
+        QtCore.QTimer.singleShot(0, self._update_preview)
 
     def payload(self) -> dict[str, object]:
         return build_create_payload(
@@ -133,12 +390,12 @@ class MissionCreateDialog(QtWidgets.QDialog):
             asset_ids=self.selected_asset_ids(),
             mission_type=self.type_combo.currentText(),
             priority=str(self.priority_combo.currentData()),
-            lead_coordinator=self.lead_field.text(),
+            lead_coordinator=self.lead_combo.currentText(),
             organization=self.organization_field.text(),
             ao_text=self.ao_field.toPlainText(),
             route_text=self.route_field.toPlainText(),
             activation_time=self._activation_text(),
-            operation_window=self.operation_window_field.text(),
+            operation_window=self._operation_window_text(),
             max_duration=self.max_duration_field.text(),
             staging_area=self.staging_area_field.text(),
             demob_point=self.demob_point_field.text(),
@@ -191,6 +448,36 @@ class MissionCreateDialog(QtWidgets.QDialog):
             item.setCheckState(QtCore.Qt.Unchecked)
             self.assets_list.addItem(item)
 
+    def _load_leads(self) -> None:
+        self.lead_combo.addItem("", "")
+        try:
+            operators = self._core.read_model("operators.list")
+        except Exception as exc:
+            _log.warning("Could not load operators for mission lead dropdown: %s", exc)
+            operators = []
+        busy_operator_ids: set[int] = set()
+        try:
+            board = self._core.read_model("assignments.board")
+            for assignment in board.get("assignments", []):
+                if getattr(assignment, "mission_id", None) is None:
+                    continue
+                if getattr(assignment, "status", "") in {"completed", "aborted"}:
+                    continue
+                for operator_id in getattr(assignment, "assigned_operator_ids", []) or []:
+                    busy_operator_ids.add(int(operator_id))
+        except Exception as exc:
+            _log.debug("Could not filter busy mission operators: %s", exc)
+        for operator in operators:
+            try:
+                operator_id = int(getattr(operator, "id"))
+            except (TypeError, ValueError):
+                continue
+            if operator_id in busy_operator_ids:
+                continue
+            callsign = str(getattr(operator, "callsign", "") or "").strip()
+            if callsign:
+                self.lead_combo.addItem(callsign, callsign)
+
     def _overview_tab(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(page)
@@ -198,7 +485,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         form.addRow("Description", self.description_field)
         form.addRow("Type", self.type_combo)
         form.addRow("Priority", self.priority_combo)
-        form.addRow("Lead", self.lead_field)
+        form.addRow("Lead", self.lead_combo)
         form.addRow("Organization", self.organization_field)
         return page
 
@@ -209,7 +496,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         activation_row.addWidget(self.activation_enabled)
         activation_row.addWidget(self.activation_time, stretch=1)
         form.addRow("Activation", activation_row)
-        form.addRow("Operation Window", self.operation_window_field)
+        form.addRow("Operation Window", self._operation_window_row())
         form.addRow("Max Duration", self.max_duration_field)
         form.addRow("Staging Area", self._point_row(self.staging_area_field, "Staging Area"))
         form.addRow("Demob Point", self._point_row(self.demob_point_field, "Demob Point"))
@@ -300,6 +587,18 @@ class MissionCreateDialog(QtWidgets.QDialog):
         layout.addWidget(button)
         return container
 
+    def _operation_window_row(self) -> QtWidgets.QWidget:
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QGridLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(8)
+        layout.addWidget(self.operation_window_enabled, 0, 0, 1, 2)
+        layout.addWidget(QtWidgets.QLabel("Start"), 1, 0)
+        layout.addWidget(self.operation_start_time, 1, 1)
+        layout.addWidget(QtWidgets.QLabel("End"), 2, 0)
+        layout.addWidget(self.operation_end_time, 2, 1)
+        return container
+
     def _draw_ao(self) -> None:
         points = self._parse_existing_points(self.ao_field, "AO polygon", 3)
         if points is None:
@@ -315,6 +614,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         if selected is not None:
             self.ao_field.setPlainText(format_coordinate_lines(selected))
             self.status_label.clear()
+            self._update_preview()
 
     def _draw_route(self) -> None:
         points = self._parse_existing_points(self.route_field, "Route", 1)
@@ -331,6 +631,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         if selected is not None:
             self.route_field.setPlainText(format_coordinate_lines(selected))
             self.status_label.clear()
+            self._update_preview()
 
     def _pick_point(self, field: QtWidgets.QLineEdit, title: str) -> None:
         initial_lat = None
@@ -360,6 +661,27 @@ class MissionCreateDialog(QtWidgets.QDialog):
             return
         field.setText(format_coordinate(*selected))
         self.status_label.clear()
+        self._update_preview()
+
+    def _wire_preview_updates(self) -> None:
+        self.ao_field.textChanged.connect(self._update_preview)
+        self.route_field.textChanged.connect(self._update_preview)
+        self.staging_area_field.textChanged.connect(self._update_preview)
+        self.demob_point_field.textChanged.connect(self._update_preview)
+        for field in self._key_location_fields.values():
+            field.textChanged.connect(self._update_preview)
+
+    def _update_preview(self) -> None:
+        self.preview.update_from(
+            self.ao_field.toPlainText(),
+            self.route_field.toPlainText(),
+            self.staging_area_field.text(),
+            self.demob_point_field.text(),
+            {
+                key: field.text()
+                for key, field in self._key_location_fields.items()
+            },
+        )
 
     def _parse_existing_points(
         self,
@@ -469,6 +791,18 @@ class MissionCreateDialog(QtWidgets.QDialog):
         if not self.activation_enabled.isChecked():
             return ""
         return self.activation_time.dateTime().toString("yyyy-MM-dd HH:mm")
+
+    def _operation_window_text(self) -> str:
+        if not self.operation_window_enabled.isChecked():
+            return ""
+        start = self.operation_start_time.dateTime()
+        end = self.operation_end_time.dateTime()
+        if end < start:
+            raise ValueError("Operation window end must be after start.")
+        return (
+            f"{start.toString('yyyy-MM-dd HH:mm')} - "
+            f"{end.toString('yyyy-MM-dd HH:mm')}"
+        )
 
     def _constraints(self) -> list[str]:
         values = [

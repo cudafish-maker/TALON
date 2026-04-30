@@ -1,6 +1,7 @@
 """Client sync helper components used by ClientSyncManager."""
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import time
@@ -217,11 +218,94 @@ class ClientDocumentTransfers:
 
     def handle_response(self, msg: dict) -> None:
         if msg.get("ok"):
+            if "payload" in msg:
+                self._handle_inline_response(msg)
             return
         self._resolve_request(
             msg.get("document_id"),
             error=msg.get("error") or "Server could not provide the requested document.",
         )
+
+    def _handle_inline_response(self, msg: dict) -> None:
+        record = msg.get("record")
+        if not isinstance(record, dict):
+            self._resolve_request(
+                msg.get("document_id"),
+                error="Document response missing record metadata.",
+            )
+            return
+        try:
+            doc_id = int(record.get("id"))
+        except (TypeError, ValueError):
+            self._resolve_request(
+                msg.get("document_id"),
+                error="Document response missing valid id.",
+            )
+            return
+
+        with self._manager._document_request_lock:
+            if doc_id not in self._manager._pending_document_requests:
+                self._log.debug("Ignoring unsolicited inline document id=%s", doc_id)
+                return
+
+        payload = msg.get("payload")
+        if not isinstance(payload, str):
+            self._resolve_request(
+                doc_id,
+                error="Document response payload is invalid.",
+            )
+            return
+        if msg.get("encoding") not in {None, "base64"}:
+            self._resolve_request(
+                doc_id,
+                error="Document response encoding is unsupported.",
+            )
+            return
+
+        from talon_core.constants import MAX_DOCUMENT_SIZE_BYTES
+
+        try:
+            plaintext = base64.b64decode(payload, validate=True)
+        except Exception as exc:
+            self._resolve_request(
+                doc_id,
+                error=f"Could not decode document transfer: {exc}",
+            )
+            return
+        if len(plaintext) > MAX_DOCUMENT_SIZE_BYTES:
+            self._resolve_request(
+                doc_id,
+                error="Document transfer exceeds the maximum allowed size.",
+            )
+            return
+
+        from talon_core.config import get_document_storage_path
+        from talon_core.documents import cache_document_download
+
+        storage_root = get_document_storage_path(self._manager._cfg)
+        try:
+            self._manager._apply_record("documents", record, badge=False)
+            with self._manager._lock:
+                cache_document_download(
+                    self._manager._conn,
+                    self._manager._db_key,
+                    storage_root,
+                    doc_id,
+                    plaintext,
+                )
+        except Exception as exc:
+            self._resolve_request(
+                doc_id,
+                error=f"Could not cache downloaded document: {exc}",
+            )
+            return
+
+        self._log.info(
+            "Inline document received from server: id=%s bytes=%d",
+            doc_id,
+            len(plaintext),
+        )
+        self._resolve_request(doc_id, payload=bytes(plaintext))
 
     def handle_resource(self, resource) -> None:
         manager = self._manager

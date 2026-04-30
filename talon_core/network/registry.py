@@ -10,6 +10,8 @@ from talon_core.community_safety import (
     ASSIGNMENT_TYPES,
     CHECKIN_STATES,
     INCIDENT_CATEGORIES,
+    INCIDENT_FOLLOW_UP_TYPES,
+    INCIDENT_FOLLOW_UP_URGENCIES,
 )
 from talon_core.crypto.fields import decrypt_field, encrypt_field
 from talon_core.sitrep import (
@@ -152,6 +154,7 @@ TABLES: dict[str, SyncedTable] = {
         ui_refresh_targets=_fields("assignments", "mission", "map", "main"),
         predelete_sql=(
             "UPDATE incidents SET linked_assignment_id = NULL WHERE linked_assignment_id = ?",
+            "UPDATE incidents SET follow_up_assignment_id = NULL WHERE follow_up_assignment_id = ?",
             "UPDATE sitreps SET assignment_id = NULL WHERE assignment_id = ?",
             "DELETE FROM checkins WHERE assignment_id = ?",
         ),
@@ -626,6 +629,17 @@ def _client_push_dto(
     if table_name == "checkins":
         assignment_id = _required_int(record.get("assignment_id"), "assignment_id")
         _require_fk(conn, "assignments", assignment_id)
+        if operator_id is None:
+            raise ValueError("check-in operator is required")
+        row = conn.execute(
+            "SELECT assigned_operator_ids FROM assignments WHERE id = ?",
+            (assignment_id,),
+        ).fetchone()
+        assigned_ids = set()
+        if row is not None and row[0]:
+            assigned_ids = {int(value) for value in json.loads(row[0] or "[]")}
+        if assigned_ids and int(operator_id) not in assigned_ids:
+            raise ValueError("operator is not assigned to this assignment")
         state = _str_field(record, "state")
         if state not in CHECKIN_STATES:
             raise ValueError(f"unknown check-in state: {state!r}")
@@ -649,12 +663,41 @@ def _client_push_dto(
             raise ValueError(f"unknown incident severity: {severity!r}")
         mission_id = _optional_int(record.get("linked_mission_id"), "linked_mission_id")
         assignment_id = _optional_int(record.get("linked_assignment_id"), "linked_assignment_id")
+        follow_up_assignment_id = _optional_int(
+            record.get("follow_up_assignment_id"),
+            "follow_up_assignment_id",
+        )
         asset_id = _optional_int(record.get("linked_asset_id"), "linked_asset_id")
         sitrep_id = _optional_int(record.get("linked_sitrep_id"), "linked_sitrep_id")
         _require_fk(conn, "missions", mission_id)
         _require_fk(conn, "assignments", assignment_id)
+        _require_fk(conn, "assignments", follow_up_assignment_id)
         _require_fk(conn, "assets", asset_id)
         _require_fk(conn, "sitreps", sitrep_id)
+        follow_up_needed = bool(record.get("follow_up_needed"))
+        if follow_up_needed:
+            follow_up_type = str(record.get("follow_up_type") or "other").strip()
+            follow_up_urgency = str(record.get("follow_up_urgency") or "routine").strip()
+            follow_up_action = str(record.get("follow_up_action") or "").strip()
+            follow_up_responsible = str(record.get("follow_up_responsible") or "").strip()
+            follow_up_due = str(record.get("follow_up_due") or "").strip()
+            if follow_up_type not in INCIDENT_FOLLOW_UP_TYPES:
+                raise ValueError(f"unknown incident follow-up type: {follow_up_type!r}")
+            if follow_up_urgency not in INCIDENT_FOLLOW_UP_URGENCIES:
+                raise ValueError(f"unknown incident follow-up urgency: {follow_up_urgency!r}")
+            if not follow_up_action:
+                raise ValueError("incident follow-up action is required")
+            if not follow_up_responsible:
+                raise ValueError("incident follow-up responsible party is required")
+            if not follow_up_due:
+                raise ValueError("incident follow-up due time is required")
+        else:
+            follow_up_type = ""
+            follow_up_action = ""
+            follow_up_responsible = ""
+            follow_up_due = ""
+            follow_up_urgency = ""
+            follow_up_assignment_id = None
         return {
             "category": category,
             "severity": severity,
@@ -666,7 +709,13 @@ def _client_push_dto(
             "narrative": str(record.get("narrative") or "").strip(),
             "actions_taken": str(record.get("actions_taken") or "").strip(),
             "outcome": str(record.get("outcome") or "").strip(),
-            "follow_up_needed": 1 if bool(record.get("follow_up_needed")) else 0,
+            "follow_up_needed": 1 if follow_up_needed else 0,
+            "follow_up_type": follow_up_type,
+            "follow_up_action": follow_up_action,
+            "follow_up_responsible": follow_up_responsible,
+            "follow_up_due": follow_up_due,
+            "follow_up_urgency": follow_up_urgency,
+            "follow_up_assignment_id": follow_up_assignment_id,
             "notified_services": str(record.get("notified_services") or "").strip(),
             "linked_mission_id": mission_id,
             "linked_assignment_id": assignment_id,

@@ -82,6 +82,30 @@ class AssignmentOverlay:
 
 
 @dataclasses.dataclass(frozen=True)
+class IncidentOverlay:
+    id: int
+    title: str
+    category: str
+    severity: str
+    follow_up_needed: bool
+    linked_mission_id: int | None
+    linked_assignment_id: int | None
+    linked_asset_id: int | None
+    linked_sitrep_id: int | None
+    location_label: str
+    point: ProjectedPoint
+
+
+@dataclasses.dataclass(frozen=True)
+class MissionLocationOverlay:
+    mission_id: int
+    mission_label: str
+    key: str
+    label: str
+    point: ProjectedPoint
+
+
+@dataclasses.dataclass(frozen=True)
 class MapOverlayBundle:
     bounds: MapBounds
     assets: tuple[AssetOverlay, ...]
@@ -90,6 +114,8 @@ class MapOverlayBundle:
     routes: tuple[RouteOverlay, ...]
     sitreps: tuple[SitrepOverlay, ...]
     assignments: tuple[AssignmentOverlay, ...]
+    incidents: tuple[IncidentOverlay, ...]
+    mission_locations: tuple[MissionLocationOverlay, ...]
 
 
 SCENE_WIDTH = 1000.0
@@ -117,6 +143,13 @@ def build_map_overlays(
     waypoints = list(_field(context, "waypoints", default=[]) or [])
     missions = list(_field(context, "missions", default=[]) or [])
     assignments = list(_field(context, "assignments", default=[]) or [])
+    incidents = list(_field(context, "incidents", default=[]) or [])
+    selected_mission_id = _optional_int(_field(context, "selected_mission_id", default=None))
+    overlay_missions = [
+        mission
+        for mission in missions
+        if selected_mission_id is None or int(_field(mission, "id")) == selected_mission_id
+    ]
 
     if bounds is None:
         bounds = bounds_for_context(
@@ -124,7 +157,15 @@ def build_map_overlays(
             zones=zones,
             waypoints=waypoints,
             assignments=assignments,
+            incidents=incidents,
+            missions=overlay_missions,
             sitrep_entries=sitrep_entries,
+        )
+        bounds = fit_bounds_to_scene_aspect(
+            bounds,
+            scene_width=scene_width,
+            scene_height=scene_height,
+            scene_margin=scene_margin,
         )
     mission_labels = {
         int(_field(mission, "id")): str(_field(mission, "title", default="Mission"))
@@ -239,6 +280,28 @@ def build_map_overlays(
         )
         if overlay is not None:
             sitrep_items.append(overlay)
+    sitreps_by_id = {item.id: item for item in sitrep_items}
+    incident_items = []
+    for incident in incidents:
+        overlay = _incident_overlay(
+            incident,
+            asset_by_id,
+            assignment_by_id,
+            sitreps_by_id,
+            bounds=bounds,
+            scene_width=scene_width,
+            scene_height=scene_height,
+            scene_margin=scene_margin,
+        )
+        if overlay is not None:
+            incident_items.append(overlay)
+    mission_location_items = _mission_location_overlays(
+        overlay_missions,
+        bounds=bounds,
+        scene_width=scene_width,
+        scene_height=scene_height,
+        scene_margin=scene_margin,
+    )
 
     return MapOverlayBundle(
         bounds=bounds,
@@ -248,6 +311,8 @@ def build_map_overlays(
         routes=routes,
         sitreps=tuple(sitrep_items),
         assignments=assignment_overlays,
+        incidents=tuple(incident_items),
+        mission_locations=mission_location_items,
     )
 
 
@@ -257,6 +322,8 @@ def bounds_for_context(
     zones: typing.Iterable[object],
     waypoints: typing.Iterable[object],
     assignments: typing.Iterable[object] = (),
+    incidents: typing.Iterable[object] = (),
+    missions: typing.Iterable[object] = (),
     sitrep_entries: typing.Iterable[object] = (),
 ) -> MapBounds:
     coords: list[tuple[float, float]] = []
@@ -271,6 +338,11 @@ def bounds_for_context(
     for assignment in assignments:
         if _has_coordinates(assignment):
             coords.append((float(_field(assignment, "lat")), float(_field(assignment, "lon"))))
+    for incident in incidents:
+        if _has_coordinates(incident):
+            coords.append((float(_field(incident, "lat")), float(_field(incident, "lon"))))
+    for mission in missions:
+        coords.extend(_mission_location_points(mission))
     for entry in sitrep_entries:
         sitrep = entry[0] if isinstance(entry, tuple) else entry
         if _has_coordinates(sitrep):
@@ -299,6 +371,59 @@ def bounds_for_context(
     )
 
 
+def fit_bounds_to_scene_aspect(
+    bounds: MapBounds,
+    *,
+    scene_width: float = SCENE_WIDTH,
+    scene_height: float = SCENE_HEIGHT,
+    scene_margin: float = SCENE_MARGIN,
+) -> MapBounds:
+    """Expand auto-fit bounds so map tiles do not stretch to the viewport."""
+    from talon_desktop.map_tiles import lat_lon_for_world_pixel, normalise_bounds, world_pixel
+
+    bounds = normalise_bounds(bounds)
+    usable_width, usable_height = _usable_scene_size(
+        scene_width,
+        scene_height,
+        scene_margin,
+    )
+    target_aspect = usable_width / usable_height
+    projection_zoom = 20
+    world_size = 256 * (2**projection_zoom)
+    left, top = world_pixel(bounds.max_lat, bounds.min_lon, projection_zoom)
+    right, bottom = world_pixel(bounds.min_lat, bounds.max_lon, projection_zoom)
+    span_x = max(1.0, right - left)
+    span_y = max(1.0, bottom - top)
+    current_aspect = span_x / span_y
+    if abs(current_aspect - target_aspect) < 0.01:
+        return bounds
+
+    if current_aspect < target_aspect:
+        span_x = span_y * target_aspect
+    else:
+        span_y = span_x / target_aspect
+    span_x = min(world_size, max(1.0, span_x))
+    span_y = min(world_size, max(1.0, span_y))
+    center_x = (left + right) / 2.0
+    center_y = (top + bottom) / 2.0
+    left = _clamp(center_x - (span_x / 2.0), 0.0, world_size - span_x)
+    top = _clamp(center_y - (span_y / 2.0), 0.0, world_size - span_y)
+    max_lat, min_lon = lat_lon_for_world_pixel(left, top, projection_zoom)
+    min_lat, max_lon = lat_lon_for_world_pixel(
+        left + span_x,
+        top + span_y,
+        projection_zoom,
+    )
+    return normalise_bounds(
+        MapBounds(
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lon=min_lon,
+            max_lon=max_lon,
+        )
+    )
+
+
 def project_lat_lon(
     bounds: MapBounds,
     lat: float,
@@ -319,6 +444,86 @@ def project_lat_lon(
         scene_margin=scene_margin,
     )
     return ProjectedPoint(lat=lat, lon=lon, x=x, y=y)
+
+
+def _mission_location_overlays(
+    missions: typing.Iterable[object],
+    *,
+    bounds: MapBounds,
+    scene_width: float,
+    scene_height: float,
+    scene_margin: float,
+) -> tuple[MissionLocationOverlay, ...]:
+    items: list[MissionLocationOverlay] = []
+    for mission in missions:
+        mission_id = int(_field(mission, "id"))
+        mission_label = str(_field(mission, "title", default=f"Mission {mission_id}"))
+        for key, label, point in _mission_location_entries(mission):
+            items.append(
+                MissionLocationOverlay(
+                    mission_id=mission_id,
+                    mission_label=mission_label,
+                    key=key,
+                    label=label,
+                    point=project_lat_lon(
+                        bounds,
+                        point[0],
+                        point[1],
+                        scene_width=scene_width,
+                        scene_height=scene_height,
+                        scene_margin=scene_margin,
+                    ),
+                )
+            )
+    return tuple(items)
+
+
+def _incident_overlay(
+    incident: object,
+    assets_by_id: dict[int, AssetOverlay],
+    assignments_by_id: dict[int, AssignmentOverlay],
+    sitreps_by_id: dict[int, SitrepOverlay],
+    *,
+    bounds: MapBounds,
+    scene_width: float,
+    scene_height: float,
+    scene_margin: float,
+) -> IncidentOverlay | None:
+    asset_id = _optional_int(_field(incident, "linked_asset_id", default=None))
+    assignment_id = _optional_int(_field(incident, "linked_assignment_id", default=None))
+    sitrep_id = _optional_int(_field(incident, "linked_sitrep_id", default=None))
+    lat = _optional_float(_field(incident, "lat", default=None))
+    lon = _optional_float(_field(incident, "lon", default=None))
+    if lat is not None and lon is not None:
+        point = project_lat_lon(
+            bounds,
+            lat,
+            lon,
+            scene_width=scene_width,
+            scene_height=scene_height,
+            scene_margin=scene_margin,
+        )
+    elif asset_id is not None and asset_id in assets_by_id:
+        point = assets_by_id[asset_id].point
+    elif assignment_id is not None and assignment_id in assignments_by_id:
+        point = assignments_by_id[assignment_id].point
+    elif sitrep_id is not None and sitrep_id in sitreps_by_id:
+        point = sitreps_by_id[sitrep_id].point
+    else:
+        return None
+    return IncidentOverlay(
+        id=int(_field(incident, "id")),
+        title=str(_field(incident, "title", default="Incident")),
+        category=str(_field(incident, "category", default="other")),
+        severity=str(_field(incident, "severity", default="routine")),
+        follow_up_needed=bool(_field(incident, "follow_up_needed", default=False)),
+        linked_mission_id=_optional_int(_field(incident, "linked_mission_id", default=None)),
+        linked_assignment_id=assignment_id,
+        linked_asset_id=asset_id,
+        linked_sitrep_id=sitrep_id,
+        location_label=str(_field(incident, "location_label", default="") or ""),
+        point=point,
+    )
 
 
 def _sitrep_overlay(
@@ -402,3 +607,68 @@ def _text(value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _mission_location_points(mission: object) -> list[tuple[float, float]]:
+    return [point for _key, _label, point in _mission_location_entries(mission)]
+
+
+def _mission_location_entries(
+    mission: object,
+) -> list[tuple[str, str, tuple[float, float]]]:
+    entries: list[tuple[str, str, tuple[float, float]]] = []
+    for key, label, value in (
+        ("staging_area", "Staging Area", _field(mission, "staging_area", default="")),
+        ("demob_point", "Demob Point", _field(mission, "demob_point", default="")),
+    ):
+        point = _coordinate_from_text(value)
+        if point is not None:
+            entries.append((key, label, point))
+
+    locations = _field(mission, "key_locations", default={}) or {}
+    if isinstance(locations, dict):
+        for key, label in (
+            ("incident_command_post", "Incident Command Post"),
+            ("staging_area", "Staging Area"),
+            ("medical", "Medical"),
+            ("evacuation", "Evacuation"),
+            ("supply", "Supply"),
+        ):
+            point = _coordinate_from_text(locations.get(key))
+            if point is not None:
+                entries.append((key, label, point))
+    return entries
+
+
+def _coordinate_from_text(value: object) -> tuple[float, float] | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parts = [part.strip() for part in text.replace(" ", ",").split(",") if part.strip()]
+    if len(parts) != 2:
+        return None
+    try:
+        lat = float(parts[0])
+        lon = float(parts[1])
+    except ValueError:
+        return None
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return None
+    return lat, lon
+
+
+def _usable_scene_size(
+    scene_width: float,
+    scene_height: float,
+    scene_margin: float,
+) -> tuple[float, float]:
+    width = max(1.0, float(scene_width))
+    height = max(1.0, float(scene_height))
+    margin = max(0.0, min(float(scene_margin), (min(width, height) / 2.0) - 0.5))
+    return max(1.0, width - (margin * 2.0)), max(1.0, height - (margin * 2.0))
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    if maximum < minimum:
+        return minimum
+    return max(minimum, min(maximum, value))

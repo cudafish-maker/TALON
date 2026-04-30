@@ -10,6 +10,8 @@ from talon_core.community_safety import (
     ASSIGNMENT_TYPES,
     CHECKIN_STATES,
     INCIDENT_CATEGORIES,
+    INCIDENT_FOLLOW_UP_TYPES,
+    INCIDENT_FOLLOW_UP_URGENCIES,
 )
 from talon_core.constants import SITREP_LEVELS
 from talon_core.utils.formatting import format_ts
@@ -58,6 +60,24 @@ INCIDENT_CATEGORY_LABELS: dict[str, str] = {
     "other": "Other",
 }
 
+INCIDENT_FOLLOW_UP_TYPE_LABELS: dict[str, str] = {
+    "welfare_check": "Welfare check",
+    "transport": "Transport",
+    "medical_support": "Medical support",
+    "notify_party": "Notify party",
+    "outside_service": "Outside service",
+    "documentation": "Documentation",
+    "revisit_location": "Revisit location",
+    "closeout_review": "Closeout review",
+    "other": "Other",
+}
+
+INCIDENT_FOLLOW_UP_URGENCY_LABELS: dict[str, str] = {
+    "routine": "Routine",
+    "priority": "Priority",
+    "immediate": "Immediate",
+}
+
 ACTIVE_ASSIGNMENT_STATUSES = frozenset({"planned", "active", "paused", "needs_support"})
 SUPPORT_STATES = frozenset({"need_backup", "medical_support", "unsafe_deescalating", "emergency"})
 
@@ -102,6 +122,9 @@ class DesktopIncidentItem:
     occurred_label: str
     location_label: str
     follow_up_needed: bool
+    follow_up_due: str
+    follow_up_responsible: str
+    follow_up_action: str
     summary: str
 
 
@@ -233,6 +256,9 @@ def incident_item_from_incident(incident: object) -> DesktopIncidentItem:
         occurred_label=format_ts(int(getattr(incident, "occurred_at", 0) or 0)),
         location_label=str(getattr(incident, "location_label", "")),
         follow_up_needed=bool(getattr(incident, "follow_up_needed", False)),
+        follow_up_due=str(getattr(incident, "follow_up_due", "") or ""),
+        follow_up_responsible=str(getattr(incident, "follow_up_responsible", "") or ""),
+        follow_up_action=str(getattr(incident, "follow_up_action", "") or ""),
         summary=summary,
     )
 
@@ -331,6 +357,12 @@ def build_incident_payload(
     actions_taken: str = "",
     outcome: str = "",
     follow_up_needed: bool = False,
+    follow_up_type: str = "",
+    follow_up_action: str = "",
+    follow_up_responsible: str = "",
+    follow_up_due: str = "",
+    follow_up_urgency: str = "",
+    create_follow_up_assignment: bool = False,
     notified_services: str = "",
     linked_assignment_id: int | None = None,
     linked_mission_id: int | None = None,
@@ -343,6 +375,24 @@ def build_incident_payload(
         raise ValueError("Select a valid severity.")
     if not narrative.strip():
         raise ValueError("Incident narrative is required.")
+    if follow_up_needed:
+        if follow_up_type not in INCIDENT_FOLLOW_UP_TYPES:
+            raise ValueError("Select a valid follow-up type.")
+        if follow_up_urgency not in INCIDENT_FOLLOW_UP_URGENCIES:
+            raise ValueError("Select a valid follow-up urgency.")
+        if not follow_up_action.strip():
+            raise ValueError("Follow-up next action is required.")
+        if not follow_up_responsible.strip():
+            raise ValueError("Follow-up responsible party is required.")
+        if not follow_up_due.strip():
+            raise ValueError("Follow-up due time is required.")
+    else:
+        follow_up_type = ""
+        follow_up_action = ""
+        follow_up_responsible = ""
+        follow_up_due = ""
+        follow_up_urgency = ""
+        create_follow_up_assignment = False
     return {
         "category": category,
         "severity": severity,
@@ -352,6 +402,12 @@ def build_incident_payload(
         "actions_taken": actions_taken.strip(),
         "outcome": outcome.strip(),
         "follow_up_needed": bool(follow_up_needed),
+        "follow_up_type": follow_up_type,
+        "follow_up_action": follow_up_action.strip(),
+        "follow_up_responsible": follow_up_responsible.strip(),
+        "follow_up_due": follow_up_due.strip(),
+        "follow_up_urgency": follow_up_urgency,
+        "create_follow_up_assignment": bool(create_follow_up_assignment),
         "notified_services": notified_services.strip(),
         "linked_assignment_id": linked_assignment_id,
         "linked_mission_id": linked_mission_id,

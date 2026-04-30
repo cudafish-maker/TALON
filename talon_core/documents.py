@@ -114,6 +114,28 @@ def _sanitize_filename(raw: str) -> str:
     return name
 
 
+def sanitize_folder_path(raw: str | None) -> str:
+    """Return a canonical slash-delimited document folder path."""
+    if raw is None:
+        return ""
+    cleaned = str(raw).replace("\\", "/").strip().strip("/")
+    if not cleaned:
+        return ""
+    parts: list[str] = []
+    for part in cleaned.split("/"):
+        segment = _SAFE_CHARS.sub("_", part.strip())
+        segment = re.sub(r"_+", "_", segment).strip(" _")
+        if not segment or segment in {".", ".."}:
+            raise DocumentFilenameInvalid(f"Invalid folder component: {part!r}.")
+        if segment.startswith("."):
+            raise DocumentFilenameInvalid(f"Dot folders are not permitted: {segment!r}.")
+        parts.append(segment[:96])
+    folder_path = "/".join(parts)
+    if len(folder_path) > 255:
+        raise DocumentFilenameInvalid("Document folder path is too long.")
+    return folder_path
+
+
 def _detect_mime(data: bytes, filename: str) -> str:
     """Return the MIME type for *data*.
 
@@ -173,8 +195,19 @@ def _check_path_in_root(storage_root: pathlib.Path, internal_name: str) -> pathl
 
 
 def _row_to_document(row: tuple) -> Document:
-    doc_id, filename, mime_type, size_bytes, file_path, sha256_hash, description, \
-        uploaded_by, uploaded_at, version = row
+    (
+        doc_id,
+        filename,
+        mime_type,
+        size_bytes,
+        file_path,
+        sha256_hash,
+        folder_path,
+        description,
+        uploaded_by,
+        uploaded_at,
+        version,
+    ) = row
     return Document(
         id=doc_id,
         filename=filename,
@@ -182,6 +215,7 @@ def _row_to_document(row: tuple) -> Document:
         size_bytes=size_bytes,
         file_path=file_path,
         sha256_hash=sha256_hash,
+        folder_path=folder_path,
         description=description,
         uploaded_by=uploaded_by,
         uploaded_at=uploaded_at,
@@ -191,7 +225,7 @@ def _row_to_document(row: tuple) -> Document:
 
 _SELECT = (
     "SELECT id, filename, mime_type, size_bytes, file_path, sha256_hash, "
-    "description, uploaded_by, uploaded_at, version FROM documents"
+    "folder_path, description, uploaded_by, uploaded_at, version FROM documents"
 )
 
 # ---------------------------------------------------------------------------
@@ -207,6 +241,7 @@ def upload_document(
     file_data: bytes,
     uploaded_by: int,
     description: str = "",
+    folder_path: str = "",
 ) -> Document:
     """Validate, encrypt, and store a document.
 
@@ -224,6 +259,7 @@ def upload_document(
 
     # 2. Filename sanitization
     filename = _sanitize_filename(raw_filename)
+    folder_path = sanitize_folder_path(folder_path)
     suffix = pathlib.Path(filename).suffix.lower()
 
     # 3. Extension block-list
@@ -255,9 +291,19 @@ def upload_document(
     now = int(time.time())
     cursor = conn.execute(
         "INSERT INTO documents "
-        "(filename, mime_type, size_bytes, file_path, sha256_hash, description, uploaded_by, uploaded_at, version) "
-        "VALUES (?, ?, ?, '', ?, ?, ?, ?, 1)",
-        (filename, mime_type, len(file_data), sha256_hash, description, uploaded_by, now),
+        "(filename, mime_type, size_bytes, file_path, sha256_hash, folder_path, "
+        "description, uploaded_by, uploaded_at, version) "
+        "VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, 1)",
+        (
+            filename,
+            mime_type,
+            len(file_data),
+            sha256_hash,
+            folder_path,
+            description,
+            uploaded_by,
+            now,
+        ),
     )
     doc_id = cursor.lastrowid
     internal_name = f"{doc_id}_{uuid.uuid4().hex}.bin"
@@ -406,6 +452,20 @@ def cache_document_download(
     return doc
 
 
+def move_document(conn: Connection, doc_id: int, *, folder_path: str) -> Document:
+    """Move an existing document into a logical explorer folder."""
+    doc = get_document(conn, doc_id)
+    next_folder = sanitize_folder_path(folder_path)
+    if doc.folder_path == next_folder:
+        return doc
+    conn.execute(
+        "UPDATE documents SET folder_path = ?, version = version + 1 WHERE id = ?",
+        (next_folder, int(doc_id)),
+    )
+    conn.commit()
+    return get_document(conn, doc_id)
+
+
 def _is_allowed_upload_type(suffix: str, mime_type: str) -> bool:
     suffix = suffix.lower()
     mime_type = mime_type.lower()
@@ -501,7 +561,7 @@ def delete_document(
 def list_documents(conn: Connection, *, limit: int = 200) -> list[Document]:
     """Return documents ordered newest first (no file content in memory)."""
     rows = conn.execute(
-        f"{_SELECT} ORDER BY uploaded_at DESC LIMIT ?", (limit,)
+        f"{_SELECT} ORDER BY folder_path ASC, uploaded_at DESC LIMIT ?", (limit,)
     ).fetchall()
     return [_row_to_document(r) for r in rows]
 

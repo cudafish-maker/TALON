@@ -1,4 +1,4 @@
-"""PySide6 SITREP feed and composer."""
+"""PySide6 SITREP feed and popup composer."""
 from __future__ import annotations
 
 import typing
@@ -44,7 +44,7 @@ _STATUS_COLORS = {
 
 
 class SitrepPage(QtWidgets.QWidget):
-    """Desktop SITREP feed, composer, and opt-in audio state."""
+    """Desktop SITREP feed, selected-detail actions, and opt-in audio state."""
 
     def __init__(self, core: TalonCoreSession) -> None:
         super().__init__()
@@ -56,6 +56,9 @@ class SitrepPage(QtWidgets.QWidget):
         self.heading.setObjectName("pageHeading")
         self.summary = QtWidgets.QLabel("")
         self.summary.setWordWrap(True)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setObjectName("sitrepMutedLabel")
+        self.status_label.setWordWrap(True)
 
         self.level_filter = QtWidgets.QComboBox()
         self.level_filter.addItem("All severities", "")
@@ -79,7 +82,7 @@ class SitrepPage(QtWidgets.QWidget):
         self.audio_toggle = QtWidgets.QCheckBox("Audio")
         self.audio_toggle.toggled.connect(self._on_audio_toggled)
         self.new_button = QtWidgets.QPushButton("New SITREP")
-        self.new_button.clicked.connect(self._focus_composer)
+        self.new_button.clicked.connect(self._open_create_dialog)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
@@ -97,51 +100,6 @@ class SitrepPage(QtWidgets.QWidget):
         self.feed.itemSelectionChanged.connect(self._selection_changed)
         self._feed_cards: dict[int, _SitrepFeedCard] = {}
 
-        self.level_combo = QtWidgets.QComboBox()
-        for level in SITREP_LEVELS:
-            self.level_combo.addItem(level, level)
-        self.create_status_combo = QtWidgets.QComboBox()
-        for status in SITREP_STATUSES:
-            self.create_status_combo.addItem(status.replace("_", " ").title(), status)
-
-        self.asset_combo = QtWidgets.QComboBox()
-        self.mission_combo = QtWidgets.QComboBox()
-        self.assignment_combo = QtWidgets.QComboBox()
-        self.template_combo = QtWidgets.QComboBox()
-        for template in SITREP_TEMPLATES:
-            self.template_combo.addItem(template.label, template.key)
-        self.apply_template_button = QtWidgets.QPushButton("Apply")
-        self.apply_template_button.clicked.connect(self._apply_template)
-        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
-        self.location_label_field = QtWidgets.QLineEdit()
-        self.location_label_field.setPlaceholderText("Location label")
-        self.lat_field = QtWidgets.QLineEdit()
-        self.lat_field.setPlaceholderText("Latitude")
-        self.lon_field = QtWidgets.QLineEdit()
-        self.lon_field.setPlaceholderText("Longitude")
-        self.pick_location_button = QtWidgets.QPushButton("Map")
-        self.pick_location_button.setToolTip("Pick on Map")
-        self.pick_location_button.clicked.connect(self._pick_location)
-        self.location_precision_combo = QtWidgets.QComboBox()
-        for label in ("", "general", "approximate", "exact"):
-            self.location_precision_combo.addItem(label or "None", label)
-        self.location_source_combo = QtWidgets.QComboBox()
-        for label in ("", "manual", "device", "map", "asset", "assignment"):
-            self.location_source_combo.addItem(label or "None", label)
-        self.body_field = QtWidgets.QTextEdit()
-        self.body_field.setPlaceholderText("Compose situation report")
-        self.body_field.setMinimumHeight(132)
-        self.sensitivity_combo = QtWidgets.QComboBox()
-        for sensitivity in ("team", "mission", "command", "protected"):
-            self.sensitivity_combo.addItem(sensitivity.replace("_", " ").title(), sensitivity)
-
-        self.status_label = QtWidgets.QLabel("")
-        self.status_label.setWordWrap(True)
-
-        self.send_button = QtWidgets.QPushButton("Send")
-        self.send_button.clicked.connect(self._send)
-        self.clear_button = QtWidgets.QPushButton("Clear")
-        self.clear_button.clicked.connect(self._clear_composer)
         self.delete_button = QtWidgets.QPushButton("Delete")
         self.delete_button.clicked.connect(self._delete_selected)
         self.delete_button.setVisible(self._core.mode == "server")
@@ -151,7 +109,7 @@ class SitrepPage(QtWidgets.QWidget):
         self.assign_button.clicked.connect(self._assign_selected)
         self.close_button = QtWidgets.QPushButton("Close")
         self.close_button.clicked.connect(self._close_selected)
-        self.incident_button = QtWidgets.QPushButton("Create Incident")
+        self.incident_button = QtWidgets.QPushButton("Create Follow-up Incident")
         self.incident_button.clicked.connect(self._create_incident_from_selected)
         self.document_combo = QtWidgets.QComboBox()
         self.link_document_button = QtWidgets.QPushButton("Link Document")
@@ -210,51 +168,6 @@ class SitrepPage(QtWidgets.QWidget):
         feed_panel = _panel("Operational Feed", feed_body, ("FLASH", "IMMEDIATE"))
         feed_panel.setMinimumWidth(260)
 
-        composer = QtWidgets.QWidget()
-        form = QtWidgets.QGridLayout(composer)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(9)
-        form.addWidget(_field_widget("Severity", self.level_combo), 0, 0)
-        form.addWidget(_field_widget("Status", self.create_status_combo), 0, 1)
-        form.addWidget(_field_widget("Mission", self.mission_combo), 1, 0)
-        form.addWidget(_field_widget("Assignment", self.assignment_combo), 1, 1)
-        form.addWidget(_field_widget("Asset", self.asset_combo), 2, 0)
-        form.addWidget(_field_widget("Location", self.location_label_field), 2, 1)
-        coord_row = QtWidgets.QWidget()
-        coord_layout = QtWidgets.QHBoxLayout(coord_row)
-        coord_layout.setContentsMargins(0, 0, 0, 0)
-        coord_layout.setSpacing(8)
-        coord_layout.addWidget(self.lat_field)
-        coord_layout.addWidget(self.lon_field)
-        coord_layout.addWidget(self.pick_location_button)
-        form.addWidget(_field_widget("Lat / Lon", coord_row), 3, 0, 1, 2)
-        location_meta_row = QtWidgets.QWidget()
-        location_meta_layout = QtWidgets.QHBoxLayout(location_meta_row)
-        location_meta_layout.setContentsMargins(0, 0, 0, 0)
-        location_meta_layout.setSpacing(8)
-        location_meta_layout.addWidget(self.location_precision_combo)
-        location_meta_layout.addWidget(self.location_source_combo)
-        form.addWidget(_field_widget("Location Meta", location_meta_row), 4, 0, 1, 2)
-        form.addWidget(_field_widget("Template", self._template_row()), 5, 0, 1, 2)
-        form.addWidget(_field_widget("Body", self.body_field), 6, 0, 1, 2)
-        attachment_hint = QtWidgets.QLabel("Link a document after selecting a sent SITREP")
-        attachment_hint.setObjectName("sitrepMutedLabel")
-        attachment_hint.setWordWrap(True)
-        form.addWidget(_field_widget("Attachment", attachment_hint), 7, 0)
-        form.addWidget(_field_widget("Privacy", self.sensitivity_combo), 7, 1)
-        form.addWidget(self.status_label, 8, 0, 1, 2)
-        action_row = QtWidgets.QHBoxLayout()
-        action_row.addWidget(self.clear_button)
-        action_row.addWidget(self.delete_button)
-        action_row.addStretch(1)
-        action_row.addWidget(self.send_button)
-        action_holder = QtWidgets.QWidget()
-        action_holder.setLayout(action_row)
-        form.addWidget(action_holder, 9, 0, 1, 2)
-        composer_panel = _panel("Composer", composer, ("Location Native",))
-        composer_panel.setMinimumWidth(260)
-
         detail_card = QtWidgets.QFrame()
         detail_card.setObjectName("sitrepDetailCard")
         detail_card_layout = QtWidgets.QVBoxLayout(detail_card)
@@ -270,6 +183,8 @@ class SitrepPage(QtWidgets.QWidget):
         followup_grid.addWidget(self.assign_button, 0, 1)
         followup_grid.addWidget(self.close_button, 1, 0)
         followup_grid.addWidget(self.incident_button, 1, 1)
+        if self._core.mode == "server":
+            followup_grid.addWidget(self.delete_button, 2, 0, 1, 2)
         detail_card_layout.addLayout(followup_grid)
         document_row = QtWidgets.QHBoxLayout()
         document_row.addWidget(self.document_combo, stretch=1)
@@ -290,16 +205,16 @@ class SitrepPage(QtWidgets.QWidget):
 
         splitter = _SitrepCommandSplitter()
         splitter.addWidget(feed_panel)
-        splitter.addWidget(composer_panel)
         splitter.addWidget(detail_panel)
         splitter.setStretchFactor(0, 5)
-        splitter.setStretchFactor(1, 4)
-        splitter.setStretchFactor(2, 4)
-        splitter.setSizes([420, 340, 300])
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([620, 360])
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
+        layout.addWidget(self.summary)
         layout.addLayout(metric_row)
+        layout.addWidget(self.status_label)
         layout.addWidget(splitter, stretch=1)
 
     def refresh(self) -> None:
@@ -369,33 +284,6 @@ class SitrepPage(QtWidgets.QWidget):
             return
         self.refresh()
 
-    def _send(self) -> None:
-        try:
-            payload = build_create_payload(
-                level=str(self.level_combo.currentData()),
-                body=self.body_field.toPlainText(),
-                template=self._selected_template_key(),
-                asset_id=self._combo_int(self.asset_combo),
-                mission_id=self._combo_int(self.mission_combo),
-                assignment_id=self._combo_int(self.assignment_combo),
-                location_label=self.location_label_field.text(),
-                lat_text=self.lat_field.text(),
-                lon_text=self.lon_field.text(),
-                location_precision=str(self.location_precision_combo.currentData() or ""),
-                location_source=str(self.location_source_combo.currentData() or ""),
-                status=str(self.create_status_combo.currentData() or "open"),
-                sensitivity=str(self.sensitivity_combo.currentData() or "team"),
-            )
-            self._core.command("sitreps.create", payload)
-        except Exception as exc:
-            _log.warning("Could not create SITREP: %s", exc)
-            self.status_label.setText(f"SITREP not sent: {exc}")
-            return
-
-        self._clear_composer()
-        self.status_label.setText("SITREP sent.")
-        self.refresh()
-
     def _delete_selected(self) -> None:
         if self._core.mode != "server":
             return
@@ -424,58 +312,6 @@ class SitrepPage(QtWidgets.QWidget):
         self.status_label.setText("SITREP deleted.")
         self.refresh()
 
-    def _clear_composer(self) -> None:
-        self.body_field.clear()
-        self.asset_combo.setCurrentIndex(0)
-        self.mission_combo.setCurrentIndex(0)
-        self.assignment_combo.setCurrentIndex(0)
-        self.create_status_combo.setCurrentIndex(0)
-        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
-        self.location_label_field.clear()
-        self.lat_field.clear()
-        self.lon_field.clear()
-        self.location_precision_combo.setCurrentIndex(0)
-        self.location_source_combo.setCurrentIndex(0)
-        self.sensitivity_combo.setCurrentIndex(0)
-
-    def _pick_location(self) -> None:
-        try:
-            initial_lat = _optional_coordinate(
-                self.lat_field.text(),
-                "SITREP latitude",
-                -90.0,
-                90.0,
-            )
-            initial_lon = _optional_coordinate(
-                self.lon_field.text(),
-                "SITREP longitude",
-                -180.0,
-                180.0,
-            )
-        except ValueError as exc:
-            self.status_label.setText(str(exc))
-            return
-        if (initial_lat is None) != (initial_lon is None):
-            self.status_label.setText(
-                "Both latitude and longitude are required for an existing map point."
-            )
-            return
-        selected = pick_point_on_map(
-            core=self._core,
-            title=self.location_label_field.text().strip() or "SITREP Location",
-            initial_lat=initial_lat,
-            initial_lon=initial_lon,
-            parent=self,
-        )
-        if selected is None:
-            return
-        formatted = format_coordinate(*selected).split(", ")
-        self.lat_field.setText(formatted[0])
-        self.lon_field.setText(formatted[1])
-        self._set_combo_value(self.location_precision_combo, "exact")
-        self._set_combo_value(self.location_source_combo, "map")
-        self.status_label.clear()
-
     def _filter_payload(self) -> dict[str, object]:
         return build_filter_payload(
             level_filter=str(self.level_filter.currentData() or ""),
@@ -485,45 +321,18 @@ class SitrepPage(QtWidgets.QWidget):
             pending_sync_only=self.pending_filter.isChecked(),
         )
 
-    def _focus_composer(self) -> None:
-        self.body_field.setFocus(QtCore.Qt.OtherFocusReason)
-
-    def _template_row(self) -> QtWidgets.QWidget:
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        layout.addWidget(self.template_combo, stretch=1)
-        layout.addWidget(self.apply_template_button)
-        return widget
-
-    def _apply_template_key(self, key: str) -> None:
-        self._set_template_selection(key)
-        self._apply_template()
-
-    def _set_template_selection(self, key: str) -> None:
-        index = self.template_combo.findData(key)
-        self.template_combo.setCurrentIndex(index if index >= 0 else 0)
-
-    def _apply_template(self) -> None:
-        key = self._selected_template_id()
-        if key == DEFAULT_TEMPLATE_KEY:
-            self.status_label.setText("Free text template selected.")
+    def _open_create_dialog(self) -> None:
+        dialog = SitrepCreateDialog(self._core, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         try:
-            template = sitrep_template_for_key(key)
-        except KeyError as exc:
-            self.status_label.setText(str(exc))
+            self._core.command("sitreps.create", dialog.payload())
+        except Exception as exc:
+            _log.warning("Could not create SITREP: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "SITREP", f"SITREP not sent: {exc}")
             return
-        level_index = self.level_combo.findData(template.level)
-        if level_index >= 0:
-            self.level_combo.setCurrentIndex(level_index)
-        current_body = self.body_field.toPlainText().strip()
-        if current_body:
-            self.body_field.append("\n" + template.body)
-        else:
-            self.body_field.setPlainText(template.body)
-        self.status_label.setText(f"Applied template: {template.label}.")
+        self.status_label.setText("SITREP sent.")
+        self.refresh()
 
     def _sync_audio_toggle(self) -> None:
         enabled = bool(self._core.read_model("settings.audio_enabled"))
@@ -544,38 +353,10 @@ class SitrepPage(QtWidgets.QWidget):
             self._sync_audio_toggle()
 
     def _refresh_link_selectors(self) -> None:
-        current_asset = self._combo_int(self.asset_combo)
-        current_mission = self._combo_int(self.mission_combo)
-        current_assignment = self._combo_int(self.assignment_combo)
         current_document = self._combo_int(self.document_combo)
 
-        self.asset_combo.blockSignals(True)
-        self.mission_combo.blockSignals(True)
-        self.assignment_combo.blockSignals(True)
         self.document_combo.blockSignals(True)
         try:
-            self.asset_combo.clear()
-            self.asset_combo.addItem("None", None)
-            for asset in self._core.read_model("assets.list"):
-                self.asset_combo.addItem(str(getattr(asset, "label", asset.id)), int(asset.id))
-            self._restore_combo_value(self.asset_combo, current_asset)
-
-            self.mission_combo.clear()
-            self.mission_combo.addItem("None", None)
-            for mission in self._core.read_model("missions.list", {"status_filter": None}):
-                if getattr(mission, "status", "") not in ("pending_approval", "active"):
-                    continue
-                label = f"{mission.title} [{mission.status}]"
-                self.mission_combo.addItem(label, int(mission.id))
-            self._restore_combo_value(self.mission_combo, current_mission)
-
-            self.assignment_combo.clear()
-            self.assignment_combo.addItem("None", None)
-            for assignment in self._core.read_model("assignments.list", {"active_only": True}):
-                label = f"{getattr(assignment, 'title', 'Assignment')} [{getattr(assignment, 'status', '')}]"
-                self.assignment_combo.addItem(label, int(assignment.id))
-            self._restore_combo_value(self.assignment_combo, current_assignment)
-
             self.document_combo.clear()
             self.document_combo.addItem("None", None)
             for item in self._core.read_model("documents.list", {"limit": 100}):
@@ -583,9 +364,6 @@ class SitrepPage(QtWidgets.QWidget):
                 self.document_combo.addItem(str(getattr(doc, "filename", "Document")), int(doc.id))
             self._restore_combo_value(self.document_combo, current_document)
         finally:
-            self.asset_combo.blockSignals(False)
-            self.mission_combo.blockSignals(False)
-            self.assignment_combo.blockSignals(False)
             self.document_combo.blockSignals(False)
 
     def _list_item(self, item: SitrepFeedItem) -> QtWidgets.QListWidgetItem:
@@ -815,11 +593,235 @@ class SitrepPage(QtWidgets.QWidget):
         index = combo.findData(value)
         combo.setCurrentIndex(index if index >= 0 else 0)
 
-    @staticmethod
-    def _set_combo_value(combo: QtWidgets.QComboBox, value: str) -> None:
-        index = combo.findData(value)
-        if index >= 0:
-            combo.setCurrentIndex(index)
+
+class SitrepCreateDialog(QtWidgets.QDialog):
+    """Modal SITREP composer launched from the feed page."""
+
+    def __init__(self, core: TalonCoreSession, parent=None) -> None:
+        super().__init__(parent)
+        self._core = core
+        self.setWindowTitle("New SITREP")
+        self.resize(760, 620)
+
+        self.level_combo = QtWidgets.QComboBox()
+        for level in SITREP_LEVELS:
+            self.level_combo.addItem(level, level)
+        self.create_status_combo = QtWidgets.QComboBox()
+        for status in SITREP_STATUSES:
+            self.create_status_combo.addItem(status.replace("_", " ").title(), status)
+        self.asset_combo = QtWidgets.QComboBox()
+        self.mission_combo = QtWidgets.QComboBox()
+        self.assignment_combo = QtWidgets.QComboBox()
+        self.template_combo = QtWidgets.QComboBox()
+        for template in SITREP_TEMPLATES:
+            self.template_combo.addItem(template.label, template.key)
+        self.apply_template_button = QtWidgets.QPushButton("Apply")
+        self.apply_template_button.clicked.connect(self._apply_template)
+        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
+        self.location_label_field = QtWidgets.QLineEdit()
+        self.location_label_field.setPlaceholderText("Location label")
+        self.lat_field = QtWidgets.QLineEdit()
+        self.lat_field.setPlaceholderText("Latitude")
+        self.lon_field = QtWidgets.QLineEdit()
+        self.lon_field.setPlaceholderText("Longitude")
+        self.pick_location_button = QtWidgets.QPushButton("Map")
+        self.pick_location_button.setToolTip("Pick on Map")
+        self.pick_location_button.clicked.connect(self._pick_location)
+        self.location_precision_combo = QtWidgets.QComboBox()
+        for label in ("", "general", "approximate", "exact"):
+            self.location_precision_combo.addItem(label or "None", label)
+        self.location_source_combo = QtWidgets.QComboBox()
+        for label in ("", "manual", "device", "map", "asset", "assignment"):
+            self.location_source_combo.addItem(label or "None", label)
+        self.body_field = QtWidgets.QTextEdit()
+        self.body_field.setPlaceholderText("Compose situation report")
+        self.body_field.setMinimumHeight(150)
+        self.sensitivity_combo = QtWidgets.QComboBox()
+        for sensitivity in ("team", "mission", "command", "protected"):
+            self.sensitivity_combo.addItem(sensitivity.replace("_", " ").title(), sensitivity)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(9)
+        form.addWidget(_field_widget("Severity", self.level_combo), 0, 0)
+        form.addWidget(_field_widget("Status", self.create_status_combo), 0, 1)
+        form.addWidget(_field_widget("Mission", self.mission_combo), 1, 0)
+        form.addWidget(_field_widget("Assignment", self.assignment_combo), 1, 1)
+        form.addWidget(_field_widget("Asset", self.asset_combo), 2, 0)
+        form.addWidget(_field_widget("Privacy", self.sensitivity_combo), 2, 1)
+        form.addWidget(_field_widget("Location", self.location_label_field), 3, 0, 1, 2)
+
+        coord_row = QtWidgets.QWidget()
+        coord_layout = QtWidgets.QHBoxLayout(coord_row)
+        coord_layout.setContentsMargins(0, 0, 0, 0)
+        coord_layout.setSpacing(8)
+        coord_layout.addWidget(self.lat_field)
+        coord_layout.addWidget(self.lon_field)
+        coord_layout.addWidget(self.pick_location_button)
+        form.addWidget(_field_widget("Lat / Lon", coord_row), 4, 0, 1, 2)
+
+        location_meta_row = QtWidgets.QWidget()
+        location_meta_layout = QtWidgets.QHBoxLayout(location_meta_row)
+        location_meta_layout.setContentsMargins(0, 0, 0, 0)
+        location_meta_layout.setSpacing(8)
+        location_meta_layout.addWidget(self.location_precision_combo)
+        location_meta_layout.addWidget(self.location_source_combo)
+        form.addWidget(_field_widget("Location Meta", location_meta_row), 5, 0, 1, 2)
+        form.addWidget(_field_widget("Template", self._template_row()), 6, 0, 1, 2)
+        form.addWidget(_field_widget("Body", self.body_field), 7, 0, 1, 2)
+        form.addWidget(self.status_label, 8, 0, 1, 2)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.button(QtWidgets.QDialogButtonBox.Ok).setText("Send")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        clear_button = buttons.addButton("Clear", QtWidgets.QDialogButtonBox.ResetRole)
+        clear_button.clicked.connect(self._clear)
+
+        scroll_body = QtWidgets.QWidget()
+        scroll_body.setLayout(form)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(scroll_body)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(scroll, stretch=1)
+        layout.addWidget(buttons)
+
+        self._refresh_link_selectors()
+
+    def payload(self) -> dict[str, object]:
+        return build_create_payload(
+            level=str(self.level_combo.currentData()),
+            body=self.body_field.toPlainText(),
+            template=self._selected_template_key(),
+            asset_id=self._combo_int(self.asset_combo),
+            mission_id=self._combo_int(self.mission_combo),
+            assignment_id=self._combo_int(self.assignment_combo),
+            location_label=self.location_label_field.text(),
+            lat_text=self.lat_field.text(),
+            lon_text=self.lon_field.text(),
+            location_precision=str(self.location_precision_combo.currentData() or ""),
+            location_source=str(self.location_source_combo.currentData() or ""),
+            status=str(self.create_status_combo.currentData() or "open"),
+            sensitivity=str(self.sensitivity_combo.currentData() or "team"),
+        )
+
+    def accept(self) -> None:
+        try:
+            self.payload()
+        except Exception as exc:
+            self.status_label.setText(str(exc))
+            return
+        super().accept()
+
+    def _refresh_link_selectors(self) -> None:
+        self.asset_combo.clear()
+        self.asset_combo.addItem("None", None)
+        self.mission_combo.clear()
+        self.mission_combo.addItem("None", None)
+        self.assignment_combo.clear()
+        self.assignment_combo.addItem("None", None)
+        try:
+            for asset in self._core.read_model("assets.list"):
+                self.asset_combo.addItem(str(getattr(asset, "label", asset.id)), int(asset.id))
+            for mission in self._core.read_model("missions.list", {"status_filter": None}):
+                if getattr(mission, "status", "") not in ("pending_approval", "active"):
+                    continue
+                label = f"{mission.title} [{mission.status}]"
+                self.mission_combo.addItem(label, int(mission.id))
+            for assignment in self._core.read_model("assignments.list", {"active_only": True}):
+                label = f"{getattr(assignment, 'title', 'Assignment')} [{getattr(assignment, 'status', '')}]"
+                self.assignment_combo.addItem(label, int(assignment.id))
+        except Exception as exc:
+            _log.warning("Could not load SITREP composer selectors: %s", exc)
+            self.status_label.setText(f"Unable to load link selectors: {exc}")
+
+    def _pick_location(self) -> None:
+        try:
+            initial_lat = _optional_coordinate(
+                self.lat_field.text(),
+                "SITREP latitude",
+                -90.0,
+                90.0,
+            )
+            initial_lon = _optional_coordinate(
+                self.lon_field.text(),
+                "SITREP longitude",
+                -180.0,
+                180.0,
+            )
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        if (initial_lat is None) != (initial_lon is None):
+            self.status_label.setText(
+                "Both latitude and longitude are required for an existing map point."
+            )
+            return
+        selected = pick_point_on_map(
+            core=self._core,
+            title=self.location_label_field.text().strip() or "SITREP Location",
+            initial_lat=initial_lat,
+            initial_lon=initial_lon,
+            parent=self,
+        )
+        if selected is None:
+            return
+        formatted = format_coordinate(*selected).split(", ")
+        self.lat_field.setText(formatted[0])
+        self.lon_field.setText(formatted[1])
+        self._set_combo_value(self.location_precision_combo, "exact")
+        self._set_combo_value(self.location_source_combo, "map")
+        self.status_label.clear()
+
+    def _template_row(self) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self.template_combo, stretch=1)
+        layout.addWidget(self.apply_template_button)
+        return widget
+
+    def _apply_template(self) -> None:
+        key = self._selected_template_id()
+        if key == DEFAULT_TEMPLATE_KEY:
+            self.status_label.setText("Free text template selected.")
+            return
+        try:
+            template = sitrep_template_for_key(key)
+        except KeyError as exc:
+            self.status_label.setText(str(exc))
+            return
+        level_index = self.level_combo.findData(template.level)
+        if level_index >= 0:
+            self.level_combo.setCurrentIndex(level_index)
+        current_body = self.body_field.toPlainText().strip()
+        if current_body:
+            self.body_field.append("\n" + template.body)
+        else:
+            self.body_field.setPlainText(template.body)
+        self.status_label.setText(f"Applied template: {template.label}.")
+
+    def _clear(self) -> None:
+        self.body_field.clear()
+        self.asset_combo.setCurrentIndex(0)
+        self.mission_combo.setCurrentIndex(0)
+        self.assignment_combo.setCurrentIndex(0)
+        self.create_status_combo.setCurrentIndex(0)
+        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
+        self.location_label_field.clear()
+        self.lat_field.clear()
+        self.lon_field.clear()
+        self.location_precision_combo.setCurrentIndex(0)
+        self.location_source_combo.setCurrentIndex(0)
+        self.sensitivity_combo.setCurrentIndex(0)
+        self.status_label.clear()
 
     def _selected_template_key(self) -> str:
         key = self._selected_template_id()
@@ -827,6 +829,23 @@ class SitrepPage(QtWidgets.QWidget):
 
     def _selected_template_id(self) -> str:
         return str(self.template_combo.currentData() or DEFAULT_TEMPLATE_KEY)
+
+    def _set_template_selection(self, key: str) -> None:
+        index = self.template_combo.findData(key)
+        self.template_combo.setCurrentIndex(index if index >= 0 else 0)
+
+    @staticmethod
+    def _combo_int(combo: QtWidgets.QComboBox) -> int | None:
+        value = combo.currentData()
+        if value in (None, ""):
+            return None
+        return int(typing.cast(int, value))
+
+    @staticmethod
+    def _set_combo_value(combo: QtWidgets.QComboBox, value: str) -> None:
+        index = combo.findData(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
 
 
 def _panel(
@@ -1018,7 +1037,7 @@ def _status_label(status: str) -> str:
 
 
 class _SitrepCommandSplitter(QtWidgets.QSplitter):
-    """Three-column SITREP splitter that recovers from old two-column state."""
+    """SITREP splitter that recovers from stale persisted sizes."""
 
     def __init__(self) -> None:
         super().__init__(QtCore.Qt.Horizontal)
@@ -1034,9 +1053,14 @@ class _SitrepCommandSplitter(QtWidgets.QSplitter):
         QtCore.QTimer.singleShot(0, self.ensure_command_sizes)
 
     def ensure_command_sizes(self) -> None:
+        sizes = self.sizes()
+        if self.count() == 2:
+            if len(sizes) != 2 or sizes[1] < 240 or min(sizes) <= 0:
+                width = max(780, sum(sizes) or self.width())
+                self.setSizes([int(width * 0.63), int(width * 0.37)])
+            return
         if self.count() != 3:
             return
-        sizes = self.sizes()
         if len(sizes) != 3 or sizes[2] < 240 or min(sizes) <= 0:
             width = max(780, sum(sizes) or self.width())
             self.setSizes([int(width * 0.42), int(width * 0.31), int(width * 0.27)])

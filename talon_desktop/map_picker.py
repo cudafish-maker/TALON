@@ -486,9 +486,16 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             ]
             if not scene_points:
                 continue
-            pen = QtGui.QPen(QtGui.QColor(255, 223, 110, 175), 2)
+            if overlay.mode == "polygon":
+                pen = QtGui.QPen(QtGui.QColor("#e74c3c"), 2)
+                fill = QtGui.QBrush(QtGui.QColor(231, 76, 60, 76))
+            elif overlay.mode == "route":
+                pen = QtGui.QPen(QtGui.QColor("#3498db"), 2)
+                fill = QtGui.QBrush(QtGui.QColor(52, 152, 219, 54))
+            else:
+                pen = QtGui.QPen(QtGui.QColor(255, 223, 110, 175), 2)
+                fill = QtGui.QBrush(QtGui.QColor(255, 223, 110, 34))
             pen.setStyle(QtCore.Qt.DashLine)
-            fill = QtGui.QBrush(QtGui.QColor(255, 223, 110, 34))
             if overlay.mode == "polygon" and len(scene_points) >= 3:
                 item = self._scene.addPolygon(QtGui.QPolygonF(scene_points), pen, fill)
                 item.setZValue(14)
@@ -515,7 +522,19 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             label.setDefaultTextColor(QtGui.QColor("#ffdf6e"))
             label.setZValue(16)
             anchor = scene_points[0]
-            label.setPos(anchor.x() + 8, anchor.y() - 24)
+            label_x = anchor.x() + 8
+            label_y = anchor.y() - 24
+            rect = label.boundingRect()
+            background = self._scene.addRect(
+                label_x - 4,
+                label_y - 2,
+                rect.width() + 8,
+                rect.height() + 4,
+                QtGui.QPen(QtCore.Qt.NoPen),
+                QtGui.QBrush(QtGui.QColor(10, 15, 17, 215)),
+            )
+            background.setZValue(15)
+            label.setPos(label_x, label_y)
 
     def _draw_selection(self) -> None:
         if not self._points:

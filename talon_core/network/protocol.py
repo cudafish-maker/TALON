@@ -19,9 +19,9 @@ Persistent sync session (broadband — one long-lived link per client):
     client  →  heartbeat         (every 60 s on the same link)
     server  →  heartbeat_ack     (on same link; no teardown)
     client  →  document_request  (on-demand document fetch over the same link)
-    server  →  document_response (error/availability reply; successful payloads
-                                  are sent as an RNS Resource with the same
-                                  message type in resource metadata)
+    server  →  document_response (error reply, inline base64 payload for
+                                  medium files, or RNS Resource metadata for
+                                  larger files)
     server  →  push_update       (any time a record is created/changed)
     server  →  push_delete       (any time a record is deleted)
     server  →  operator_revoked  (operator identity has been revoked)

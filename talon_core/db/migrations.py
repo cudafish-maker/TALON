@@ -569,6 +569,30 @@ MIGRATIONS: list[str] = [
         token_preview = 'legacy-expired',
         token = 'legacy:' || lower(hex(randomblob(32)));
     """,
+    # 0019 — Accountable incident follow-up workflow.
+    #
+    # follow_up_needed used to be only a filter flag. These fields preserve the
+    # actionable next step that made the flag meaningful and optionally link the
+    # incident to the assignment created for that follow-up work.
+    """
+    ALTER TABLE incidents ADD COLUMN follow_up_type TEXT NOT NULL DEFAULT '';
+    ALTER TABLE incidents ADD COLUMN follow_up_action TEXT NOT NULL DEFAULT '';
+    ALTER TABLE incidents ADD COLUMN follow_up_responsible TEXT NOT NULL DEFAULT '';
+    ALTER TABLE incidents ADD COLUMN follow_up_due TEXT NOT NULL DEFAULT '';
+    ALTER TABLE incidents ADD COLUMN follow_up_urgency TEXT NOT NULL DEFAULT '';
+    ALTER TABLE incidents ADD COLUMN follow_up_assignment_id INTEGER REFERENCES assignments(id);
+
+    CREATE INDEX idx_incidents_follow_up ON incidents(follow_up_needed, follow_up_due);
+    CREATE INDEX idx_incidents_follow_up_assignment ON incidents(follow_up_assignment_id);
+    """,
+    # 0020 — Document explorer folders.
+    #
+    # Folders are implicit document paths. Empty folders are not persisted; the
+    # tree is rebuilt from the synced document records on each client.
+    """
+    ALTER TABLE documents ADD COLUMN folder_path TEXT NOT NULL DEFAULT '';
+    CREATE INDEX idx_documents_folder_path ON documents(folder_path, uploaded_at);
+    """,
 ]
 
 

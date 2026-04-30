@@ -11,6 +11,8 @@ from talon_core.community_safety import (
     ASSIGNMENT_TYPES,
     CHECKIN_STATES,
     INCIDENT_CATEGORIES,
+    INCIDENT_FOLLOW_UP_TYPES,
+    INCIDENT_FOLLOW_UP_URGENCIES,
 )
 from talon_core.constants import PREDEFINED_SKILLS, SITREP_LEVELS
 from talon_core.utils.formatting import format_ts
@@ -20,6 +22,8 @@ from talon_desktop.community_safety import (
     ASSIGNMENT_TYPE_LABELS,
     CHECKIN_STATE_LABELS,
     INCIDENT_CATEGORY_LABELS,
+    INCIDENT_FOLLOW_UP_TYPE_LABELS,
+    INCIDENT_FOLLOW_UP_URGENCY_LABELS,
     DesktopAssignmentItem,
     assignment_items_from_board,
     build_assignment_payload,
@@ -420,12 +424,15 @@ class IncidentPage(QtWidgets.QWidget):
         for category in INCIDENT_CATEGORIES:
             self.category_filter.addItem(INCIDENT_CATEGORY_LABELS[category], category)
         self.category_filter.currentIndexChanged.connect(lambda _index: self.refresh())
-        self.follow_up_filter = QtWidgets.QCheckBox("Follow-up")
+        self.follow_up_filter = QtWidgets.QPushButton("Open Follow-ups")
+        self.follow_up_filter.setCheckable(True)
         self.follow_up_filter.toggled.connect(lambda _checked: self.refresh())
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
         self.new_button = QtWidgets.QPushButton("New Incident")
         self.new_button.clicked.connect(self._create_incident)
+        self.clear_followup_button = QtWidgets.QPushButton("Clear Follow-up")
+        self.clear_followup_button.clicked.connect(self._clear_followup)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
@@ -433,6 +440,7 @@ class IncidentPage(QtWidgets.QWidget):
         top_row.addWidget(self.category_filter)
         top_row.addWidget(self.follow_up_filter)
         top_row.addWidget(self.refresh_button)
+        top_row.addWidget(self.clear_followup_button)
         top_row.addWidget(self.new_button)
 
         self.table = QtWidgets.QTableWidget(0, 5)
@@ -508,7 +516,9 @@ class IncidentPage(QtWidgets.QWidget):
     def _selection_changed(self) -> None:
         item = self._selected_item()
         if item is None:
+            self.clear_followup_button.setEnabled(False)
             return
+        self.clear_followup_button.setEnabled(item.follow_up_needed)
         try:
             detail = self._core.read_model("incidents.detail", {"incident_id": item.id})
         except Exception as exc:
@@ -534,6 +544,12 @@ class IncidentPage(QtWidgets.QWidget):
             incident.outcome or "None",
             "",
             f"Follow-up needed: {'Yes' if incident.follow_up_needed else 'No'}",
+            f"Follow-up type: {getattr(incident, 'follow_up_type', '') or 'None'}",
+            f"Next action: {getattr(incident, 'follow_up_action', '') or 'None'}",
+            f"Responsible: {getattr(incident, 'follow_up_responsible', '') or 'None'}",
+            f"Due: {getattr(incident, 'follow_up_due', '') or 'None'}",
+            f"Urgency: {getattr(incident, 'follow_up_urgency', '') or 'None'}",
+            f"Follow-up assignment: {detail.get('follow_up_assignment_title', '') or 'None'}",
             "Linked records:",
             f"  Assignment: {detail.get('assignment_title', '') or 'None'}",
             f"  Mission: {detail.get('mission_title', '') or 'None'}",
@@ -560,6 +576,28 @@ class IncidentPage(QtWidgets.QWidget):
             self.refresh()
         except Exception as exc:
             _log.warning("Incident create failed: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
+
+    def _clear_followup(self) -> None:
+        item = self._selected_item()
+        if item is None or not item.follow_up_needed:
+            return
+        note, accepted = QtWidgets.QInputDialog.getMultiLineText(
+            self,
+            "Clear Follow-up",
+            "Outcome note",
+            "",
+        )
+        if not accepted:
+            return
+        try:
+            self._core.command(
+                "incidents.clear_followup",
+                {"incident_id": item.id, "outcome_note": note},
+            )
+            self.refresh()
+        except Exception as exc:
+            _log.warning("Incident follow-up clear failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
 
 
@@ -829,6 +867,27 @@ class IncidentCreateDialog(QtWidgets.QDialog):
         self.outcome_field = QtWidgets.QTextEdit()
         self.outcome_field.setMinimumHeight(80)
         self.follow_up = QtWidgets.QCheckBox("Follow-up needed")
+        self.follow_up.toggled.connect(self._sync_followup_fields)
+        self.follow_up_type_combo = QtWidgets.QComboBox()
+        for follow_up_type in INCIDENT_FOLLOW_UP_TYPES:
+            self.follow_up_type_combo.addItem(
+                INCIDENT_FOLLOW_UP_TYPE_LABELS[follow_up_type],
+                follow_up_type,
+            )
+        self.follow_up_action_field = QtWidgets.QTextEdit()
+        self.follow_up_action_field.setMinimumHeight(70)
+        self.follow_up_responsible_field = QtWidgets.QLineEdit()
+        self.follow_up_due_field = QtWidgets.QLineEdit()
+        self.follow_up_due_field.setPlaceholderText("YYYY-MM-DD HH:MM or operational due time")
+        self.follow_up_urgency_combo = QtWidgets.QComboBox()
+        for urgency in INCIDENT_FOLLOW_UP_URGENCIES:
+            self.follow_up_urgency_combo.addItem(
+                INCIDENT_FOLLOW_UP_URGENCY_LABELS[urgency],
+                urgency,
+            )
+        self.create_followup_assignment = QtWidgets.QCheckBox(
+            "Create linked assignment from this follow-up"
+        )
         self.notified_field = QtWidgets.QLineEdit()
         self.assignment_combo = QtWidgets.QComboBox()
         self.assignment_combo.addItem("None", None)
@@ -856,9 +915,21 @@ class IncidentCreateDialog(QtWidgets.QDialog):
         form.addRow("SITREP", self.sitrep_combo)
         form.addRow("Notified", self.notified_field)
         form.addRow("", self.follow_up)
+        self.followup_group = QtWidgets.QGroupBox("Follow-up Details")
+        followup_form = QtWidgets.QFormLayout(self.followup_group)
+        followup_form.addRow("Type", self.follow_up_type_combo)
+        followup_form.addRow("Responsible", self.follow_up_responsible_field)
+        followup_form.addRow("Urgency", self.follow_up_urgency_combo)
+        followup_form.addRow("Due", self.follow_up_due_field)
+        followup_form.addRow("Next action", self.follow_up_action_field)
+        followup_form.addRow("", self.create_followup_assignment)
+        form.addRow("", self.followup_group)
         form.addRow("Narrative", self.narrative_field)
         form.addRow("Actions taken", self.actions_field)
         form.addRow("Outcome", self.outcome_field)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
+        form.addRow("", self.status_label)
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
         )
@@ -872,6 +943,7 @@ class IncidentCreateDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(scroll, stretch=1)
         layout.addWidget(buttons)
+        self._sync_followup_fields(False)
 
     def payload(self) -> dict[str, object]:
         return build_incident_payload(
@@ -883,12 +955,40 @@ class IncidentCreateDialog(QtWidgets.QDialog):
             actions_taken=self.actions_field.toPlainText(),
             outcome=self.outcome_field.toPlainText(),
             follow_up_needed=self.follow_up.isChecked(),
+            follow_up_type=str(self.follow_up_type_combo.currentData() or ""),
+            follow_up_action=self.follow_up_action_field.toPlainText(),
+            follow_up_responsible=self.follow_up_responsible_field.text(),
+            follow_up_due=self.follow_up_due_field.text(),
+            follow_up_urgency=str(self.follow_up_urgency_combo.currentData() or ""),
+            create_follow_up_assignment=self.create_followup_assignment.isChecked(),
             notified_services=self.notified_field.text(),
             linked_assignment_id=self._combo_int(self.assignment_combo),
             linked_mission_id=self._combo_int(self.mission_combo),
             linked_asset_id=self._combo_int(self.asset_combo),
             linked_sitrep_id=self._combo_int(self.sitrep_combo),
         )
+
+    def accept(self) -> None:
+        try:
+            self.payload()
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        super().accept()
+
+    def _sync_followup_fields(self, checked: bool) -> None:
+        self.followup_group.setVisible(checked)
+        if checked and not self.create_followup_assignment.isChecked():
+            self.create_followup_assignment.setChecked(True)
+        for widget in (
+            self.follow_up_type_combo,
+            self.follow_up_action_field,
+            self.follow_up_responsible_field,
+            self.follow_up_due_field,
+            self.follow_up_urgency_combo,
+            self.create_followup_assignment,
+        ):
+            widget.setEnabled(checked)
 
     def _load_selectors(
         self,

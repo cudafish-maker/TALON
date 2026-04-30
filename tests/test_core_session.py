@@ -194,6 +194,7 @@ def test_core_session_document_commands_and_read_models(tmp_path: pathlib.Path) 
         raw_filename="../report.txt",
         file_data=b"field report",
         description="daily report",
+        folder_path="Plans/Day 1",
     )
 
     assert upload.document_id > 0
@@ -209,7 +210,15 @@ def test_core_session_document_commands_and_read_models(tmp_path: pathlib.Path) 
 
     detail = session.read_model("documents.detail", {"document_id": upload.document_id})
     assert detail.document.description == "daily report"
+    assert detail.document.folder_path == "Plans/Day 1"
     assert detail.uploader_callsign == "SERVER"
+
+    moved = session.command(
+        "documents.move",
+        document_id=upload.document_id,
+        folder_path="Plans/Archive",
+    )
+    assert moved.document.folder_path == "Plans/Archive"
 
     downloaded = session.command("documents.download", document_id=upload.document_id)
     assert downloaded.document.id == upload.document_id
@@ -360,21 +369,46 @@ def test_core_session_community_safety_commands_and_read_models(
     received = []
     session.subscribe(received.append)
 
+    session.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+        "VALUES (8, 'ASTER', 'aster-hash', '[\"medic\"]', '{\"role\":\"search\"}', 0, 9999999999, 0)"
+    )
+    session.conn.commit()
+
+    mission_result = session.command(
+        "missions.create",
+        title="Lost Dog",
+        description="Search assignment and follow-up coordination.",
+    )
     assignment_result = session.command(
         "assignments.create",
         {
             "assignment_type": "protective_detail",
             "title": "North Shelter evening support",
+            "mission_id": mission_result.mission.id,
             "status": "active",
             "priority": "PRIORITY",
             "protected_label": "North Shelter front desk",
             "location_label": "North Shelter",
             "team_lead": "Aster",
+            "assigned_operator_ids": [8],
             "checkin_interval_min": 20,
             "overdue_threshold_min": 5,
             "required_skills": ["medic", "de-escalation"],
         },
     )
+    with pytest.raises(ValueError, match="assigned to this assignment"):
+        session.command(
+            "assignments.checkin",
+            {
+                "assignment_id": assignment_result.assignment_id,
+                "state": "ok",
+                "note": "Server cannot check in for the assigned operator.",
+            },
+        )
+
+    session._operator_id = 8
     checkin_result = session.command(
         "assignments.checkin",
         {
@@ -393,13 +427,29 @@ def test_core_session_community_safety_commands_and_read_models(
             "narrative": "Team documented a conflict and requested follow-up.",
             "actions_taken": "De-escalation support notified.",
             "follow_up_needed": True,
+            "follow_up_type": "revisit_location",
+            "follow_up_action": "Revisit North Shelter and confirm the conflict is resolved.",
+            "follow_up_responsible": "Aster",
+            "follow_up_due": "Tonight 21:00",
+            "follow_up_urgency": "priority",
+            "create_follow_up_assignment": True,
             "linked_assignment_id": assignment_result.assignment_id,
         },
     )
+    assert incident_result.assignment_id is not None
+    assert incident_result.assignment is not None
+    assert incident_result.incident.follow_up_assignment_id == incident_result.assignment_id
+    assert incident_result.incident.linked_mission_id == mission_result.mission.id
+    assert incident_result.assignment.mission_id == mission_result.mission.id
 
     board = session.read_model("assignments.board")
-    assert board["assignments"][0].title == "North Shelter evening support"
-    assert board["assignments"][0].status == "needs_support"
+    assignments_by_id = {assignment.id: assignment for assignment in board["assignments"]}
+    assert assignments_by_id[assignment_result.assignment_id].title == "North Shelter evening support"
+    assert assignments_by_id[assignment_result.assignment_id].status == "needs_support"
+    assert assignments_by_id[incident_result.assignment_id].title == (
+        "Revisit North Shelter and confirm the conflict is resolved."
+    )
+    assert assignments_by_id[incident_result.assignment_id].status == "active"
     assert board["recent_checkins"][0].id == checkin_result.checkin_id
     assert board["open_incidents"][0].id == incident_result.incident_id
 
@@ -416,11 +466,31 @@ def test_core_session_community_safety_commands_and_read_models(
         {"incident_id": incident_result.incident_id},
     )
     assert incident_detail["assignment_title"] == "North Shelter evening support"
+    assert incident_detail["mission_title"] == "Lost Dog"
+    assert incident_detail["follow_up_assignment_title"] == (
+        "Revisit North Shelter and confirm the conflict is resolved."
+    )
+    assert incident_detail["incident"].follow_up_action == (
+        "Revisit North Shelter and confirm the conflict is resolved."
+    )
 
     dashboard = session.read_model("dashboard.summary")
-    assert dashboard.counts["assignments"] == 1
+    assert dashboard.counts["assignments"] == 2
     assert dashboard.counts["assignments_needing_support"] == 1
     assert dashboard.counts["incident_follow_ups"] == 1
+
+    clear_result = session.command(
+        "incidents.clear_followup",
+        {
+            "incident_id": incident_result.incident_id,
+            "outcome_note": "Follow-up completed by Aster.",
+        },
+    )
+    assert clear_result.incident.follow_up_needed is False
+    assert clear_result.assignment is not None
+    assert clear_result.assignment.status == "completed"
+    dashboard = session.read_model("dashboard.summary")
+    assert dashboard.counts["incident_follow_ups"] == 0
 
     tables = {mutation.table for event in received for mutation in event.iter_records()}
     assert {"assignments", "checkins", "incidents"}.issubset(tables)

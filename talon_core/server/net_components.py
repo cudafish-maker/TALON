@@ -1,6 +1,7 @@
 """Server sync helper components used by ServerNetHandler."""
 from __future__ import annotations
 
+import base64
 import dataclasses
 import threading
 import time
@@ -17,6 +18,8 @@ from talon_core.network.registry import (
     prepare_client_push_record_for_server_store,
 )
 from talon_core.network.sync import _validated_table
+
+_DOCUMENT_INLINE_TRANSFER_MAX_BYTES = 384 * 1024
 
 
 def rns_hash_hex_length() -> int:
@@ -863,6 +866,28 @@ class ServerMessageHandlers:
             )
             return
 
+        if len(plaintext) <= _DOCUMENT_INLINE_TRANSFER_MAX_BYTES:
+            self._smart_send(
+                link,
+                proto.encode(
+                    {
+                        "type": proto.MSG_DOCUMENT_RESPONSE,
+                        "ok": True,
+                        "document_id": document_id,
+                        "record": record,
+                        "encoding": "base64",
+                        "payload": base64.b64encode(plaintext).decode("ascii"),
+                    }
+                ),
+            )
+            self._log.info(
+                "Inline document transfer sent: id=%s operator_id=%s bytes=%d",
+                document_id,
+                auth.operator_id,
+                len(plaintext),
+            )
+            return
+
         try:
             RNS.Resource(
                 plaintext,
@@ -970,6 +995,7 @@ class ServerMessageHandlers:
                             )
                         if new_record_id is not None:
                             linked_sitrep_id = None
+                            linked_assignment_id = None
                             if table == "sitrep_followups":
                                 try:
                                     from talon_core.sitrep import apply_sitrep_followup_effect
@@ -985,6 +1011,21 @@ class ServerMessageHandlers:
                                         new_record_id,
                                         exc,
                                     )
+                            elif table == "checkins":
+                                try:
+                                    from talon_core.community_safety import apply_checkin_effect
+
+                                    with handler._lock:
+                                        linked_assignment_id = apply_checkin_effect(
+                                            handler._conn,
+                                            new_record_id,
+                                        )
+                                except Exception as exc:
+                                    self._log.warning(
+                                        "Client push: check-in effect failed id=%s: %s",
+                                        new_record_id,
+                                        exc,
+                                    )
                             accepted_uuids.append(uuid_val)
                             self._log.info(
                                 "Client push accepted: table=%s uuid=%s new_id=%s",
@@ -995,7 +1036,11 @@ class ServerMessageHandlers:
                             handler.notify_change(table, new_record_id)
                             if linked_sitrep_id is not None:
                                 handler.notify_change("sitreps", linked_sitrep_id)
+                            if linked_assignment_id is not None:
+                                handler.notify_change("assignments", linked_assignment_id)
                             self._ui_dispatcher.notify(table)
+                            if linked_assignment_id is not None:
+                                self._ui_dispatcher.notify("assignments")
                     except Exception as exc:
                         self._log.warning(
                             "Client push INSERT failed table=%s uuid=%s: %s",

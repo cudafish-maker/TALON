@@ -25,7 +25,7 @@ LEASE_DURATION_S: Final = 86400
 TRANSPORT_PRIORITY: Final = ("yggdrasil", "i2p", "tcp", "rnode")
 
 # Database schema version
-DB_SCHEMA_VERSION: Final = 18
+DB_SCHEMA_VERSION: Final = 20
 
 # ---------------------------------------------------------------------------
 # Reticulum network aspects

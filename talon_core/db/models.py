@@ -181,6 +181,12 @@ class CommunityIncident:
     actions_taken: str
     outcome: str
     follow_up_needed: bool
+    follow_up_type: str
+    follow_up_action: str
+    follow_up_responsible: str
+    follow_up_due: str
+    follow_up_urgency: str
+    follow_up_assignment_id: typing.Optional[int]
     notified_services: str
     linked_mission_id: typing.Optional[int]
     linked_assignment_id: typing.Optional[int]
@@ -222,6 +228,7 @@ class Document:
     size_bytes: int     # plaintext file size
     file_path: str      # opaque internal name: "{id}_{uuid4}.bin"
     sha256_hash: str    # hex SHA-256 of plaintext (integrity verification)
+    folder_path: str    # slash-delimited logical folder path for explorer UI
     description: str    # optional operator-supplied note
     uploaded_by: int    # FK → operators.id
     uploaded_at: int    # Unix timestamp

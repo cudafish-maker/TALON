@@ -563,6 +563,12 @@ def _stylesheet(*, theme_key: str = "dark", font_scale: float = 1.0) -> str:
         border-left: 3px solid #8fbcbb;
     }
 
+    QLabel#navBadgeDot {
+        background: #ff5555;
+        border: 1px solid #0a0f11;
+        border-radius: 4px;
+    }
+
     QToolButton#navRailToggle {
         background: #10181b;
         color: #8fbcbb;

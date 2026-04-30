@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>TALON Alpha Test Flow</title><style>
+:root { --ink: #17212b; --muted: #536171; --line: #d8dee6; --panel: #f5f7fa; --accent: #2d5f85; --ok: #276749; --warn: #9a5b00; --danger: #9b2c2c; }
+* { box-sizing: border-box; }
+html { background: #e9edf2; }
+body { margin: 0 auto; max-width: 8.4in; background: #fff; color: var(--ink); font: 10.5pt/1.45 Arial, Helvetica, sans-serif; padding: 0.55in; }
+h1 { font-size: 28pt; margin: 0 0 0.12in; letter-spacing: 0; }
+h2 { font-size: 18pt; margin: 0.34in 0 0.08in; padding-bottom: 0.04in; border-bottom: 1px solid var(--line); }
+h3 { font-size: 13pt; margin: 0.22in 0 0.06in; }
+h4 { font-size: 10.5pt; margin: 0.16in 0 0.04in; text-transform: uppercase; color: var(--muted); }
+p { margin: 0 0 0.09in; }
+ul, ol { margin: 0.04in 0 0.12in 0.22in; padding: 0; }
+li { margin: 0.035in 0; }
+a { color: var(--accent); }
+code { font-family: Consolas, Menlo, monospace; background: #eef2f6; padding: 0.02in 0.045in; border-radius: 3px; }
+pre { background: #111820; color: #eef6ff; padding: 0.12in; border-radius: 6px; overflow-wrap: anywhere; white-space: pre-wrap; font: 9pt/1.35 Consolas, Menlo, monospace; }
+table { width: 100%; border-collapse: collapse; margin: 0.12in 0; font-size: 9.35pt; }
+th, td { border: 1px solid var(--line); padding: 0.055in; vertical-align: top; }
+th { background: #edf3f8; text-align: left; }
+.cover { min-height: 8.8in; display: flex; flex-direction: column; justify-content: center; }
+.kicker { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+.subtitle { font-size: 13pt; color: var(--muted); margin-bottom: 0.25in; }
+.meta { border-left: 4px solid var(--accent); padding-left: 0.12in; color: var(--muted); }
+.note, .warning, .success { border: 1px solid var(--line); background: var(--panel); padding: 0.12in; border-radius: 6px; margin: 0.12in 0; }
+.warning { border-color: #e0b56d; background: #fff8e9; }
+.success { border-color: #8bb99f; background: #f1faf4; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.12in; }
+.card { border: 1px solid var(--line); border-radius: 6px; padding: 0.11in; background: var(--panel); }
+.toc a { text-decoration: none; color: var(--ink); }
+.page-break { break-before: page; }
+.small { color: var(--muted); font-size: 9pt; }
+.id { width: 0.55in; white-space: nowrap; font-weight: 700; color: var(--accent); }
+.role { width: 0.75in; white-space: nowrap; }
+.pass { color: var(--ok); font-weight: 700; }
+.fail { color: var(--danger); font-weight: 700; }
+.warn { color: var(--warn); font-weight: 700; }
+.tight td, .tight th { padding: 0.045in; }
+@page { size: Letter; margin: 0.55in; }
+@media print { html { background: #fff; } body { max-width: none; padding: 0; } .page-break { break-before: page; } a[href]::after { content: ""; } }
+</style></head><body>
+<section class="cover">
+  <p class="kicker">T.A.L.O.N.</p>
+  <h1>Alpha Test Flow</h1>
+  <p class="subtitle">Server and client software test script for alpha operators.</p>
+  <div class="meta">
+    <p>Created from repository source, tests, and build scripts on April 30, 2026.</p>
+    <p>This flow intentionally does not rely on wiki project-state content. Code evidence came from the desktop entry point, installer, core session facade, Reticulum config helpers, desktop page helpers, and automated tests.</p>
+  </div>
+</section>
+
+<section class="page-break toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#scope">Scope</a></li>
+    <li><a href="#test-bed">Test Bed</a></li>
+    <li><a href="#recording">Recording Results</a></li>
+    <li><a href="#flow">End-To-End Flow</a></li>
+    <li><a href="#permissions">Permission And Negative Tests</a></li>
+    <li><a href="#reliability">Reliability Tests</a></li>
+    <li><a href="#exit">Exit Criteria</a></li>
+    <li><a href="#source-map">Code Source Map</a></li>
+  </ol>
+</section>
+
+<h2 id="scope">Scope</h2>
+<p>This alpha flow validates the current PySide6 desktop server and client roles as shipped by the Linux desktop artifacts. It covers install, first unlock, TALON-owned Reticulum setup, client enrollment, two-way sync, operational workflows, server-only administration, client-side restrictions, and restart behavior.</p>
+
+<div class="grid">
+  <div class="card">
+    <h3>Server Tester</h3>
+    <ul>
+      <li>Installs and launches the server artifact.</li>
+      <li>Creates the first local encrypted server database.</li>
+      <li>Configures Reticulum with transport enabled.</li>
+      <li>Generates one-time client enrollment tokens.</li>
+      <li>Exercises server-only controls: enrollment, clients, audit, keys, mission lifecycle, document upload/delete, record delete, lease renewal, and revocation.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Client Tester</h3>
+    <ul>
+      <li>Installs and launches the client artifact.</li>
+      <li>Creates the first local encrypted client database.</li>
+      <li>Configures Reticulum to reach the server.</li>
+      <li>Enrolls with a full <code>TOKEN:SERVER_HASH</code> value.</li>
+      <li>Exercises field workflows: map, SITREPs, assets, missions, assignments, incidents, chat, documents, and operator profile.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="warning"><strong>Use test data only.</strong> Do not use live incident information, production RNS identities, real private documents, or a passphrase reused anywhere else.</div>
+
+<h2 id="test-bed">Test Bed</h2>
+<h3>Recommended Layout</h3>
+<ul>
+  <li>Use two Linux machines, two VMs, or two isolated Linux user accounts: one server role and one client role.</li>
+  <li>Avoid installing both role artifacts into the same user profile unless the test is specifically about destructive role switching. The installer protects role switches and requires the exact phrase <code>DELETE TALON DATA</code> before deleting previous TALON files.</li>
+  <li>Use a reachable Reticulum path. For a controlled LAN alpha test, <code>TCP Server</code> on the server and <code>TCP Client</code> on the client are deterministic. A direct TCP privacy warning is expected when this path is used.</li>
+  <li><code>AutoInterface</code>, <code>Yggdrasil Server/Client</code>, and <code>i2pd Server/Client</code> are also available from the Network Setup dialog.</li>
+</ul>
+
+<h3>Artifacts And Passphrases</h3>
+<table>
+  <tr><th>Item</th><th>Alpha Value</th><th>Expected Handling</th></tr>
+  <tr><td>Server package</td><td><code>talon-desktop-server-linux.tar.gz</code></td><td>Install on the server test machine/profile only.</td></tr>
+  <tr><td>Client package</td><td><code>talon-desktop-client-linux.tar.gz</code></td><td>Install on the client test machine/profile only.</td></tr>
+  <tr><td>Passphrase</td><td>Unique 12+ character phrase with at least three character classes.</td><td>Do not write the real passphrase in the test report. Fresh databases reject weak or predictable phrases.</td></tr>
+  <tr><td>Network method</td><td>Record AutoInterface, TCP, Yggdrasil, I2P, or LoRa/RNode.</td><td>The dashboard should report a redacted method label. TCP should show a privacy warning.</td></tr>
+</table>
+
+<h2 id="recording">Recording Results</h2>
+<p>Record each step as <span class="pass">PASS</span>, <span class="fail">FAIL</span>, <span class="warn">BLOCKED</span>, or <span class="warn">NOT RUN</span>. Attach screenshots for UI failures and include timestamps for network or sync failures.</p>
+
+<table class="tight">
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Tester names</td><td></td></tr>
+  <tr><td>Date and local timezone</td><td></td></tr>
+  <tr><td>Server OS and package filename</td><td></td></tr>
+  <tr><td>Client OS and package filename</td><td></td></tr>
+  <tr><td>Network method and port/address family</td><td></td></tr>
+  <tr><td>Server launcher log path</td><td><code>${XDG_STATE_HOME:-$HOME/.local/state}/talon/desktop-server-launcher.log</code></td></tr>
+  <tr><td>Client launcher log path</td><td><code>${XDG_STATE_HOME:-$HOME/.local/state}/talon/desktop-client-launcher.log</code></td></tr>
+</table>
+
+<h2 id="flow" class="page-break">End-To-End Flow</h2>
+<h3>A. Install And Smoke Test</h3>
+<table>
+  <tr><th class="id">ID</th><th class="role">Role</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr>
+    <td class="id">A1</td><td class="role">Server</td>
+    <td>Extract and install the server artifact:<pre>tar -xzf talon-desktop-server-linux.tar.gz
+cd talon-desktop-server-linux
+bash ./install.sh --yes --smoke-test</pre></td>
+    <td>Installer creates <code>talon-desktop-server</code>, <code>T.A.L.O.N. Server</code>, <code>~/.talon-server/talon.ini</code>, and <code>~/.talon-server/reticulum/config</code>. Smoke output includes <code>TALON_DESKTOP_SMOKE_OK server</code>.</td>
+    <td>Installer output, package filename, screenshot or terminal capture.</td>
+  </tr>
+  <tr>
+    <td class="id">A2</td><td class="role">Client</td>
+    <td>Extract and install the client artifact:<pre>tar -xzf talon-desktop-client-linux.tar.gz
+cd talon-desktop-client-linux
+bash ./install.sh --yes --smoke-test</pre></td>
+    <td>Installer creates <code>talon-desktop-client</code>, <code>T.A.L.O.N. Client</code>, <code>~/.talon/talon.ini</code>, and <code>~/.talon/reticulum/config</code>. Smoke output includes <code>TALON_DESKTOP_SMOKE_OK client</code>.</td>
+    <td>Installer output, package filename, screenshot or terminal capture.</td>
+  </tr>
+  <tr>
+    <td class="id">A3</td><td class="role">Both</td>
+    <td>Launch each role from its role-specific launcher.</td>
+    <td>The login window title shows the correct role: <code>T.A.L.O.N. Desktop [SERVER]</code> or <code>T.A.L.O.N. Desktop [CLIENT]</code>.</td>
+    <td>Screenshot of each login window.</td>
+  </tr>
+</table>
+
+<h3>B. First Unlock And Network Setup</h3>
+<table>
+  <tr><th class="id">ID</th><th class="role">Role</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr>
+    <td class="id">B1</td><td class="role">Server</td>
+    <td>Enter a strong local passphrase and select <strong>Unlock</strong>. In Network Setup, select <strong>TCP Server</strong> or the agreed deployment template, validate, and save.</td>
+    <td>Network Setup is available only after unlock. The Reticulum config validates. Server mode uses <code>enable_transport = True</code>. The main window opens with all common pages plus <strong>Enrollment</strong>, <strong>Clients</strong>, <strong>Audit</strong>, and <strong>Keys</strong>.</td>
+    <td>Screenshot of Network Setup validation and dashboard.</td>
+  </tr>
+  <tr>
+    <td class="id">B2</td><td class="role">Client</td>
+    <td>Enter a strong local passphrase and select <strong>Unlock</strong>. In Network Setup, select <strong>TCP Client</strong> or the agreed deployment template, enter the server address/port if prompted, validate, and save.</td>
+    <td>Client mode uses <code>enable_transport = False</code>. After network startup, a fresh client shows the <strong>Client Enrollment</strong> group with token and callsign fields instead of the main window.</td>
+    <td>Screenshot of Network Setup validation and enrollment prompt.</td>
+  </tr>
+  <tr>
+    <td class="id">B3</td><td class="role">Both</td>
+    <td>If TCP is used, acknowledge any TCP privacy warning after network startup.</td>
+    <td>Warning appears for direct TCP and explains that TCP can expose addressing metadata. This is a pass condition for a TCP alpha test.</td>
+    <td>Screenshot or note that warning appeared.</td>
+  </tr>
+</table>
+
+<h3>C. Client Enrollment</h3>
+<table>
+  <tr><th class="id">ID</th><th class="role">Role</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr>
+    <td class="id">C1</td><td class="role">Server</td>
+    <td>Open <strong>Enrollment</strong>, select <strong>Generate Token</strong>, then <strong>Copy</strong>.</td>
+    <td>A one-time token is generated. The copied value is the combined <code>TOKEN:SERVER_HASH</code> value when the server hash is initialized. Pending token count increases until the client consumes it.</td>
+    <td>Screenshot with token preview only, not the full token in public reports.</td>
+  </tr>
+  <tr>
+    <td class="id">C2</td><td class="role">Client</td>
+    <td>Paste the full token into the enrollment prompt, enter a unique callsign such as <code>ALPHA1</code>, and select <strong>Enroll Client</strong>.</td>
+    <td>Client enrollment succeeds and the main window opens. If it fails, the login window shows <code>Enrollment failed:</code> followed by the core error.</td>
+    <td>Client dashboard screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">C3</td><td class="role">Server</td>
+    <td>Open <strong>Clients</strong> and <strong>Operators</strong>.</td>
+    <td>The enrolled callsign appears as active, not revoked. The consumed token no longer appears as pending.</td>
+    <td>Server Clients screenshot and pending token count.</td>
+  </tr>
+</table>
+
+<h3>D. Server-Origin Data Sync</h3>
+<table>
+  <tr><th class="id">ID</th><th class="role">Role</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr>
+    <td class="id">D1</td><td class="role">Server</td>
+    <td>Open <strong>Assets</strong>, select <strong>New</strong>, create <code>Alpha Cache 01</code> as category <code>cache</code>, and add a test latitude/longitude.</td>
+    <td>The asset appears in the server Assets table. The dashboard asset count increases.</td>
+    <td>Server Assets screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">D2</td><td class="role">Client</td>
+    <td>Refresh <strong>Assets</strong> and <strong>Map</strong>.</td>
+    <td><code>Alpha Cache 01</code> appears on the client. The Map page shows it in overlays and the asset filter can hide/show it.</td>
+    <td>Client Assets and Map screenshots.</td>
+  </tr>
+  <tr>
+    <td class="id">D3</td><td class="role">Server</td>
+    <td>Open <strong>Documents</strong>, upload a small allowed file such as <code>alpha-brief.txt</code>, and enter a description.</td>
+    <td>Upload succeeds. Filename, size, uploader, timestamp, and SHA-256 preview appear. Upload is server-only.</td>
+    <td>Server Documents screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">D4</td><td class="role">Client</td>
+    <td>Open <strong>Documents</strong>, refresh, select the uploaded file, and download/save it.</td>
+    <td>The document metadata syncs to the client. Download succeeds through the active sync session and integrity check passes.</td>
+    <td>Client Documents screenshot and saved file hash if collected.</td>
+  </tr>
+</table>
+
+<h3>E. Client-Origin Data Sync</h3>
+<table>
+  <tr><th class="id">ID</th><th class="role">Role</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr>
+    <td class="id">E1</td><td class="role">Client</td>
+    <td>Create an asset named <code>Client Rally 01</code> with category <code>rally_point</code> and a test location.</td>
+    <td>The client asset appears locally. If the client is temporarily disconnected, the Dashboard pending outbox count should increase.</td>
+    <td>Client Assets screenshot and dashboard count.</td>
+  </tr>
+  <tr>
+    <td class="id">E2</td><td class="role">Server</td>
+    <td>Refresh <strong>Assets</strong>.</td>
+    <td><code>Client Rally 01</code> syncs to the server. Server can verify or unverify the asset.</td>
+    <td>Server Assets screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">E3</td><td class="role">Client</td>
+    <td>Open <strong>SITREPs</strong>, select a template, set level <code>PRIORITY</code>, attach the client asset or coordinates, enter a body, and send.</td>
+    <td>SITREP appears in the client feed with author callsign, level, status, location/link data, and no audio unless the level is <code>FLASH</code> or <code>FLASH_OVERRIDE</code> and Audio is enabled.</td>
+    <td>Client SITREP screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">E4</td><td class="role">Server</td>
+    <td>Refresh <strong>SITREPs</strong>, select the client SITREP, then test <strong>Acknowledge</strong>, <strong>Assign</strong>, <strong>Close</strong>, and <strong>Create Incident</strong>.</td>
+    <td>Follow-ups appear in detail. Status and assignment fields update. Linked incident opens in the Incidents page.</td>
+    <td>Server SITREP detail and linked Incident screenshots.</td>
+  </tr>
+</table>
+
+<h3>F. Mission, Assignment, Incident, And Chat Workflows</h3>
+<table>
+  <tr><th class="id">ID</th><th class="role">Role</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr>
+    <td class="id">F1</td><td class="role">Client</td>
+    <td>Open <strong>Missions</strong>, select <strong>New</strong>, create a mission request with title, priority, requested asset, AO polygon, route, timing, objectives, constraints, and support notes.</td>
+    <td>Client-created mission is submitted as pending approval. Geometry validation rejects an AO polygon with fewer than three points.</td>
+    <td>Client Missions screenshot and any validation notes.</td>
+  </tr>
+  <tr>
+    <td class="id">F2</td><td class="role">Server</td>
+    <td>Open <strong>Missions</strong>, select the pending mission, approve it, and review asset allocation. Then complete or abort a duplicate test mission.</td>
+    <td>Approval changes mission status to active, creates/updates the mission chat channel, and links allocated assets. Server lifecycle buttons include approve, reject, abort, complete, and delete according to mission status.</td>
+    <td>Server approval dialog and active mission screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">F3</td><td class="role">Either</td>
+    <td>Open <strong>Assignments</strong>, create an assignment, add a location, then have the client submit a <strong>Check-In</strong>.</td>
+    <td>Assignment appears on both roles. Check-in appears in recent activity. Server can acknowledge the check-in.</td>
+    <td>Assignments board screenshots from both roles.</td>
+  </tr>
+  <tr>
+    <td class="id">F4</td><td class="role">Either</td>
+    <td>Open <strong>Incidents</strong>, create a report linked to the assignment, asset, mission, or SITREP, and mark follow-up needed.</td>
+    <td>Incident appears with category, severity, title, location, narrative, actions, outcome, and follow-up filters.</td>
+    <td>Incident list/detail screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">F5</td><td class="role">Either</td>
+    <td>Open <strong>Chat</strong>, create a custom channel, send a normal message, send an urgent message, attach a grid reference, and open a direct-message channel with another operator if available.</td>
+    <td>Messages sync both ways. Urgent messages appear in alert surfaces. Grid references are built from known map positions such as assets, zones, waypoints, and located SITREPs. DM channels are server-readable in the current core.</td>
+    <td>Chat screenshots from both roles.</td>
+  </tr>
+</table>
+
+<h2 id="permissions" class="page-break">Permission And Negative Tests</h2>
+<table>
+  <tr><th class="id">ID</th><th>Test</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr><td class="id">P1</td><td>Client navigation after enrollment.</td><td>Client has Dashboard, Map, SITREPs, Assets, Missions, Assignments, Incidents, Chat, Documents, and Operators. Client does not show Enrollment, Clients, Audit, or Keys.</td><td>Client nav screenshot.</td></tr>
+  <tr><td class="id">P2</td><td>Server navigation after unlock.</td><td>Server has all client pages plus Enrollment, Clients, Audit, and Keys.</td><td>Server nav screenshot.</td></tr>
+  <tr><td class="id">P3</td><td>Client tries to upload or delete a document.</td><td>Upload is unavailable or reports <code>Upload is available in server mode only.</code> Delete is unavailable in client mode.</td><td>Client Documents screenshot.</td></tr>
+  <tr><td class="id">P4</td><td>Client tries to delete a chat channel/message.</td><td>Delete controls are unavailable or disabled. Server can delete eligible non-default channels/messages.</td><td>Client and server Chat screenshots.</td></tr>
+  <tr><td class="id">P5</td><td>Client tries to verify its own asset.</td><td>Client cannot verify an asset created by the same local operator. Server can verify it.</td><td>Asset detail screenshots.</td></tr>
+  <tr><td class="id">P6</td><td>Server uploads blocked file types such as <code>test.sh</code> or oversized files over 50 MB.</td><td>Upload fails with an operator-facing document error. Allowed alpha uploads include PDF, TXT, MD, CSV, JSON, GeoJSON, and common image formats.</td><td>Document error text.</td></tr>
+  <tr><td class="id">P7</td><td>Fresh database unlock with weak passphrase such as a short phrase or predictable pattern.</td><td>Unlock fails with passphrase policy text. Repeated failures trigger temporary unlock delay.</td><td>Error text and timestamp.</td></tr>
+  <tr><td class="id">P8</td><td>Keys page <strong>Rotate Group Key</strong>.</td><td>Button reports that group key rotation is not implemented yet. It must not pretend to rotate keys.</td><td>Dialog screenshot.</td></tr>
+</table>
+
+<h2 id="reliability" class="page-break">Reliability Tests</h2>
+<table>
+  <tr><th class="id">ID</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
+  <tr>
+    <td class="id">R1</td>
+    <td>Close and reopen both roles. Unlock with the same local passphrases.</td>
+    <td>Server opens directly to the main window after network setup. Enrolled client opens to the main window without asking for enrollment again. Existing records persist.</td>
+    <td>Dashboard screenshots after restart.</td>
+  </tr>
+  <tr>
+    <td class="id">R2</td>
+    <td>Disconnect the client network after enrollment. Create one asset and one SITREP. Reconnect and wait for sync.</td>
+    <td>Client can create offline-creatable records. Pending outbox count increases while disconnected, then decreases after reconnect and server receipt.</td>
+    <td>Dashboard counts before and after reconnect.</td>
+  </tr>
+  <tr>
+    <td class="id">R3</td>
+    <td>Restart only the server while the client remains open.</td>
+    <td>Client should recover when the server returns. New client records should sync after the server is reachable again.</td>
+    <td>Client status, server status, launcher logs.</td>
+  </tr>
+  <tr>
+    <td class="id">R4</td>
+    <td>Use a spare enrolled client, then have the server revoke that operator from Clients or Keys.</td>
+    <td>Spare client shows a modal locked state and cannot continue normal operation. Server audit can be filtered for the revocation event.</td>
+    <td>Client lock screenshot and Audit screenshot.</td>
+  </tr>
+  <tr>
+    <td class="id">R5</td>
+    <td>Have the server renew the primary client's lease.</td>
+    <td>Operator row lease status updates. Audit severity for lease renewal is positive. Any lease lock should close after renewal.</td>
+    <td>Clients and Audit screenshots.</td>
+  </tr>
+</table>
+
+<h2 id="exit">Exit Criteria</h2>
+<div class="success">
+  <p><strong>Minimum alpha pass:</strong> both artifacts install and smoke test, one client enrolls, server-origin and client-origin records sync, core operational pages are usable, server-only permissions hold, restart persistence works, and no data integrity or lockout defect is observed.</p>
+</div>
+<table>
+  <tr><th>Area</th><th>Pass Requirement</th></tr>
+  <tr><td>Install</td><td>Role-specific launchers and desktop entries are correct. No destructive role switch is needed for the normal two-role test bed.</td></tr>
+  <tr><td>Unlock and network</td><td>Strong passphrases work, weak passphrases fail, Reticulum config validates, and TCP warnings appear when TCP is active.</td></tr>
+  <tr><td>Enrollment</td><td>One-time token is generated, consumed, and removed from pending tokens. Client receives an operator identity and reaches the main window.</td></tr>
+  <tr><td>Sync</td><td>Assets, SITREPs, missions, assignments, incidents, chat, and document metadata behave according to role and sync expectations.</td></tr>
+  <tr><td>Permissions</td><td>Client cannot access server-only admin pages or server-only upload/delete/lifecycle controls.</td></tr>
+  <tr><td>Recovery</td><td>Reopening apps preserves data and enrollment. Temporary network loss does not corrupt records.</td></tr>
+</table>
+
+<h3>Bug Report Packet</h3>
+<p>For every failure, attach the following:</p>
+<ul>
+  <li>Step ID, role, expected result, and actual result.</li>
+  <li>Package filename and OS version.</li>
+  <li>Network method and whether TCP warning appeared.</li>
+  <li>Screenshot of the affected page or dialog.</li>
+  <li>Relevant launcher log from <code>${XDG_STATE_HOME:-$HOME/.local/state}/talon</code>.</li>
+  <li>Whether the problem reproduces after app restart.</li>
+</ul>
+
+<h2 id="source-map" class="page-break">Code Source Map</h2>
+<table>
+  <tr><th>Area</th><th>Source Used</th><th>Behavior Reflected In This Flow</th></tr>
+  <tr><td>CLI and package smoke</td><td><code>talon_desktop/main.py</code>, <code>tests/test_desktop_shell.py</code></td><td><code>--smoke</code>, <code>--loopback-smoke</code>, role navigation, package smoke success strings.</td></tr>
+  <tr><td>Installer</td><td><code>build/install-talon-desktop.sh</code>, <code>tests/test_linux_installer.py</code></td><td>Role marker handling, launchers, default paths, RNS config defaults, role-switch confirmation, uninstall safeguards.</td></tr>
+  <tr><td>Unlock, network, enrollment, sync</td><td><code>talon_desktop/app.py</code>, <code>talon_core/session.py</code>, <code>talon_core/network/rns_config.py</code></td><td>Login behavior, Network Setup gating, Reticulum validation/acceptance, client enrollment, sync status, lease lock behavior.</td></tr>
+  <tr><td>Navigation</td><td><code>talon_desktop/navigation.py</code></td><td>Common pages and server-only pages.</td></tr>
+  <tr><td>Operational workflows</td><td><code>talon_desktop/*_page.py</code>, <code>talon_core/services/*</code>, <code>tests/test_desktop_shell.py</code>, <code>tests/test_services.py</code></td><td>Assets, SITREPs, map overlays, missions, assignments, incidents, chat, documents, operators, audit, and keys.</td></tr>
+  <tr><td>Document safety</td><td><code>talon_core/documents.py</code>, <code>talon_core/constants.py</code>, <code>talon_desktop/documents.py</code>, <code>tests/test_documents.py</code></td><td>50 MB cap, allowed upload extensions, blocked executable/script extensions, hash verification, server-only upload/delete.</td></tr>
+  <tr><td>Security and auth edges</td><td><code>talon_core/crypto/passphrase.py</code>, <code>tests/test_core_session.py</code>, <code>tests/test_revocation.py</code></td><td>Passphrase policy, unlock delay, revocation, lease renewal, identity lock expectations.</td></tr>
+</table>
+
+</body></html>

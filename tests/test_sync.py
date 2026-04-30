@@ -18,6 +18,7 @@ from talon.network.sync import SyncEngine, _validated_table
 from talon.server import net_components, net_handler
 from talon.services.assets import request_asset_deletion_command, verify_asset_command
 from talon.services.operators import revoke_operator_command
+from talon_core.community_safety import create_assignment
 from talon.constants import (
     HEARTBEAT_BROADBAND_S,
     HEARTBEAT_LORA_S,
@@ -401,6 +402,55 @@ class TestClientDocumentCacheSync:
             "SELECT 1 FROM documents WHERE id = 32"
         ).fetchone() is None
         assert not cached_path.exists()
+
+    def test_inline_document_response_caches_payload(
+        self,
+        tmp_db,
+        test_key,
+        tmp_path,
+    ):
+        conn, _ = tmp_db
+        storage_root = tmp_path / "client-docs"
+        manager = _make_client_manager(conn, test_key, operator_id=1)
+        manager._cfg.read_dict({"documents": {"storage_path": str(storage_root)}})
+        plaintext = b"x" * 254_000
+        sha256_hash = hashlib.sha256(plaintext).hexdigest()
+        state = {
+            "event": threading.Event(),
+            "payload": None,
+            "error": None,
+        }
+        manager._pending_document_requests[33] = state
+
+        manager._document_transfers.handle_response(
+            {
+                "type": proto.MSG_DOCUMENT_RESPONSE,
+                "ok": True,
+                "document_id": 33,
+                "record": {
+                    "id": 33,
+                    "filename": "field-map.pdf",
+                    "mime_type": "application/pdf",
+                    "size_bytes": len(plaintext),
+                    "sha256_hash": sha256_hash,
+                    "folder_path": "Plans",
+                    "description": "",
+                    "uploaded_by": 1,
+                    "uploaded_at": 1000,
+                    "version": 1,
+                },
+                "encoding": "base64",
+                "payload": base64.b64encode(plaintext).decode("ascii"),
+            }
+        )
+
+        assert state["event"].is_set()
+        assert state["payload"] == plaintext
+        row = conn.execute(
+            "SELECT filename, folder_path, file_path FROM documents WHERE id = 33"
+        ).fetchone()
+        assert row[0:2] == ("field-map.pdf", "Plans")
+        assert (storage_root / row[2]).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -1264,6 +1314,69 @@ class TestClientServerPushIntegration:
             assert client_row == (1, 30, 2, "synced")
         finally:
             close_db(client_conn)
+            close_db(server_conn)
+
+    def test_client_pushed_checkin_updates_assignment_status(
+        self,
+        tmp_path,
+        test_key,
+        monkeypatch,
+    ):
+        server_conn = _open_test_db(tmp_path, "server_checkin.db", test_key)
+        try:
+            operator_hash = "f" * 64
+            _insert_operator(server_conn, 20, "ASTER", operator_hash)
+            assignment = create_assignment(
+                server_conn,
+                assignment_type="fixed_post",
+                title="North Gate",
+                status="active",
+                priority="ROUTINE",
+                assigned_operator_ids=[20],
+                team_lead="ASTER",
+                checkin_interval_min=1,
+                overdue_threshold_min=1,
+                created_by=1,
+            )
+
+            sent = []
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            monkeypatch.setattr(net_components.threading, "Timer", _NoOpTimer)
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            fake_link = _FakeLink(operator_hash)
+            handler._handle_client_push(
+                fake_link,
+                {
+                    "records": {
+                        "checkins": [
+                            {
+                                "uuid": uuid.uuid4().hex,
+                                "assignment_id": assignment.id,
+                                "state": "ok",
+                                "note": "Checked in from client.",
+                            }
+                        ]
+                    },
+                },
+            )
+
+            ack = next(msg for msg in sent if msg["type"] == proto.MSG_PUSH_ACK)
+            assert len(ack["accepted"]) == 1
+            row = server_conn.execute(
+                "SELECT status, last_checkin_state, last_checkin_operator_id "
+                "FROM assignments WHERE id = ?",
+                (assignment.id,),
+            ).fetchone()
+            assert row == ("active", "ok", 20)
+        finally:
             close_db(server_conn)
 
     def test_existing_asset_deletion_request_round_trips_to_server_and_back(

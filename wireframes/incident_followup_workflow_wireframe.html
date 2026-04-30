@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON Incident Follow-up Workflow Wireframe</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1214;
+      --shell: #0a0f11;
+      --panel: #101719;
+      --panel-2: #142024;
+      --panel-3: #1a2529;
+      --line: #253238;
+      --line-strong: #364950;
+      --text: #d8dee9;
+      --text-strong: #f6fbfb;
+      --muted: #93a1a8;
+      --teal: #8fbcbb;
+      --green: #7fb069;
+      --yellow: #d6b85a;
+      --orange: #f28c28;
+      --red: #ff5555;
+      --blue: #6aa3d8;
+      --shadow: rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, "Noto Sans", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .page {
+      max-width: 1460px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 28px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      color: var(--text-strong);
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      font-size: 20px;
+      line-height: 1.2;
+      font-weight: 800;
+    }
+
+    h3 {
+      font-size: 15px;
+      line-height: 1.25;
+      font-weight: 800;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    li + li {
+      margin-top: 4px;
+    }
+
+    .approval {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 16px 38px var(--shadow);
+    }
+
+    .screen {
+      margin: 0 0 34px;
+    }
+
+    .screen-title {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+
+    .screen-title span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .desktop-frame {
+      overflow: hidden;
+      min-height: 760px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) 34px;
+    }
+
+    .nav {
+      grid-row: 1 / span 2;
+      background: var(--shell);
+      border-right: 1px solid var(--line);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .brand {
+      padding: 8px 10px 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+    }
+
+    .brand .name {
+      color: var(--text-strong);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .brand .mode {
+      margin-top: 2px;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .nav-item {
+      min-height: 34px;
+      padding: 8px 10px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .nav-item.active {
+      color: var(--text-strong);
+      background: #1f2f35;
+      border-color: #31434a;
+    }
+
+    .nav-item .badge {
+      min-width: 22px;
+      height: 20px;
+      border-radius: 4px;
+      background: var(--orange);
+      color: #16120b;
+      display: inline-grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .content {
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .topbar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar h2 {
+      flex: 1;
+    }
+
+    .control,
+    button.control {
+      min-height: 34px;
+      padding: 7px 10px;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 700;
+    }
+
+    .control.primary {
+      background: #243d42;
+      border-color: #44626a;
+      color: var(--text-strong);
+    }
+
+    .control.warn {
+      background: #3b2b16;
+      border-color: #765c28;
+      color: #ffe7a6;
+    }
+
+    .statusbar {
+      grid-column: 2;
+      background: var(--shell);
+      border-top: 1px solid var(--line);
+      padding: 8px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 12px;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .panel,
+    .dialog {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px var(--shadow);
+    }
+
+    .panel {
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .panel-head h3 {
+      flex: 1;
+    }
+
+    .table {
+      display: grid;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 72px 140px minmax(0, 1fr) 110px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .row:last-child {
+      border-bottom: 0;
+    }
+
+    .cell {
+      padding: 9px 10px;
+      min-width: 0;
+      color: var(--text);
+      border-right: 1px solid var(--line);
+    }
+
+    .cell:last-child {
+      border-right: 0;
+    }
+
+    .row.header .cell {
+      color: var(--muted);
+      background: #121b1f;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .row.selected {
+      background: #1b2a2f;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 3px 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      color: var(--text-strong);
+      background: var(--panel-3);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .tag.warn {
+      background: #3b2b16;
+      border-color: #765c28;
+      color: #ffe7a6;
+    }
+
+    .tag.good {
+      background: #173421;
+      border-color: #2d6c40;
+      color: #adf0bd;
+    }
+
+    .detail {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .detail-card {
+      padding: 11px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .detail-card strong {
+      color: var(--text-strong);
+    }
+
+    .dialog-wrap {
+      position: relative;
+      min-height: 700px;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(rgba(13, 18, 20, 0.62), rgba(13, 18, 20, 0.72)),
+        var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      padding: 24px;
+    }
+
+    .dialog {
+      width: min(760px, 100%);
+      max-height: 650px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .dialog-title {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #121a1d;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dialog-title h2 {
+      font-size: 18px;
+      flex: 1;
+    }
+
+    .dialog-body {
+      padding: 14px 16px;
+      overflow: auto;
+      display: grid;
+      gap: 12px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 9px 12px;
+      align-items: start;
+    }
+
+    .label {
+      color: var(--muted);
+      font-weight: 800;
+      padding-top: 8px;
+    }
+
+    .input,
+    .textarea,
+    .select {
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      background: #0f171a;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .textarea {
+      min-height: 86px;
+    }
+
+    .textarea.small {
+      min-height: 62px;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      font-weight: 800;
+      color: var(--text-strong);
+    }
+
+    .box {
+      width: 18px;
+      height: 18px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      background: #0f171a;
+      color: var(--green);
+      font-weight: 900;
+    }
+
+    .followup-section {
+      border: 1px solid #5e4a24;
+      background: #191813;
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .followup-section .section-head {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .followup-section .section-head h3 {
+      color: #ffe7a6;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .dialog-actions {
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      background: #121a1d;
+    }
+
+    .callout {
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 8px;
+      color: var(--muted);
+    }
+
+    .callout strong {
+      color: var(--text-strong);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .step {
+      padding: 13px;
+      min-height: 130px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px var(--shadow);
+    }
+
+    .step .num {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      margin-bottom: 8px;
+      background: #243d42;
+      border: 1px solid #44626a;
+      border-radius: 50%;
+      color: var(--text-strong);
+      font-weight: 900;
+    }
+
+    .list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .item {
+      padding: 10px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .item .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .brief,
+      .grid,
+      .split,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .desktop-frame {
+        grid-template-columns: 1fr;
+      }
+
+      .nav {
+        display: none;
+      }
+
+      .statusbar {
+        grid-column: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brief">
+      <div>
+        <h1>Incident Follow-up Workflow</h1>
+        <p>Wireframe for making the incident Follow-up needed checkbox invoke accountable work instead of only storing a filter flag. A checked follow-up expands required detail fields and offers a linked assignment handoff.</p>
+      </div>
+      <aside class="approval">
+        <h3>Approval Target</h3>
+        <ul>
+          <li>Incident dialog expands when Follow-up needed is checked.</li>
+          <li>Follow-up details capture action, owner, urgency, due time, type, and notes.</li>
+          <li>Saving can create a linked assignment/task from the follow-up details.</li>
+          <li>Incidents page exposes open follow-ups as a first-class work queue.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>1. SITREP To Incident Handoff</h2>
+        <span>Selected SITREP opens the incident dialog with links and narrative prefilled.</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">T.A.L.O.N.</div>
+            <div class="mode">CLIENT</div>
+          </div>
+          <div class="nav-item">Dashboard</div>
+          <div class="nav-item">Map</div>
+          <div class="nav-item active">SITREPs <span class="badge">1</span></div>
+          <div class="nav-item">Assets</div>
+          <div class="nav-item">Missions</div>
+          <div class="nav-item">Assignments</div>
+          <div class="nav-item">Incidents</div>
+          <div class="nav-item">Chat</div>
+          <div class="nav-item">Documents</div>
+          <div class="nav-item">Operators</div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h2>SITREPs</h2>
+            <button class="control">Refresh</button>
+            <button class="control primary">New SITREP</button>
+          </div>
+          <div class="grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Feed</h3>
+                <span class="tag warn">PRIORITY</span>
+              </div>
+              <div class="table">
+                <div class="row header">
+                  <div class="cell">ID</div>
+                  <div class="cell">Mission</div>
+                  <div class="cell">Body</div>
+                  <div class="cell">Status</div>
+                </div>
+                <div class="row selected">
+                  <div class="cell">#42</div>
+                  <div class="cell">Lost Dog</div>
+                  <div class="cell">Located dog. Conscious, contained, apparent broken rear leg. Request transport crate and vet support.</div>
+                  <div class="cell">Open</div>
+                </div>
+                <div class="row">
+                  <div class="cell">#41</div>
+                  <div class="cell">Lost Dog</div>
+                  <div class="cell">Tracking near west trailhead.</div>
+                  <div class="cell">Closed</div>
+                </div>
+              </div>
+            </div>
+            <aside class="panel detail">
+              <div class="panel-head">
+                <h3>PRIORITY #42</h3>
+                <span class="tag">Open</span>
+              </div>
+              <div class="detail-card"><strong>Mission:</strong> Lost Dog</div>
+              <div class="detail-card"><strong>Location:</strong> West trailhead, 40.123456, -75.250000</div>
+              <div class="detail-card"><strong>Action buttons:</strong><br>Acknowledge | Assign | Close | Create Follow-up Incident | Link Document</div>
+              <button class="control warn">Create Follow-up Incident</button>
+            </aside>
+          </div>
+        </section>
+        <footer class="statusbar">Network: TCP | Pending outbox: 0 | Last sync: now</footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>2. Incident Dialog With Follow-up Details</h2>
+        <span>Checking Follow-up needed exposes the accountable work fields.</span>
+      </div>
+      <div class="dialog-wrap">
+        <div class="dialog">
+          <header class="dialog-title">
+            <h2>New Incident Report</h2>
+            <span class="tag warn">Linked SITREP #42</span>
+          </header>
+          <section class="dialog-body">
+            <div class="form-grid">
+              <div class="label">Category</div>
+              <div class="select">Other</div>
+              <div class="label">Severity</div>
+              <div class="select">PRIORITY</div>
+              <div class="label">Title</div>
+              <div class="input">PRIORITY SITREP #42</div>
+              <div class="label">Location</div>
+              <div class="input">West trailhead</div>
+              <div class="label">Mission</div>
+              <div class="select">Lost Dog</div>
+              <div class="label">SITREP</div>
+              <div class="select">#42 PRIORITY</div>
+              <div class="label">Narrative</div>
+              <div class="textarea">Located dog. Conscious, contained, apparent broken rear leg. Request transport crate and vet support.</div>
+              <div class="label">Actions taken</div>
+              <div class="textarea small">Secured dog at location. Avoided moving injured leg.</div>
+              <div class="label">Outcome</div>
+              <div class="textarea small">Pending veterinary transfer.</div>
+              <div class="label">Follow-up</div>
+              <div class="checkbox-row"><span class="box">✓</span> Follow-up needed</div>
+            </div>
+
+            <section class="followup-section">
+              <div class="section-head">
+                <h3>Follow-up Details</h3>
+                <span class="tag warn">Required while checked</span>
+              </div>
+              <div class="split">
+                <div>
+                  <div class="label">Follow-up type</div>
+                  <div class="select">Transport / medical support</div>
+                </div>
+                <div>
+                  <div class="label">Responsible party</div>
+                  <div class="input">Team Bravo</div>
+                </div>
+              </div>
+              <div class="split">
+                <div>
+                  <div class="label">Urgency</div>
+                  <div class="select">Immediate</div>
+                </div>
+                <div>
+                  <div class="label">Due</div>
+                  <div class="input">2026-04-30 17:30</div>
+                </div>
+              </div>
+              <div>
+                <div class="label">Next action</div>
+                <div class="textarea small">Transport dog to vet and notify owner.</div>
+              </div>
+              <div class="checkbox-row"><span class="box">✓</span> Create linked assignment from this follow-up</div>
+            </section>
+          </section>
+          <footer class="dialog-actions">
+            <button class="control">Cancel</button>
+            <button class="control primary">Save Incident</button>
+          </footer>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>3. Resulting Work Queue</h2>
+        <span>The incident remains visible as an open follow-up and the linked assignment is created for execution.</span>
+      </div>
+      <div class="flow">
+        <div class="step">
+          <div class="num">1</div>
+          <h3>Incident Saved</h3>
+          <p>Incident stores follow-up type, owner, urgency, due time, next action, source links, and follow-up status.</p>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>Assignment Created</h3>
+          <p>If selected, TALON creates a linked assignment using the next action, owner, mission, location, priority, and source incident.</p>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>Follow-up Tracked</h3>
+          <p>Incidents page exposes Open Follow-ups, overdue indicators, and closeout outcome fields.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>4. Incidents Page Filter</h2>
+        <span>Open follow-ups are easy to find without reading every incident row.</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">T.A.L.O.N.</div>
+            <div class="mode">SERVER</div>
+          </div>
+          <div class="nav-item">Dashboard</div>
+          <div class="nav-item">Map</div>
+          <div class="nav-item">SITREPs</div>
+          <div class="nav-item">Assets</div>
+          <div class="nav-item">Missions</div>
+          <div class="nav-item">Assignments <span class="badge">1</span></div>
+          <div class="nav-item active">Incidents <span class="badge">1</span></div>
+          <div class="nav-item">Chat</div>
+          <div class="nav-item">Documents</div>
+          <div class="nav-item">Operators</div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h2>Incidents</h2>
+            <button class="control primary">Open Follow-ups</button>
+            <button class="control">All Incidents</button>
+            <button class="control">New Incident</button>
+          </div>
+          <div class="grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Open Follow-ups</h3>
+                <span class="tag warn">1 active</span>
+              </div>
+              <div class="list">
+                <div class="item">
+                  <strong>Lost Dog injured - broken leg</strong>
+                  <span class="meta">Immediate | Team Bravo | Due 17:30 | Linked SITREP #42 | Assignment #18</span>
+                  <span>Next action: Transport dog to vet and notify owner.</span>
+                </div>
+              </div>
+            </div>
+            <aside class="panel detail">
+              <div class="panel-head">
+                <h3>Follow-up Detail</h3>
+                <span class="tag warn">Open</span>
+              </div>
+              <div class="detail-card"><strong>Responsible:</strong> Team Bravo</div>
+              <div class="detail-card"><strong>Type:</strong> Transport / medical support</div>
+              <div class="detail-card"><strong>Assignment:</strong> #18 Transport dog to vet</div>
+              <div class="detail-card"><strong>Closeout:</strong> requires outcome note before clearing follow-up.</div>
+              <button class="control primary">Clear Follow-up</button>
+            </aside>
+          </div>
+        </section>
+        <footer class="statusbar">Open follow-ups: 1 | Overdue: 0 | Last sync: now</footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>Implementation Notes For Approval</h2>
+      </div>
+      <div class="callout">
+        <strong>Proposed behavior:</strong> follow-up details are required only when Follow-up needed is checked. Saving with Create linked assignment checked creates the incident first, then creates an assignment linked to the same mission/location and carrying an incident reference in its handoff notes until a dedicated incident-assignment relation is added. Clearing follow-up requires an outcome note and removes the incident from Open Follow-ups.
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -6,9 +6,12 @@ import typing
 
 from talon_core.community_safety import (
     acknowledge_checkin,
+    clear_incident_follow_up,
     create_assignment,
     create_checkin,
     create_incident,
+    get_assignment,
+    get_incident,
     update_assignment_status,
 )
 from talon_core.db.connection import Connection
@@ -40,6 +43,8 @@ class IncidentCommandResult:
     incident_id: int
     incident: typing.Optional[CommunityIncident]
     events: tuple[DomainEvent, ...]
+    assignment_id: typing.Optional[int] = None
+    assignment: typing.Optional[CommunityAssignment] = None
 
 
 def create_assignment_command(
@@ -197,6 +202,12 @@ def create_incident_command(
     actions_taken: str = "",
     outcome: str = "",
     follow_up_needed: bool = False,
+    follow_up_type: str = "",
+    follow_up_action: str = "",
+    follow_up_responsible: str = "",
+    follow_up_due: str = "",
+    follow_up_urgency: str = "",
+    create_follow_up_assignment: bool = False,
     notified_services: str = "",
     linked_mission_id: typing.Optional[int] = None,
     linked_assignment_id: typing.Optional[int] = None,
@@ -204,6 +215,12 @@ def create_incident_command(
     linked_sitrep_id: typing.Optional[int] = None,
     sync_status: str = "synced",
 ) -> IncidentCommandResult:
+    if create_follow_up_assignment and not follow_up_needed:
+        raise ValueError("A linked assignment requires follow-up to be needed.")
+    if linked_mission_id is None and linked_assignment_id is not None:
+        linked_assignment = get_assignment(conn, int(linked_assignment_id))
+        if linked_assignment is not None:
+            linked_mission_id = linked_assignment.mission_id
     incident = create_incident(
         conn,
         created_by=created_by,
@@ -218,6 +235,11 @@ def create_incident_command(
         actions_taken=actions_taken,
         outcome=outcome,
         follow_up_needed=follow_up_needed,
+        follow_up_type=follow_up_type,
+        follow_up_action=follow_up_action,
+        follow_up_responsible=follow_up_responsible,
+        follow_up_due=follow_up_due,
+        follow_up_urgency=follow_up_urgency,
         notified_services=notified_services,
         linked_mission_id=linked_mission_id,
         linked_assignment_id=linked_assignment_id,
@@ -225,7 +247,39 @@ def create_incident_command(
         linked_sitrep_id=linked_sitrep_id,
         sync_status=sync_status,
     )
+    follow_up_assignment: CommunityAssignment | None = None
+    if create_follow_up_assignment:
+        follow_up_assignment = create_assignment(
+            conn,
+            created_by=created_by,
+            assignment_type="custom",
+            title=incident.follow_up_action or incident.title or "Incident follow-up",
+            status="active",
+            priority=incident.severity,
+            mission_id=incident.linked_mission_id,
+            location_label=incident.location_label,
+            location_precision="general",
+            support_reason=incident.follow_up_type.replace("_", " ").title(),
+            team_lead=incident.follow_up_responsible,
+            handoff_notes=(
+                f"Incident #{incident.id} follow-up"
+                + (f": {incident.follow_up_action}" if incident.follow_up_action else "")
+            ),
+            lat=incident.lat,
+            lon=incident.lon,
+            sync_status=sync_status,
+        )
+        conn.execute(
+            "UPDATE incidents SET follow_up_assignment_id = ?, version = version + 1 WHERE id = ?",
+            (follow_up_assignment.id, incident.id),
+        )
+        conn.commit()
+        incident = typing.cast(CommunityIncident, get_incident(conn, incident.id))
     events: list[DomainEvent] = [record_changed("incidents", incident.id)]
+    if follow_up_assignment is not None:
+        events.append(record_changed("assignments", follow_up_assignment.id))
+        if follow_up_assignment.mission_id is not None:
+            events.append(record_changed("missions", follow_up_assignment.mission_id))
     if incident.linked_assignment_id is not None:
         events.append(record_changed("assignments", incident.linked_assignment_id))
     if incident.linked_mission_id is not None:
@@ -234,4 +288,42 @@ def create_incident_command(
         events.append(record_changed("assets", incident.linked_asset_id))
     if incident.linked_sitrep_id is not None:
         events.append(record_changed("sitreps", incident.linked_sitrep_id))
-    return IncidentCommandResult(incident.id, incident, tuple(events))
+    return IncidentCommandResult(
+        incident.id,
+        incident,
+        tuple(events),
+        follow_up_assignment.id if follow_up_assignment is not None else None,
+        follow_up_assignment,
+    )
+
+
+def clear_incident_follow_up_command(
+    conn: Connection,
+    *,
+    incident_id: int,
+    outcome_note: str,
+) -> IncidentCommandResult:
+    incident = clear_incident_follow_up(
+        conn,
+        incident_id,
+        outcome_note=outcome_note,
+    )
+    assignment: CommunityAssignment | None = None
+    events: list[DomainEvent] = [record_changed("incidents", incident.id)]
+    if incident.follow_up_assignment_id is not None:
+        update_assignment_status(
+            conn,
+            int(incident.follow_up_assignment_id),
+            status="completed",
+        )
+        assignment = get_assignment(conn, int(incident.follow_up_assignment_id))
+        events.append(record_changed("assignments", int(incident.follow_up_assignment_id)))
+        if assignment is not None and assignment.mission_id is not None:
+            events.append(record_changed("missions", assignment.mission_id))
+    return IncidentCommandResult(
+        incident.id,
+        incident,
+        tuple(events),
+        incident.follow_up_assignment_id,
+        assignment,
+    )

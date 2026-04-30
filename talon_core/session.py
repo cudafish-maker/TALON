@@ -1297,6 +1297,12 @@ class TalonCoreSession:
 
             payload.setdefault("created_by", self.require_local_operator_id())
             return create_incident_command(self._conn, **payload)
+        if name == "incidents.clear_followup":
+            from talon_core.services.community_safety import (
+                clear_incident_follow_up_command,
+            )
+
+            return clear_incident_follow_up_command(self._conn, **payload)
 
         if name == "chat.ensure_defaults":
             from talon_core.chat import ensure_default_channels
@@ -1332,6 +1338,9 @@ class TalonCoreSession:
             return self._documents_download(**payload)
         if name == "documents.delete":
             return self._documents_delete(**payload)
+        if name == "documents.move":
+            self._require_server_mode("Document move")
+            return self._documents_move(**payload)
 
         if name == "enrollment.generate_token":
             return self._generate_enrollment_token()
@@ -1492,6 +1501,7 @@ class TalonCoreSession:
         file_data: bytes,
         uploaded_by: typing.Optional[int] = None,
         description: str = "",
+        folder_path: str = "",
         storage_root: typing.Optional[pathlib.Path] = None,
     ) -> DocumentCommandResult:
         from talon_core.documents import upload_document
@@ -1507,6 +1517,7 @@ class TalonCoreSession:
             file_data=file_data,
             uploaded_by=uploaded_by,
             description=description,
+            folder_path=folder_path,
         )
         return DocumentCommandResult(
             document_id=doc.id,
@@ -1593,6 +1604,22 @@ class TalonCoreSession:
             document_id=doc_id,
             document=doc,
             events=events,
+        )
+
+    def _documents_move(
+        self,
+        *,
+        document_id: int,
+        folder_path: str,
+    ) -> DocumentCommandResult:
+        from talon_core.documents import move_document
+        from talon_core.services.events import record_changed
+
+        doc = move_document(self._conn, int(document_id), folder_path=folder_path)
+        return DocumentCommandResult(
+            document_id=doc.id,
+            document=doc,
+            events=(record_changed("documents", doc.id),),
         )
 
     def _document_callsigns(self) -> dict[int, str]:
@@ -1734,6 +1761,7 @@ class TalonCoreSession:
             incident
             for incident in list_incidents(self._conn, limit=500)
             if incident.linked_assignment_id == assignment_id
+            or incident.follow_up_assignment_id == assignment_id
         ]
         return {
             "assignment": assignment,
@@ -1760,6 +1788,11 @@ class TalonCoreSession:
             if incident.linked_assignment_id is not None
             else None
         )
+        follow_up_assignment = (
+            get_assignment(self._conn, incident.follow_up_assignment_id)
+            if incident.follow_up_assignment_id is not None
+            else None
+        )
         mission = (
             get_mission(self._conn, incident.linked_mission_id)
             if incident.linked_mission_id is not None
@@ -1769,6 +1802,9 @@ class TalonCoreSession:
             "incident": incident,
             "creator_callsign": self._operator_callsign(incident.created_by),
             "assignment_title": assignment.title if assignment is not None else "",
+            "follow_up_assignment_title": (
+                follow_up_assignment.title if follow_up_assignment is not None else ""
+            ),
             "mission_title": mission.title if mission is not None else "",
             "asset_label": self._asset_label(incident.linked_asset_id),
             "sitrep_label": (
@@ -1899,12 +1935,24 @@ class TalonCoreSession:
         )
 
     def _chat_operators(self, online_peers: set[str]) -> list[dict[str, typing.Any]]:
+        from talon_core.operators import SERVER_OPERATOR_ID
+
+        sync_status = self._sync_status()
         operators = []
         for operator in list_operators(self._conn, include_sentinel=True):
             if operator.revoked:
                 continue
             role = operator.profile.get("role", "") if isinstance(operator.profile, dict) else ""
-            online = self.mode == "server" or operator.callsign in online_peers
+            online = (
+                self.mode == "server"
+                or operator.callsign in online_peers
+                or operator.id == self._operator_id
+                or (
+                    self.mode == "client"
+                    and operator.id == SERVER_OPERATOR_ID
+                    and sync_status.connected
+                )
+            )
             operators.append(
                 {
                     "id": operator.id,

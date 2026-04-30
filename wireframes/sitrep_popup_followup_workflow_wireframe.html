@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON SITREP Popup Composer And Follow-up Wireframe</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1214;
+      --shell: #0a0f11;
+      --panel: #101719;
+      --panel-2: #142024;
+      --panel-3: #1a2529;
+      --line: #253238;
+      --line-strong: #364950;
+      --text: #d8dee9;
+      --text-strong: #f6fbfb;
+      --muted: #93a1a8;
+      --teal: #8fbcbb;
+      --green: #7fb069;
+      --yellow: #d6b85a;
+      --orange: #f28c28;
+      --red: #ff5555;
+      --blue: #6aa3d8;
+      --shadow: rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, "Noto Sans", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .page {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--text-strong);
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      font-size: 20px;
+      line-height: 1.2;
+      font-weight: 800;
+    }
+
+    h3 {
+      font-size: 15px;
+      line-height: 1.25;
+      font-weight: 800;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    li + li { margin-top: 4px; }
+
+    .brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 28px;
+    }
+
+    .approval, .callout {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 16px 38px var(--shadow);
+    }
+
+    .screen { margin: 0 0 34px; }
+
+    .screen-title {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+
+    .screen-title span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .desktop-frame {
+      overflow: hidden;
+      min-height: 760px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) 34px;
+    }
+
+    .nav {
+      grid-row: 1 / span 2;
+      background: var(--shell);
+      border-right: 1px solid var(--line);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .brand {
+      padding: 8px 10px 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+    }
+
+    .brand .name {
+      color: var(--text-strong);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .brand .mode {
+      margin-top: 2px;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .nav-item {
+      min-height: 34px;
+      padding: 8px 10px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .nav-item.active {
+      color: var(--text-strong);
+      background: #1f2f35;
+      border-color: #31434a;
+    }
+
+    .badge {
+      min-width: 22px;
+      height: 20px;
+      border-radius: 4px;
+      background: var(--orange);
+      color: #16120b;
+      display: inline-grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 900;
+      padding: 0 6px;
+    }
+
+    .content {
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .topbar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar h2 { flex: 1; }
+
+    .control, button.control {
+      min-height: 34px;
+      padding: 7px 10px;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 700;
+    }
+
+    .control.primary {
+      background: #243d42;
+      border-color: #44626a;
+      color: var(--text-strong);
+    }
+
+    .control.warn {
+      background: #3b2b16;
+      border-color: #765c28;
+      color: #ffe7a6;
+    }
+
+    .statusbar {
+      grid-column: 2;
+      background: var(--shell);
+      border-top: 1px solid var(--line);
+      padding: 8px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-height: 74px;
+      padding: 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      align-content: center;
+      gap: 2px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .metric .value {
+      color: var(--text-strong);
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    .metric.warn .value { color: var(--yellow); }
+    .metric.alert .value { color: var(--red); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 12px;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .panel, .dialog {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px var(--shadow);
+    }
+
+    .panel {
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .panel-head h3 { flex: 1; }
+
+    .filters {
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto auto auto;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .filter {
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      background: #0f171a;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .check {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .box {
+      width: 18px;
+      height: 18px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      background: #0f171a;
+      color: var(--green);
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .table {
+      display: grid;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 72px 118px 130px minmax(0, 1fr) 92px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .cell {
+      padding: 9px 10px;
+      min-width: 0;
+      color: var(--text);
+      border-right: 1px solid var(--line);
+    }
+
+    .cell:last-child { border-right: 0; }
+
+    .row.header .cell {
+      color: var(--muted);
+      background: #121b1f;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .row.selected { background: #1b2a2f; }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 3px 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      color: var(--text-strong);
+      background: var(--panel-3);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .tag.warn {
+      background: #3b2b16;
+      border-color: #765c28;
+      color: #ffe7a6;
+    }
+
+    .tag.alert {
+      background: #401b1f;
+      border-color: #7a3037;
+      color: #ffc1c8;
+    }
+
+    .tag.good {
+      background: #173421;
+      border-color: #2d6c40;
+      color: #adf0bd;
+    }
+
+    .detail {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .detail-card {
+      padding: 11px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .detail-card strong { color: var(--text-strong); }
+
+    .mini-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .mini {
+      padding: 8px;
+      background: #0f171a;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .mini .label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .mini .value {
+      color: var(--text-strong);
+      font-weight: 900;
+      margin-top: 2px;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .activity-list {
+      display: grid;
+      gap: 8px;
+      min-height: 170px;
+    }
+
+    .activity {
+      padding: 10px;
+      background: #0f171a;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .activity .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .document-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .dialog-wrap {
+      position: relative;
+      min-height: 760px;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(rgba(13, 18, 20, 0.62), rgba(13, 18, 20, 0.72)),
+        var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      padding: 24px;
+    }
+
+    .dialog {
+      width: min(820px, 100%);
+      max-height: 700px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .dialog.narrow { width: min(760px, 100%); }
+
+    .dialog-title {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #121a1d;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dialog-title h2 {
+      font-size: 18px;
+      flex: 1;
+    }
+
+    .dialog-body {
+      padding: 14px 16px;
+      overflow: auto;
+      display: grid;
+      gap: 12px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 9px 12px;
+      align-items: start;
+    }
+
+    .form-grid.compact {
+      grid-template-columns: 110px minmax(0, 1fr) 110px minmax(0, 1fr);
+    }
+
+    .field-label {
+      color: var(--muted);
+      font-weight: 800;
+      padding-top: 8px;
+    }
+
+    .input, .textarea, .select {
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      background: #0f171a;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .textarea { min-height: 112px; }
+    .textarea.small { min-height: 68px; }
+
+    .dialog-actions {
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      background: #121a1d;
+    }
+
+    .followup-section {
+      border: 1px solid #5e4a24;
+      background: #191813;
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .followup-section .section-head {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .followup-section .section-head h3 { color: #ffe7a6; }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .step {
+      padding: 13px;
+      min-height: 130px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px var(--shadow);
+    }
+
+    .step .num {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      margin-bottom: 8px;
+      background: #243d42;
+      border: 1px solid #44626a;
+      border-radius: 50%;
+      color: var(--text-strong);
+      font-weight: 900;
+    }
+
+    .list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .item {
+      padding: 10px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .item .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1060px) {
+      .brief, .grid, .split, .flow, .metrics {
+        grid-template-columns: 1fr;
+      }
+
+      .filters {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .desktop-frame {
+        grid-template-columns: 1fr;
+      }
+
+      .nav { display: none; }
+      .statusbar { grid-column: 1; }
+      .form-grid.compact { grid-template-columns: 110px minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brief">
+      <div>
+        <h1>SITREP Screen With Popup Composer And Follow-up Workflow</h1>
+        <p>This wireframe keeps the cleaner SITREP screen from the previous mock, removes the always-visible composer, opens New SITREP in a separate dialog, and preserves the follow-up incident workflow.</p>
+      </div>
+      <aside class="approval">
+        <h3>Approval Target</h3>
+        <ul>
+          <li>SITREP page becomes a feed/detail workspace instead of a three-panel feed/composer/detail surface.</li>
+          <li>New SITREP opens a modal composer with the current fields.</li>
+          <li>Selected detail keeps follow-up actions, document linking, and incident handoff visible.</li>
+          <li>Follow-up needed in the incident dialog expands accountable follow-up fields and can create a linked assignment.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>1. SITREP Feed And Detail Screen</h2>
+        <span>No inline composer. New SITREP opens the dialog shown in the next frame.</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">T.A.L.O.N.</div>
+            <div class="mode">CLIENT</div>
+          </div>
+          <div class="nav-item">Dashboard</div>
+          <div class="nav-item">Map</div>
+          <div class="nav-item active">SITREPs <span class="badge">1</span></div>
+          <div class="nav-item">Assets</div>
+          <div class="nav-item">Missions</div>
+          <div class="nav-item">Assignments</div>
+          <div class="nav-item">Incidents</div>
+          <div class="nav-item">Chat</div>
+          <div class="nav-item">Documents</div>
+          <div class="nav-item">Operators</div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h2>SITREPs</h2>
+            <button class="control">Refresh</button>
+            <span class="check"><span class="box"></span> Audio</span>
+            <button class="control primary">New SITREP</button>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span class="label">Total</span><span class="value">8</span><span>Current feed</span></div>
+            <div class="metric warn"><span class="label">Unresolved</span><span class="value">3</span><span>Needs action</span></div>
+            <div class="metric alert"><span class="label">Emergency</span><span class="value">0</span><span>Flash active</span></div>
+            <div class="metric"><span class="label">With Location</span><span class="value">6</span><span>Native or linked</span></div>
+            <div class="metric"><span class="label">Pending Sync</span><span class="value">0</span><span>Queued over RNS</span></div>
+            <div class="metric"><span class="label">Attachments</span><span class="value">2</span><span>Linked docs</span></div>
+          </div>
+          <div class="grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Operational Feed</h3>
+                <span class="tag alert">FLASH</span>
+                <span class="tag warn">IMMEDIATE</span>
+              </div>
+              <div class="filters">
+                <div class="filter">All severities</div>
+                <div class="filter">All statuses</div>
+                <span class="check"><span class="box">✓</span> Unresolved</span>
+                <span class="check"><span class="box"></span> Located</span>
+                <span class="check"><span class="box"></span> Pending</span>
+              </div>
+              <div class="table">
+                <div class="row header">
+                  <div class="cell">ID</div>
+                  <div class="cell">Level</div>
+                  <div class="cell">Mission</div>
+                  <div class="cell">Report</div>
+                  <div class="cell">Status</div>
+                </div>
+                <div class="row selected">
+                  <div class="cell">#42</div>
+                  <div class="cell"><span class="tag warn">PRIORITY</span></div>
+                  <div class="cell">Lost Dog</div>
+                  <div class="cell">Located dog. Conscious, contained, apparent broken rear leg. Request transport crate and vet support.</div>
+                  <div class="cell">Open</div>
+                </div>
+                <div class="row">
+                  <div class="cell">#41</div>
+                  <div class="cell">ROUTINE</div>
+                  <div class="cell">Lost Dog</div>
+                  <div class="cell">Tracking near west trailhead.</div>
+                  <div class="cell">Closed</div>
+                </div>
+                <div class="row">
+                  <div class="cell">#40</div>
+                  <div class="cell">PRIORITY</div>
+                  <div class="cell">Supply Run</div>
+                  <div class="cell">Cache handoff delayed by blocked access road.</div>
+                  <div class="cell">Assigned</div>
+                </div>
+              </div>
+            </div>
+            <aside class="panel detail">
+              <div class="panel-head">
+                <h3>PRIORITY #42</h3>
+                <span class="tag warn">Open</span>
+              </div>
+              <div class="detail-card">
+                Located dog. Conscious, contained, apparent broken rear leg. Request transport crate and vet support.
+              </div>
+              <div class="detail-card"><strong>Reporter:</strong> ALPHA1<br><strong>Mission:</strong> Lost Dog<br><strong>Assignment:</strong> Search sector west<br><strong>Asset:</strong> None<br><strong>Location:</strong> West trailhead | 40.123456, -75.250000<br><strong>Documents:</strong> 1 | <strong>Linked incidents:</strong> 0</div>
+              <div class="mini-metrics">
+                <div class="mini"><div class="label">Age</div><div class="value">2 min</div></div>
+                <div class="mini"><div class="label">Ack</div><div class="value">Open</div></div>
+                <div class="mini"><div class="label">Handler</div><div class="value">Unassigned</div></div>
+              </div>
+              <div class="action-grid">
+                <button class="control">Acknowledge</button>
+                <button class="control">Assign</button>
+                <button class="control">Close</button>
+                <button class="control warn">Create Follow-up Incident</button>
+              </div>
+              <div class="activity-list">
+                <div class="activity"><strong>No follow-ups yet.</strong><div class="meta">Append-only activity will appear here.</div></div>
+                <div class="activity"><strong>Document linked</strong><div class="meta">photo-west-trailhead.jpg</div></div>
+              </div>
+              <div class="document-row">
+                <div class="filter">photo-west-trailhead.jpg</div>
+                <button class="control">Link Document</button>
+              </div>
+            </aside>
+          </div>
+        </section>
+        <footer class="statusbar">Network: TCP | Pending outbox: 0 | Last sync: now</footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>2. New SITREP Popup Composer</h2>
+        <span>Opened from the New SITREP button. Uses current composer fields without consuming page width.</span>
+      </div>
+      <div class="dialog-wrap">
+        <div class="dialog">
+          <header class="dialog-title">
+            <h2>New SITREP</h2>
+            <span class="tag">Location Native</span>
+          </header>
+          <section class="dialog-body">
+            <div class="form-grid compact">
+              <div class="field-label">Severity</div>
+              <div class="select">PRIORITY</div>
+              <div class="field-label">Status</div>
+              <div class="select">Open</div>
+              <div class="field-label">Mission</div>
+              <div class="select">Lost Dog [active]</div>
+              <div class="field-label">Assignment</div>
+              <div class="select">Search sector west [active]</div>
+              <div class="field-label">Asset</div>
+              <div class="select">None</div>
+              <div class="field-label">Privacy</div>
+              <div class="select">Mission</div>
+              <div class="field-label">Location</div>
+              <div class="input">West trailhead</div>
+              <div class="field-label">Lat / Lon</div>
+              <div class="input">40.123456, -75.250000   [Map]</div>
+              <div class="field-label">Location Meta</div>
+              <div class="select">Exact / Map</div>
+              <div class="field-label">Template</div>
+              <div class="select">Located subject  [Apply]</div>
+              <div class="field-label">Body</div>
+              <div class="textarea">Located dog. Conscious, contained, apparent broken rear leg. Request transport crate and vet support.</div>
+            </div>
+          </section>
+          <footer class="dialog-actions">
+            <button class="control">Clear</button>
+            <button class="control">Cancel</button>
+            <button class="control primary">Send</button>
+          </footer>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>3. Follow-up Incident Dialog</h2>
+        <span>Opened from Create Follow-up Incident on the selected SITREP detail.</span>
+      </div>
+      <div class="dialog-wrap">
+        <div class="dialog narrow">
+          <header class="dialog-title">
+            <h2>New Incident Report</h2>
+            <span class="tag warn">Linked SITREP #42</span>
+          </header>
+          <section class="dialog-body">
+            <div class="form-grid">
+              <div class="field-label">Category</div>
+              <div class="select">Other</div>
+              <div class="field-label">Severity</div>
+              <div class="select">PRIORITY</div>
+              <div class="field-label">Title</div>
+              <div class="input">PRIORITY SITREP #42</div>
+              <div class="field-label">Location</div>
+              <div class="input">West trailhead</div>
+              <div class="field-label">Assignment</div>
+              <div class="select">Search sector west</div>
+              <div class="field-label">Mission</div>
+              <div class="select">Lost Dog</div>
+              <div class="field-label">Asset</div>
+              <div class="select">None</div>
+              <div class="field-label">SITREP</div>
+              <div class="select">#42 PRIORITY</div>
+              <div class="field-label">Notified</div>
+              <div class="input">Owner pending; vet transport requested</div>
+              <div class="field-label">Narrative</div>
+              <div class="textarea">Located dog. Conscious, contained, apparent broken rear leg. Request transport crate and vet support.</div>
+              <div class="field-label">Actions taken</div>
+              <div class="textarea small">Secured dog at location. Avoided moving injured leg.</div>
+              <div class="field-label">Outcome</div>
+              <div class="textarea small">Pending veterinary transfer.</div>
+              <div class="field-label">Follow-up</div>
+              <div class="check"><span class="box">✓</span> Follow-up needed</div>
+            </div>
+
+            <section class="followup-section">
+              <div class="section-head">
+                <h3>Follow-up Details</h3>
+                <span class="tag warn">Required while checked</span>
+              </div>
+              <div class="split">
+                <div>
+                  <div class="field-label">Follow-up type</div>
+                  <div class="select">Transport / medical support</div>
+                </div>
+                <div>
+                  <div class="field-label">Responsible party</div>
+                  <div class="input">Team Bravo</div>
+                </div>
+              </div>
+              <div class="split">
+                <div>
+                  <div class="field-label">Urgency</div>
+                  <div class="select">Immediate</div>
+                </div>
+                <div>
+                  <div class="field-label">Due</div>
+                  <div class="input">2026-04-30 17:30</div>
+                </div>
+              </div>
+              <div>
+                <div class="field-label">Next action</div>
+                <div class="textarea small">Transport dog to vet and notify owner.</div>
+              </div>
+              <div class="check"><span class="box">✓</span> Create linked assignment from this follow-up</div>
+            </section>
+          </section>
+          <footer class="dialog-actions">
+            <button class="control">Cancel</button>
+            <button class="control primary">Save Incident</button>
+          </footer>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>4. Resulting Follow-up Work Queue</h2>
+        <span>The incident stores accountability and can create work on the Assignments page.</span>
+      </div>
+      <div class="flow">
+        <div class="step">
+          <div class="num">1</div>
+          <h3>Incident Saved</h3>
+          <p>Incident stores follow-up type, owner, urgency, due time, next action, source links, and follow-up status.</p>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>Assignment Created</h3>
+          <p>If selected, TALON creates a linked assignment using the next action, owner, mission, location, priority, and source incident.</p>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>Follow-up Tracked</h3>
+          <p>Incidents page exposes Open Follow-ups, overdue indicators, and closeout outcome fields.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>5. Incidents Page Open Follow-ups</h2>
+        <span>Open follow-ups are easy to find without reading every incident row.</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">T.A.L.O.N.</div>
+            <div class="mode">SERVER</div>
+          </div>
+          <div class="nav-item">Dashboard</div>
+          <div class="nav-item">Map</div>
+          <div class="nav-item">SITREPs</div>
+          <div class="nav-item">Assets</div>
+          <div class="nav-item">Missions</div>
+          <div class="nav-item">Assignments <span class="badge">1</span></div>
+          <div class="nav-item active">Incidents <span class="badge">1</span></div>
+          <div class="nav-item">Chat</div>
+          <div class="nav-item">Documents</div>
+          <div class="nav-item">Operators</div>
+        </nav>
+        <section class="content">
+          <div class="topbar">
+            <h2>Incidents</h2>
+            <button class="control primary">Open Follow-ups</button>
+            <button class="control">All Incidents</button>
+            <button class="control">New Incident</button>
+          </div>
+          <div class="grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Open Follow-ups</h3>
+                <span class="tag warn">1 active</span>
+              </div>
+              <div class="list">
+                <div class="item">
+                  <strong>Lost Dog injured - broken leg</strong>
+                  <span class="meta">Immediate | Team Bravo | Due 17:30 | Linked SITREP #42 | Assignment #18</span>
+                  <span>Next action: Transport dog to vet and notify owner.</span>
+                </div>
+              </div>
+            </div>
+            <aside class="panel detail">
+              <div class="panel-head">
+                <h3>Follow-up Detail</h3>
+                <span class="tag warn">Open</span>
+              </div>
+              <div class="detail-card"><strong>Responsible:</strong> Team Bravo</div>
+              <div class="detail-card"><strong>Type:</strong> Transport / medical support</div>
+              <div class="detail-card"><strong>Assignment:</strong> #18 Transport dog to vet</div>
+              <div class="detail-card"><strong>Closeout:</strong> requires outcome note before clearing follow-up.</div>
+              <button class="control primary">Clear Follow-up</button>
+            </aside>
+          </div>
+        </section>
+        <footer class="statusbar">Open follow-ups: 1 | Overdue: 0 | Last sync: now</footer>
+      </div>
+    </section>
+
+    <section class="screen">
+      <div class="screen-title">
+        <h2>Implementation Notes For Approval</h2>
+      </div>
+      <div class="callout">
+        <p><strong>Proposed behavior:</strong> the SITREP page keeps feed, filters, metrics, selected detail, activity, and document linking. The New SITREP button opens a modal composer containing the current composer controls. The selected SITREP action is renamed to Create Follow-up Incident. A checked incident follow-up expands required fields and can create a linked assignment after the incident is saved.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

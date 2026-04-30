@@ -24,7 +24,7 @@ _log = get_logger("network.framing")
 # total JSON per chunk, safely below PACKET_MAX.
 PACKET_MAX = 380
 CHUNK_SIZE = 200
-CHUNK_BUFFER_TTL_S = 60.0
+CHUNK_BUFFER_TTL_S = 300.0
 CHUNK_MAX_TOTAL = 4096
 CHUNK_MAX_BUFFERS = 50
 CHUNK_MAX_ENCODED_SIZE = 512

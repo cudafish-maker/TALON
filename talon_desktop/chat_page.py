@@ -448,9 +448,15 @@ class ChatPage(QtWidgets.QWidget):
                     header = QtWidgets.QListWidgetItem(current_group.upper())
                     header.setFlags(QtCore.Qt.NoItemFlags)
                     header.setForeground(QtGui.QColor("#8fbcbb"))
+                    header.setBackground(QtGui.QColor("#10181b"))
+                    font = header.font()
+                    font.setBold(True)
+                    header.setFont(font)
+                    header.setSizeHint(QtCore.QSize(0, 30))
                     self.channel_list.addItem(header)
                 label = channel.display_name
                 item = QtWidgets.QListWidgetItem(label)
+                item.setSizeHint(QtCore.QSize(0, 28))
                 item.setData(QtCore.Qt.UserRole, channel.id)
                 if channel.is_dm:
                     item.setToolTip(

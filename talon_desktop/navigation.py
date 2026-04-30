@@ -17,16 +17,16 @@ class DesktopNavItem:
 
 
 _COMMON_NAV: tuple[DesktopNavItem, ...] = (
-    DesktopNavItem("dashboard", "Dashboard", "session", frozenset({"main"})),
     DesktopNavItem("map", "Map", "map.context", frozenset({"main"})),
-    DesktopNavItem("sitreps", "SITREPs", "sitreps.list", frozenset({"sitrep"})),
-    DesktopNavItem("assets", "Assets", "assets.list", frozenset({"assets"})),
-    DesktopNavItem("missions", "Missions", "missions.list", frozenset({"mission"})),
-    DesktopNavItem("assignments", "Assignments", "assignments.board", frozenset({"assignments"})),
-    DesktopNavItem("incidents", "Incidents", "incidents.list", frozenset({"incidents"})),
     DesktopNavItem("chat", "Chat", "chat.channels", frozenset({"chat"})),
+    DesktopNavItem("missions", "Missions", "missions.list", frozenset({"mission"})),
+    DesktopNavItem("sitreps", "SITREPs", "sitreps.list", frozenset({"sitrep"})),
+    DesktopNavItem("incidents", "Incidents", "incidents.list", frozenset({"incidents"})),
+    DesktopNavItem("assets", "Assets", "assets.list", frozenset({"assets"})),
+    DesktopNavItem("assignments", "Assignments", "assignments.board", frozenset({"assignments"})),
     DesktopNavItem("documents", "Documents", "documents.list", frozenset({"documents"})),
     DesktopNavItem("operators", "Operators", "operators.list", frozenset({"operators"})),
+    DesktopNavItem("dashboard", "Dashboard", "session", frozenset({"main"})),
 )
 
 _SERVER_NAV: tuple[DesktopNavItem, ...] = (
@@ -64,7 +64,7 @@ _SERVER_NAV: tuple[DesktopNavItem, ...] = (
 def navigation_items(mode: Mode) -> tuple[DesktopNavItem, ...]:
     """Return the desktop sections visible for *mode*."""
     if mode == "server":
-        return _COMMON_NAV + _SERVER_NAV
+        return _COMMON_NAV[:-1] + _SERVER_NAV + (_COMMON_NAV[-1],)
     if mode == "client":
         return _COMMON_NAV
     raise ValueError(f"Invalid TALON mode: {mode!r}")

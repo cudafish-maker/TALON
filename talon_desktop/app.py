@@ -377,6 +377,7 @@ class DesktopNavRail(QtWidgets.QWidget):
     _COLLAPSED_WIDTH = 64
     _EXPANDED_WIDTH = 210
     _TAB_WIDTH = 16
+    _UNBADGED_SECTIONS = frozenset({"dashboard", "map"})
 
     def __init__(
         self,
@@ -390,6 +391,7 @@ class DesktopNavRail(QtWidgets.QWidget):
         self._sections = tuple(sections)
         self._items = tuple(_NavItemProxy(section) for section in self._sections)
         self._buttons: list[QtWidgets.QToolButton] = []
+        self._badge_dots: list[QtWidgets.QLabel] = []
         self._badges: dict[str, int] = {}
         self._current_row = -1
         self._expanded = True
@@ -419,9 +421,16 @@ class DesktopNavRail(QtWidgets.QWidget):
             button.setIcon(self._icon_for(section.key))
             button.setText(section.label)
             button.setAutoRaise(True)
+            button.installEventFilter(self)
+            dot = QtWidgets.QLabel(button)
+            dot.setObjectName("navBadgeDot")
+            dot.setFixedSize(9, 9)
+            dot.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+            dot.hide()
             button.clicked.connect(lambda _checked=False, row=index: self.setCurrentRow(row))
             self._button_group.addButton(button, index)
             self._buttons.append(button)
+            self._badge_dots.append(dot)
             self._content_layout.addWidget(button)
 
         self._content_layout.addStretch(1)
@@ -473,6 +482,8 @@ class DesktopNavRail(QtWidgets.QWidget):
         self.currentRowChanged.emit(row)
 
     def increment_badge(self, section_key: str) -> None:
+        if section_key in self._UNBADGED_SECTIONS:
+            return
         if self.currentItem() is not None and self.currentItem().data(QtCore.Qt.UserRole) == section_key:
             return
         self._badges[section_key] = self._badges.get(section_key, 0) + 1
@@ -484,7 +495,11 @@ class DesktopNavRail(QtWidgets.QWidget):
             self._sync_button_labels()
 
     def set_badges(self, badges: dict[str, int]) -> None:
-        self._badges = {key: count for key, count in badges.items() if count > 0}
+        self._badges = {
+            key: count
+            for key, count in badges.items()
+            if count > 0 and key not in self._UNBADGED_SECTIONS
+        }
         self._sync_button_labels()
 
     def _apply_expanded_state(self) -> None:
@@ -507,15 +522,31 @@ class DesktopNavRail(QtWidgets.QWidget):
         self._sync_button_labels()
 
     def _sync_button_labels(self) -> None:
-        for section, button in zip(self._sections, self._buttons):
+        for section, button, dot in zip(self._sections, self._buttons, self._badge_dots):
             count = self._badges.get(section.key, 0)
-            label = section.label if not count else f"{section.label} ({count})"
-            button.setText(label)
-            tooltip = section.label if not count else f"{section.label}: {count} update(s)"
+            button.setText(section.label)
+            tooltip = section.label if not count else f"{section.label}: new information"
             button.setToolTip(tooltip)
+            dot.setVisible(bool(count))
+            self._position_badge_dot(button, dot)
 
     def _icon_for(self, key: str) -> QtGui.QIcon:
         return desktop_nav_icon(key)
+
+    def _position_badge_dot(
+        self,
+        button: QtWidgets.QToolButton,
+        dot: QtWidgets.QLabel,
+    ) -> None:
+        dot.move(max(2, button.width() - 17), 7)
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if event.type() == QtCore.QEvent.Type.Resize:
+            for button, dot in zip(self._buttons, self._badge_dots):
+                if watched is button:
+                    self._position_badge_dot(button, dot)
+                    break
+        return super().eventFilter(watched, event)
 
 
 class CurrentPageStack(QtWidgets.QStackedWidget):
@@ -800,6 +831,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 item = self.nav.item(index)
                 if item.data(QtCore.Qt.UserRole) == last_section:
                     return index
+        for index in range(self.nav.count()):
+            item = self.nav.item(index)
+            if item.data(QtCore.Qt.UserRole) == "dashboard":
+                return index
         return 0
 
     def _setting_key(self, *parts: str) -> str:
@@ -1045,6 +1080,9 @@ class MainWindow(QtWidgets.QMainWindow):
             incident_page = self._pages.get("incidents")
             if isinstance(incident_page, IncidentPage):
                 incident_page.handle_record_mutation(action, table, record_id)
+            map_page = self._pages.get("map")
+            if isinstance(map_page, MapPage):
+                map_page.handle_record_mutation(action, table, record_id)
             assignment_page = self._pages.get("assignments")
             if isinstance(assignment_page, AssignmentPage):
                 assignment_page.handle_record_mutation(action, table, record_id)
