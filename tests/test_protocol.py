@@ -160,6 +160,17 @@ def test_error_accepts_operator_inactive_code():
     assert proto.validate_server_message(msg) is msg
 
 
+def test_error_accepts_lease_expired_code_and_expiry_metadata():
+    msg = {
+        **_base(proto.MSG_ERROR),
+        "message": "Operator lease has expired",
+        "code": proto.ERROR_LEASE_EXPIRED,
+        "lease_expires_at": 123,
+    }
+
+    assert proto.validate_server_message(msg) is msg
+
+
 def test_server_rejects_invalid_payload_before_handler_dispatch(tmp_db, test_key, monkeypatch):
     conn, _ = tmp_db
     handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)

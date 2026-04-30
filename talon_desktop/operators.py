@@ -166,7 +166,10 @@ def item_from_enrollment_token(
     now: int | None = None,
 ) -> DesktopEnrollmentTokenItem:
     current_time = int(time.time()) if now is None else int(now)
-    raw_token = str(getattr(token, "token", ""))
+    raw_token = str(
+        getattr(token, "token_preview", "")
+        or getattr(token, "token", "")
+    )
     created_at = int(getattr(token, "created_at", 0) or 0)
     expires_at = int(getattr(token, "expires_at", 0) or 0)
     remaining_s = max(0, expires_at - current_time)

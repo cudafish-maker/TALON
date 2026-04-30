@@ -210,12 +210,14 @@ _QT_RETICULUM_FAILURE_SCRIPT = r"""
 import os
 import sys
 import time
+import hashlib
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtWidgets
 
 from talon_core import TalonCoreSession
+from talon_core.crypto.keystore import derive_key, load_or_create_salt
 from talon_core.network.rns_config import save_reticulum_config_text
 from talon_desktop.app import DesktopRuntime, LoginWindow
 
@@ -225,6 +227,13 @@ app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 core = TalonCoreSession(config_path=config_path).start()
 runtime = DesktopRuntime(core, start_sync=True)
 try:
+    db_key = derive_key("DesktopSmoke-1", load_or_create_salt(core.paths.salt_path))
+    marker_key = hashlib.blake2b(
+        db_key,
+        digest_size=32,
+        person=b"TALONRNSCFGv2",
+        salt=hashlib.sha256(b"talon:reticulum-config-marker").digest()[:16],
+    ).digest()
     save_reticulum_config_text(
         core.paths.rns_config_dir,
         "[reticulum]\n"
@@ -236,6 +245,7 @@ try:
         "    type = AutoInterface\n"
         "    enabled = Yes\n",
         mode=core.mode,
+        marker_key=marker_key,
     )
     def _fail_reticulum():
         raise RuntimeError("rns unavailable")
@@ -266,12 +276,14 @@ _QT_UNLOCK_ORDER_SCRIPT = r"""
 import os
 import sys
 import time
+import hashlib
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtWidgets
 
 from talon_core import TalonCoreSession
+from talon_core.crypto.keystore import derive_key, load_or_create_salt
 from talon_core.network.rns_config import save_reticulum_config_text
 from talon_desktop.app import DesktopRuntime, LoginWindow, MainWindow
 
@@ -283,6 +295,13 @@ core = TalonCoreSession(config_path=config_path).start()
 runtime = DesktopRuntime(core, start_sync=True)
 calls = []
 try:
+    db_key = derive_key("DesktopSmoke-1", load_or_create_salt(core.paths.salt_path))
+    marker_key = hashlib.blake2b(
+        db_key,
+        digest_size=32,
+        person=b"TALONRNSCFGv2",
+        salt=hashlib.sha256(b"talon:reticulum-config-marker").digest()[:16],
+    ).digest()
     save_reticulum_config_text(
         core.paths.rns_config_dir,
         "[reticulum]\n"
@@ -294,6 +313,7 @@ try:
         "    type = AutoInterface\n"
         "    enabled = Yes\n",
         mode=core.mode,
+        marker_key=marker_key,
     )
     def _start_reticulum():
         calls.append(("reticulum", core.is_unlocked))
@@ -1299,6 +1319,7 @@ def test_desktop_navigation_keeps_admin_sections_server_only() -> None:
 
 
 def test_desktop_custom_icons_cover_navigation_and_asset_categories() -> None:
+    pytest.importorskip("PySide6")
     from talon_core.assets import CATEGORY_LABEL
     from talon_desktop.icons import (
         ASSET_ICON_CATEGORIES,

@@ -596,6 +596,66 @@ class TestChunkHandling:
 # ---------------------------------------------------------------------------
 
 class TestServerClientPush:
+    def test_expired_operator_heartbeat_is_rejected_without_auto_renew(
+        self, tmp_db, test_key, monkeypatch
+    ):
+        conn, _ = tmp_db
+        operator_hash = "9" * 64
+        expired_at = int(time.time()) - 10
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+            "VALUES (70, 'EXPIRED', ?, '[]', '{}', 1000, ?, 0)",
+            (operator_hash, expired_at),
+        )
+        conn.commit()
+
+        sent = []
+        handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+        handler._send_error = lambda _link, message, **extra: sent.append(
+            {"message": message, **extra}
+        )
+        link = _FakeLink(operator_hash)
+
+        handler._handle_heartbeat(link, {"type": proto.MSG_HEARTBEAT})
+
+        row = conn.execute(
+            "SELECT lease_expires_at, revoked FROM operators WHERE id = 70"
+        ).fetchone()
+        assert row == (expired_at, 0)
+        assert sent[-1]["code"] == proto.ERROR_LEASE_EXPIRED
+        assert sent[-1]["lease_expires_at"] == expired_at
+        assert link.torn_down is True
+
+    def test_valid_near_expiry_heartbeat_auto_renews(
+        self, tmp_db, test_key, monkeypatch
+    ):
+        conn, _ = tmp_db
+        operator_hash = "8" * 64
+        near_expiry = int(time.time()) + 120
+        conn.execute(
+            "INSERT INTO operators (id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+            "VALUES (71, 'RENEW', ?, '[]', '{}', 1000, ?, 0)",
+            (operator_hash, near_expiry),
+        )
+        conn.commit()
+
+        sent = []
+        monkeypatch.setattr(
+            net_handler,
+            "_smart_send",
+            lambda _link, data: sent.append(proto.decode(data)),
+        )
+        handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)
+
+        handler._handle_heartbeat(_FakeLink(operator_hash), {"type": proto.MSG_HEARTBEAT})
+
+        row = conn.execute(
+            "SELECT lease_expires_at FROM operators WHERE id = 71"
+        ).fetchone()
+        assert row[0] > near_expiry
+        assert sent[-1]["type"] == proto.MSG_HEARTBEAT_ACK
+        assert sent[-1]["lease_expires_at"] == row[0]
+
     def test_new_client_message_is_accepted_and_notifies_server_ui(
         self, tmp_db, test_key, monkeypatch
     ):
@@ -1368,6 +1428,40 @@ class TestClientServerPushIntegration:
             assert row[0] == 1
             assert row[1] == ""
             assert row[2] <= int(time.time())
+            assert lock_checks == [True]
+
+        finally:
+            close_db(client_conn)
+
+    def test_lease_expired_error_soft_locks_without_identity_burn(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_lease_expired.db", test_key)
+        try:
+            operator_hash = "5" * 64
+            _insert_operator(client_conn, 61, "SOFTLOCK", operator_hash)
+            client_conn.commit()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=61)
+            lock_checks = []
+            manager._trigger_local_lock_check = lambda: lock_checks.append(True)
+            expired_at = int(time.time()) - 30
+
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_ERROR,
+                    "message": "Operator lease has expired",
+                    "code": proto.ERROR_LEASE_EXPIRED,
+                    "lease_expires_at": expired_at,
+                },
+                threading.Event(),
+            )
+
+            row = client_conn.execute(
+                "SELECT revoked, rns_hash, lease_expires_at FROM operators WHERE id = 61"
+            ).fetchone()
+            assert row == (0, operator_hash, expired_at)
             assert lock_checks == [True]
 
         finally:

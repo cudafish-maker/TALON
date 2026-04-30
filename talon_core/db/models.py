@@ -252,11 +252,17 @@ class Message:
 
 @dataclasses.dataclass
 class EnrollmentToken:
-    token: str
+    token_hash: str
+    token_preview: str
     created_at: int
     expires_at: int
     used_at: typing.Optional[int]
     operator_id: typing.Optional[int]
+
+    @property
+    def token(self) -> str:
+        """Backward-compatible UI label; not the usable enrollment secret."""
+        return self.token_preview
 
 
 @dataclasses.dataclass

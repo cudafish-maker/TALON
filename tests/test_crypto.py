@@ -13,6 +13,7 @@ from talon_core.crypto.identity import (
 )
 from talon_core.crypto.passphrase import (
     PassphrasePolicyError,
+    evaluate_passphrase_strength,
     validate_passphrase_policy,
 )
 
@@ -136,7 +137,27 @@ class TestPassphrasePolicy:
     def test_accepts_twelve_chars_with_three_classes(self):
         validate_passphrase_policy("ValidPass-12")
 
-    @pytest.mark.parametrize("passphrase", ["Short-1", "lowercase-only-pass"])
+    @pytest.mark.parametrize(
+        "passphrase",
+        [
+            "Short-1",
+            "lowercase-only-pass",
+            "password123!",
+            "Qwerty123456!",
+            "Aaaaaa111111!",
+        ],
+    )
     def test_rejects_policy_failures(self, passphrase):
         with pytest.raises(PassphrasePolicyError):
             validate_passphrase_policy(passphrase)
+
+    def test_strength_scoring_reports_user_facing_reason(self):
+        strong = evaluate_passphrase_strength("ValidPass-12")
+        weak = evaluate_passphrase_strength("password123!")
+
+        assert strong.valid is True
+        assert strong.score >= 3
+        assert "strong enough" in strong.reason
+        assert weak.valid is False
+        assert weak.score < 3
+        assert "common" in weak.reason

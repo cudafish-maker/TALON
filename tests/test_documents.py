@@ -24,6 +24,53 @@ def _open_test_db(tmp_path, name: str, key: bytes):
     return conn
 
 
+def test_upload_allows_document_policy_formats(tmp_path, test_key):
+    conn = _open_test_db(tmp_path, "server.db", test_key)
+
+    try:
+        text_doc = upload_document(
+            conn,
+            test_key,
+            tmp_path / "server-docs",
+            raw_filename="brief.txt",
+            file_data=b"field notes",
+            uploaded_by=1,
+        )
+        pdf_doc = upload_document(
+            conn,
+            test_key,
+            tmp_path / "server-docs",
+            raw_filename="brief.pdf",
+            file_data=b"%PDF-1.4\n% test\n",
+            uploaded_by=1,
+        )
+
+        assert text_doc.filename == "brief.txt"
+        assert text_doc.mime_type.startswith("text/")
+        assert pdf_doc.filename == "brief.pdf"
+        assert pdf_doc.mime_type == "application/pdf"
+    finally:
+        close_db(conn)
+
+
+@pytest.mark.parametrize("filename", ["macro.docm", "brief.docx", "archive.zip"])
+def test_upload_rejects_non_allowlisted_document_formats(tmp_path, test_key, filename):
+    conn = _open_test_db(tmp_path, "server.db", test_key)
+
+    try:
+        with pytest.raises(DocumentBlockedExtension):
+            upload_document(
+                conn,
+                test_key,
+                tmp_path / "server-docs",
+                raw_filename=filename,
+                file_data=b"not an allowed upload",
+                uploaded_by=1,
+            )
+    finally:
+        close_db(conn)
+
+
 def test_sanitize_image_fails_closed_when_pillow_reencode_fails(monkeypatch):
     fake_pil = types.ModuleType("PIL")
 

@@ -78,6 +78,7 @@ class ServerActiveClients:
         with handler._auth_lock:
             handler._link_identity_hashes.pop(id(link), None)
             handler._link_auth.pop(id(link), None)
+            handler._link_auth_failures.pop(id(link), None)
         return to_remove[0] if to_remove else None
 
     def snapshot_links(self) -> list[RNS.Link]:
@@ -272,6 +273,9 @@ class ServerLinkRouter:
             msg = proto.decode(data)
         except ValueError as exc:
             self._log.warning("Malformed packet from client: %s", exc)
+            if not self._handler._allow_protocol_failure(link, reason="decode"):
+                self._handler._teardown_link(link)
+                return
             self._handler._send_error(link, str(exc))
             return
 
@@ -281,6 +285,9 @@ class ServerLinkRouter:
                 proto.validate_client_message(msg)
             except proto.ProtocolValidationError as exc:
                 self._log.warning("Malformed chunk from client: %s", exc)
+                if not self._handler._allow_protocol_failure(link, reason="chunk"):
+                    self._handler._teardown_link(link)
+                    return
                 self._handler._send_error(link, str(exc))
                 return
             reassembled = self._handler._handle_chunk_data(msg)
@@ -298,6 +305,9 @@ class ServerLinkRouter:
             proto.validate_client_message(msg)
         except proto.ProtocolValidationError as exc:
             self._log.warning("Invalid client message: %s", exc)
+            if not self._handler._allow_protocol_failure(link, reason="validation"):
+                self._handler._teardown_link(link)
+                return
             self._handler._send_error(link, str(exc))
             self._handler._teardown_link(link)
             return
@@ -318,6 +328,9 @@ class ServerLinkRouter:
                     "Unknown message type from client: %r",
                     msg_type,
                 )
+                if not self._handler._allow_protocol_failure(link, reason="unknown_message"):
+                    self._handler._teardown_link(link)
+                    return
                 self._handler._send_error(link, f"Unknown message type: {msg_type!r}")
                 self._handler._teardown_link(link)
         except Exception as exc:
@@ -484,8 +497,9 @@ class ServerMessageHandlers:
         message: str = "RNS identity is required",
         *,
         code: typing.Optional[str] = None,
+        **extra: typing.Any,
     ) -> None:
-        self._handler._send_error(link, message, code=code)
+        self._handler._send_error(link, message, code=code, **extra)
         self._handler._teardown_link(link)
 
     def _require_authenticated_operator(
@@ -496,13 +510,38 @@ class ServerMessageHandlers:
         auth = handler._authenticated_operator(link)
         if auth is not None:
             return auth
+        failure = handler._pop_auth_failure(link)
+        if failure is not None:
+            if not handler._allow_protocol_failure(
+                link,
+                reason=str(failure.get("code") or "auth_failure"),
+            ):
+                handler._teardown_link(link)
+                return None
+            self._send_unauthenticated(
+                link,
+                str(failure.get("message") or "Operator authentication failed"),
+                code=typing.cast(typing.Optional[str], failure.get("code")),
+                **{
+                    key: value
+                    for key, value in failure.items()
+                    if key not in {"message", "code"}
+                },
+            )
+            return None
         if handler._identified_rns_hash(link):
+            if not handler._allow_protocol_failure(link, reason="operator_inactive"):
+                handler._teardown_link(link)
+                return None
             self._send_unauthenticated(
                 link,
                 "Operator not found or revoked",
                 code=proto.ERROR_OPERATOR_INACTIVE,
             )
         else:
+            if not handler._allow_protocol_failure(link, reason="unidentified"):
+                handler._teardown_link(link)
+                return None
             self._send_unauthenticated(link)
         return None
 
@@ -512,6 +551,7 @@ class ServerMessageHandlers:
         rns_hash = self._handler._identified_rns_hash(link)
 
         if rns_hash is None:
+            self._handler._allow_protocol_failure(link, reason="enroll_unidentified")
             self._smart_send(
                 link,
                 proto.encode(
@@ -529,6 +569,13 @@ class ServerMessageHandlers:
             return
 
         if not token or not callsign:
+            if not self._handler._allow_enrollment_failure(
+                link,
+                rns_hash=rns_hash,
+                reason="missing_token_or_callsign",
+            ):
+                self._handler._teardown_link(link)
+                return
             self._smart_send(
                 link,
                 proto.encode(
@@ -545,6 +592,13 @@ class ServerMessageHandlers:
             self._handler._teardown_link(link)
             return
         if len(callsign) > 32:
+            if not self._handler._allow_enrollment_failure(
+                link,
+                rns_hash=rns_hash,
+                reason="callsign_too_long",
+            ):
+                self._handler._teardown_link(link)
+                return
             self._smart_send(
                 link,
                 proto.encode(
@@ -562,6 +616,13 @@ class ServerMessageHandlers:
             return
         expected_hash_len = rns_hash_hex_length()
         if len(rns_hash) != expected_hash_len or not self._is_hex(rns_hash):
+            if not self._handler._allow_enrollment_failure(
+                link,
+                rns_hash=rns_hash,
+                reason="invalid_rns_hash",
+            ):
+                self._handler._teardown_link(link)
+                return
             self._smart_send(
                 link,
                 proto.encode(
@@ -607,6 +668,13 @@ class ServerMessageHandlers:
                 op.id,
             )
         except ValueError as exc:
+            if not self._handler._allow_enrollment_failure(
+                link,
+                rns_hash=rns_hash,
+                reason="token_rejected",
+            ):
+                self._handler._teardown_link(link)
+                return
             self._smart_send(
                 link,
                 proto.encode(
@@ -705,9 +773,20 @@ class ServerMessageHandlers:
                     "Operator not found or revoked",
                     code=proto.ERROR_OPERATOR_INACTIVE,
                 )
+                handler._teardown_link(link)
                 return
 
             operator_id, lease_expires_at, _revoked = row
+            if lease_expires_at < now:
+                handler._send_error(
+                    link,
+                    "Operator lease has expired",
+                    code=proto.ERROR_LEASE_EXPIRED,
+                    lease_expires_at=int(lease_expires_at),
+                )
+                handler._teardown_link(link)
+                return
+
             if lease_expires_at - now < 3600:
                 from talon_core.server.enrollment import renew_lease
 

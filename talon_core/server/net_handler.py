@@ -25,6 +25,7 @@ messages <= 380 bytes and manual MSG_CHUNK framing for larger payloads,
 preventing silent packet drops on any transport's MTU limit.
 """
 import threading
+import time
 import typing
 import uuid as _uuid_mod
 
@@ -70,11 +71,13 @@ def _send_error(
     message: str,
     *,
     code: typing.Optional[str] = None,
+    **extra: typing.Any,
 ) -> None:
     try:
         payload = {"type": proto.MSG_ERROR, "message": message}
         if code is not None:
             payload["code"] = code
+        payload.update(extra)
         RNS.Packet(link, proto.encode(payload)).send()
     except Exception as exc:
         _log.warning("_send_error failed: %s", exc)
@@ -147,6 +150,7 @@ class ServerNetHandler:
         self._links_lock = threading.Lock()
         self._link_identity_hashes: dict[int, str] = {}
         self._link_auth: dict[int, AuthenticatedOperator] = {}
+        self._link_auth_failures: dict[int, dict[str, typing.Any]] = {}
         self._auth_lock = threading.Lock()
         self._chunk_reassembler = ChunkReassembler(logger=_log)
         # Compatibility aliases for existing tests and diagnostic inspection.
@@ -182,6 +186,18 @@ class ServerNetHandler:
             is_hex=_is_hex,
             normalise_uuid=_normalise_uuid,
             logger=_log,
+        )
+        from talon_core.server.rate_limit import RateLimiter
+
+        self._enrollment_failure_limiter = RateLimiter(
+            limit=5,
+            window_s=600,
+            event_name="enrollment_failure",
+        )
+        self._protocol_failure_limiter = RateLimiter(
+            limit=10,
+            window_s=600,
+            event_name="protocol_or_auth_failure",
         )
 
     # ------------------------------------------------------------------
@@ -228,6 +244,7 @@ class ServerNetHandler:
         with self._auth_lock:
             self._link_identity_hashes.clear()
             self._link_auth.clear()
+            self._link_auth_failures.clear()
         self._destination = None
         _log.info("ServerNetHandler stopped")
 
@@ -257,6 +274,7 @@ class ServerNetHandler:
         with self._auth_lock:
             self._link_identity_hashes.pop(id(link), None)
             self._link_auth.pop(id(link), None)
+            self._link_auth_failures.pop(id(link), None)
 
     def _on_packet(self, link: RNS.Link, data: bytes, _packet) -> None:
         self._link_router.on_packet(link, data, _packet)
@@ -278,6 +296,7 @@ class ServerNetHandler:
         with self._auth_lock:
             self._link_identity_hashes[id(link)] = rns_hash
             self._link_auth.pop(id(link), None)
+            self._link_auth_failures.pop(id(link), None)
         _log.debug("Client link identified as %s", rns_hash[:12])
         return rns_hash
 
@@ -337,11 +356,12 @@ class ServerNetHandler:
         message: str,
         *,
         code: typing.Optional[str] = None,
+        **extra: typing.Any,
     ) -> None:
         if code is None:
-            _send_error(link, message)
+            _send_error(link, message, **extra)
         else:
-            _send_error(link, message, code=code)
+            _send_error(link, message, code=code, **extra)
 
     def _teardown_link(self, link: RNS.Link) -> None:
         _teardown(link)
@@ -364,11 +384,33 @@ class ServerNetHandler:
             return None
         return self._remember_remote_identity(link, identity)
 
+    def _source_bucket(self, link: RNS.Link) -> str:
+        return self._identified_rns_hash(link) or f"link:{id(link)}"
+
+    def _allow_protocol_failure(self, link: RNS.Link, *, reason: str) -> bool:
+        return self._protocol_failure_limiter.allow(
+            self._source_bucket(link),
+            reason=reason,
+        )
+
+    def _allow_enrollment_failure(
+        self,
+        link: RNS.Link,
+        *,
+        rns_hash: typing.Optional[str],
+        reason: str,
+    ) -> bool:
+        return self._enrollment_failure_limiter.allow(
+            rns_hash or self._source_bucket(link),
+            reason=reason,
+        )
+
     def _authenticated_operator(
         self,
         link: RNS.Link,
     ) -> typing.Optional[AuthenticatedOperator]:
         link_key = id(link)
+        now = int(time.time())
         with self._auth_lock:
             cached = self._link_auth.get(link_key)
         if cached is not None:
@@ -377,7 +419,7 @@ class ServerNetHandler:
                     "SELECT lease_expires_at, revoked FROM operators WHERE id = ?",
                     (cached.operator_id,),
                 ).fetchone()
-            if row is not None and not bool(row[1]):
+            if row is not None and not bool(row[1]) and int(row[0]) >= now:
                 refreshed = AuthenticatedOperator(
                     operator_id=cached.operator_id,
                     callsign=cached.callsign,
@@ -387,6 +429,13 @@ class ServerNetHandler:
                 with self._auth_lock:
                     self._link_auth[link_key] = refreshed
                 return refreshed
+            if row is not None and not bool(row[1]) and int(row[0]) < now:
+                self._remember_auth_failure(
+                    link,
+                    code=proto.ERROR_LEASE_EXPIRED,
+                    message="Operator lease has expired",
+                    lease_expires_at=int(row[0]),
+                )
             with self._auth_lock:
                 self._link_auth.pop(link_key, None)
             return None
@@ -402,6 +451,14 @@ class ServerNetHandler:
             ).fetchone()
         if row is None or bool(row[3]):
             return None
+        if int(row[2]) < now:
+            self._remember_auth_failure(
+                link,
+                code=proto.ERROR_LEASE_EXPIRED,
+                message="Operator lease has expired",
+                lease_expires_at=int(row[2]),
+            )
+            return None
         auth = AuthenticatedOperator(
             operator_id=int(row[0]),
             callsign=str(row[1]),
@@ -411,6 +468,27 @@ class ServerNetHandler:
         with self._auth_lock:
             self._link_auth[link_key] = auth
         return auth
+
+    def _remember_auth_failure(
+        self,
+        link: RNS.Link,
+        *,
+        code: str,
+        message: str,
+        lease_expires_at: typing.Optional[int] = None,
+    ) -> None:
+        failure: dict[str, typing.Any] = {"code": code, "message": message}
+        if lease_expires_at is not None:
+            failure["lease_expires_at"] = int(lease_expires_at)
+        with self._auth_lock:
+            self._link_auth_failures[id(link)] = failure
+
+    def _pop_auth_failure(
+        self,
+        link: RNS.Link,
+    ) -> typing.Optional[dict[str, typing.Any]]:
+        with self._auth_lock:
+            return self._link_auth_failures.pop(id(link), None)
 
     def _cached_link_operator_id(self, link: RNS.Link) -> typing.Optional[int]:
         with self._auth_lock:

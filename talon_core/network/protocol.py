@@ -62,6 +62,7 @@ MSG_PUSH_ACK            = "push_ack"
 
 PROTOCOL_VERSION = 1
 ERROR_OPERATOR_INACTIVE = "operator_inactive"
+ERROR_LEASE_EXPIRED = "lease_expired"
 
 CLIENT_MESSAGE_TYPES = frozenset({
     MSG_ENROLL_REQUEST,

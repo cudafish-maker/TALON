@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import hmac
 import os
 import pathlib
 import shutil
@@ -73,6 +74,7 @@ class ReticulumTransportSummary:
 _TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 _FALSE_VALUES = {"0", "false", "no", "off", "disabled"}
 _ACCEPTANCE_MARKER_NAME = ".talon-reticulum-config.accepted"
+_ACCEPTANCE_HMAC_DOMAIN = b"talon:reticulum-config-acceptance:v2"
 _METHOD_LABELS = {
     "yggdrasil": "Yggdrasil",
     "i2p": "I2P",
@@ -104,9 +106,19 @@ def reticulum_config_status(
     *,
     mode: Mode,
     reticulum_started: bool = False,
+    marker_key: bytes | None = None,
 ) -> ReticulumConfigStatus:
     path = reticulum_config_path(config_dir)
     acceptance_path = reticulum_acceptance_path(config_dir)
+    secure_error = _secure_existing_paths(config_dir, path, acceptance_path)
+    if secure_error is not None:
+        return ReticulumConfigStatus(
+            path=path,
+            exists=path.exists(),
+            validation=ReticulumConfigValidation(valid=False, errors=(secure_error,)),
+            acceptance_path=acceptance_path,
+            reticulum_started=reticulum_started,
+        )
     if not path.exists():
         return ReticulumConfigStatus(
             path=path,
@@ -150,7 +162,12 @@ def reticulum_config_status(
         )
     else:
         validation = validate_reticulum_config_text(text, mode=mode)
-        accepted = validation.valid and _is_config_accepted(config_dir, text)
+        accepted = validation.valid and _is_config_accepted(
+            config_dir,
+            text,
+            mode=mode,
+            marker_key=marker_key,
+        )
     return ReticulumConfigStatus(
         path=path,
         exists=True,
@@ -311,6 +328,7 @@ def save_reticulum_config_text(
     *,
     mode: Mode,
     reticulum_started: bool = False,
+    marker_key: bytes | None = None,
 ) -> ReticulumConfigSaveResult:
     validation = validate_reticulum_config_text(text, mode=mode)
     if not validation.valid:
@@ -362,7 +380,7 @@ def save_reticulum_config_text(
     else:
         _chmod_private(path, 0o600)
 
-    _write_acceptance_marker(config_dir, data)
+    _write_acceptance_marker(config_dir, data, mode=mode, marker_key=marker_key)
 
     return ReticulumConfigSaveResult(
         path=path,
@@ -378,6 +396,7 @@ def import_default_reticulum_config(
     mode: Mode,
     reticulum_started: bool = False,
     source_path: pathlib.Path | None = None,
+    marker_key: bytes | None = None,
 ) -> ReticulumConfigSaveResult:
     source = (
         source_path
@@ -396,6 +415,7 @@ def import_default_reticulum_config(
         text,
         mode=mode,
         reticulum_started=reticulum_started,
+        marker_key=marker_key,
     )
 
 
@@ -588,6 +608,10 @@ def _validate_tcp_server(
     errors: list[str],
 ) -> None:
     listen_ip = str(interface.get("listen_ip", "")).strip().lower()
+    if listen_ip in {"0.0.0.0", "::", ""}:
+        warnings.append(
+            f"{interface_name} listens on a wildcard address; only use this on a trusted or protected network."
+        )
     if listen_ip in {"127.0.0.1", "localhost", "::1"}:
         warnings.append(
             f"{interface_name} listens on localhost; remote TALON clients cannot reach it."
@@ -684,7 +708,13 @@ def _config_digest(text: str) -> str:
     return hashlib.sha256(_normalise_text(text).encode("utf-8")).hexdigest()
 
 
-def _is_config_accepted(config_dir: pathlib.Path, text: str) -> bool:
+def _is_config_accepted(
+    config_dir: pathlib.Path,
+    text: str,
+    *,
+    mode: Mode,
+    marker_key: bytes | None,
+) -> bool:
     marker = reticulum_acceptance_path(config_dir)
     if marker.is_symlink() or not marker.is_file():
         return False
@@ -699,16 +729,51 @@ def _is_config_accepted(config_dir: pathlib.Path, text: str) -> bool:
             continue
         key, value = raw_line.split("=", 1)
         values[key.strip()] = value.strip()
-    return values.get("version") == "1" and values.get("sha256") == expected
+    version = values.get("version")
+    if version == "2":
+        if marker_key is None:
+            return False
+        if values.get("mode") != mode:
+            return False
+        if values.get("sha256") != expected:
+            return False
+        mac = values.get("hmac", "")
+        expected_mac = _acceptance_hmac(
+            marker_key,
+            mode=mode,
+            digest=expected,
+        )
+        return hmac.compare_digest(mac, expected_mac)
+    if version == "1":
+        # Legacy markers are no longer trusted once TALON has an unlocked DB key.
+        if marker_key is not None:
+            return False
+        return values.get("sha256") == expected
+    return False
 
 
-def _write_acceptance_marker(config_dir: pathlib.Path, text: str) -> None:
+def _write_acceptance_marker(
+    config_dir: pathlib.Path,
+    text: str,
+    *,
+    mode: Mode,
+    marker_key: bytes | None,
+) -> None:
     marker = reticulum_acceptance_path(config_dir)
     if marker.is_symlink():
         raise ReticulumConfigError(
             f"Refusing symlinked Reticulum config acceptance marker: {marker}"
         )
-    marker_text = f"version = 1\nsha256 = {_config_digest(text)}\n"
+    digest = _config_digest(text)
+    if marker_key is None:
+        marker_text = f"version = 1\nsha256 = {digest}\n"
+    else:
+        marker_text = (
+            "version = 2\n"
+            f"mode = {mode}\n"
+            f"sha256 = {digest}\n"
+            f"hmac = {_acceptance_hmac(marker_key, mode=mode, digest=digest)}\n"
+        )
     tmp_path = config_dir / f".accepted.tmp.{os.getpid()}.{time.time_ns()}"
     fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -731,3 +796,39 @@ def _chmod_private(path: pathlib.Path, mode: int) -> None:
         os.chmod(path, mode)
     except PermissionError as exc:
         raise ReticulumConfigError(f"Could not secure Reticulum config path {path}") from exc
+
+
+def _acceptance_hmac(marker_key: bytes, *, mode: Mode, digest: str) -> str:
+    payload = f"{mode}\n{digest}\n".encode("utf-8")
+    return hmac.new(_marker_hmac_key(marker_key), payload, hashlib.sha256).hexdigest()
+
+
+def _marker_hmac_key(marker_key: bytes) -> bytes:
+    return hashlib.blake2b(
+        marker_key,
+        digest_size=32,
+        person=b"TALONRNSCFGv2",
+        salt=hashlib.sha256(_ACCEPTANCE_HMAC_DOMAIN).digest()[:16],
+    ).digest()
+
+
+def _secure_existing_paths(
+    config_dir: pathlib.Path,
+    path: pathlib.Path,
+    marker: pathlib.Path,
+) -> str | None:
+    try:
+        if config_dir.exists():
+            if config_dir.is_symlink():
+                return f"Refusing symlinked Reticulum config directory: {config_dir}"
+            if config_dir.is_dir():
+                _chmod_private(config_dir, 0o700)
+        for candidate in (path, marker):
+            if candidate.exists():
+                if candidate.is_symlink():
+                    return f"Refusing symlinked Reticulum config path: {candidate}"
+                if candidate.is_file():
+                    _chmod_private(candidate, 0o600)
+    except ReticulumConfigError as exc:
+        return str(exc)
+    return None

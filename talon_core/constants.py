@@ -25,7 +25,7 @@ LEASE_DURATION_S: Final = 86400
 TRANSPORT_PRIORITY: Final = ("yggdrasil", "i2p", "tcp", "rnode")
 
 # Database schema version
-DB_SCHEMA_VERSION: Final = 17
+DB_SCHEMA_VERSION: Final = 18
 
 # ---------------------------------------------------------------------------
 # Reticulum network aspects
@@ -60,8 +60,8 @@ ASSET_CATEGORIES: Final = (
 # Default chat channels
 DEFAULT_CHANNELS: Final = ("#flash", "#general", "#sitrep-feed", "#alerts")
 
-# Enrollment token expiry (seconds) — 24 hours
-ENROLLMENT_TOKEN_EXPIRY_S: Final = 86400
+# Enrollment token expiry (seconds) — 60 minutes
+ENROLLMENT_TOKEN_EXPIRY_S: Final = 3600
 
 # ---------------------------------------------------------------------------
 # Document management
@@ -102,6 +102,28 @@ DOCUMENT_BLOCKED_MIMES: Final = frozenset({
     "text/x-shellscript",
     "application/x-sh",
     "application/java-archive",
+})
+
+# Extensions/MIME types permitted for new document uploads. Existing stored
+# documents remain downloadable through the integrity-checked read path.
+DOCUMENT_ALLOWED_EXTENSIONS: Final = frozenset({
+    ".pdf",
+    ".txt", ".md", ".markdown", ".csv", ".json", ".geojson",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",
+})
+
+DOCUMENT_ALLOWED_MIMES: Final = frozenset({
+    "application/pdf",
+    "application/json",
+    "application/geo+json",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/bmp",
+    "image/webp",
 })
 
 # ---------------------------------------------------------------------------

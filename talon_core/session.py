@@ -173,6 +173,8 @@ class TalonCoreSession:
         self._on_lease_renewed = on_lease_renewed
         self._on_data_pushed = on_data_pushed
         self._on_client_lock_check = on_client_lock_check
+        self._unlock_failure_count = 0
+        self._unlock_block_until = 0.0
 
     @property
     def cfg(self):
@@ -249,28 +251,36 @@ class TalonCoreSession:
         self._require_started()
         if self._conn is not None:
             raise CoreSessionError("Core session is already unlocked.")
+        self._enforce_unlock_delay()
 
-        paths = self.paths
-        if not paths.db_path.exists():
-            validate_passphrase_policy(passphrase)
-        salt = load_or_create_salt(paths.salt_path)
-        key = derive_key(passphrase, salt)
-        audit_key: typing.Optional[bytes] = None
-        if self.mode == "server" and install_audit:
-            audit_key = derive_key(passphrase + ":audit", salt)
+        try:
+            paths = self.paths
+            if not paths.db_path.exists():
+                validate_passphrase_policy(passphrase)
+            salt = load_or_create_salt(paths.salt_path)
+            key = derive_key(passphrase, salt)
+            audit_key: typing.Optional[bytes] = None
+            if self.mode == "server" and install_audit:
+                audit_key = derive_key(passphrase + ":audit", salt)
 
-        passphrase = "\x00" * len(passphrase)
-        del passphrase
+            passphrase = "\x00" * len(passphrase)
+            del passphrase
 
-        if key is None:
-            raise CoreSessionError("DB key derivation returned None.")
+            if key is None:
+                raise CoreSessionError("DB key derivation returned None.")
 
-        return self.unlock_with_key(
-            key,
-            audit_key=audit_key,
-            start_lease_monitor=start_lease_monitor,
-            install_audit=install_audit,
-        )
+            result = self.unlock_with_key(
+                key,
+                audit_key=audit_key,
+                start_lease_monitor=start_lease_monitor,
+                install_audit=install_audit,
+            )
+        except Exception:
+            self._record_unlock_failure()
+            raise
+
+        self._reset_unlock_failures()
+        return result
 
     def unlock_with_key(
         self,
@@ -357,6 +367,7 @@ class TalonCoreSession:
             self.paths.rns_config_dir,
             mode=self.mode,
             reticulum_started=self._reticulum_started,
+            marker_key=self._reticulum_config_marker_key(),
         )
 
     def load_reticulum_config_text(self) -> str:
@@ -383,6 +394,7 @@ class TalonCoreSession:
             text,
             mode=self.mode,
             reticulum_started=self._reticulum_started,
+            marker_key=self._reticulum_config_marker_key(),
         )
 
     def import_default_reticulum_config(self) -> ReticulumConfigSaveResult:
@@ -394,6 +406,7 @@ class TalonCoreSession:
             self.paths.rns_config_dir,
             mode=self.mode,
             reticulum_started=self._reticulum_started,
+            marker_key=self._reticulum_config_marker_key(),
         )
 
     def start_lease_monitor(self) -> None:
@@ -1166,12 +1179,14 @@ class TalonCoreSession:
 
             return update_operator_command(self._conn, **payload)
         if name == "operators.renew_lease":
+            self._require_server_mode("Operator lease renewal")
             from talon_core.services.operators import renew_operator_lease_command
             from talon_core.constants import LEASE_DURATION_S
 
             payload.setdefault("duration_s", LEASE_DURATION_S)
             return renew_operator_lease_command(self._conn, **payload)
         if name == "operators.revoke":
+            self._require_server_mode("Operator revocation")
             from talon_core.services.operators import revoke_operator_command
 
             return revoke_operator_command(self._conn, **payload)
@@ -1311,6 +1326,7 @@ class TalonCoreSession:
             return self._change_passphrase(**payload)
 
         if name == "documents.upload":
+            self._require_server_mode("Document upload")
             return self._documents_upload(**payload)
         if name == "documents.download":
             return self._documents_download(**payload)
@@ -2061,6 +2077,36 @@ class TalonCoreSession:
         if self._db_key is None:
             raise CoreSessionError("Core session has no DB key.")
         return self._db_key
+
+    def _reticulum_config_marker_key(self) -> bytes:
+        import hashlib
+
+        return hashlib.blake2b(
+            self._require_db_key(),
+            digest_size=32,
+            person=b"TALONRNSCFGv2",
+            salt=hashlib.sha256(b"talon:reticulum-config-marker").digest()[:16],
+        ).digest()
+
+    def _enforce_unlock_delay(self) -> None:
+        import time
+
+        remaining = self._unlock_block_until - time.monotonic()
+        if remaining > 0:
+            raise CoreSessionError(
+                f"Unlock temporarily delayed after failed attempts. Try again in {remaining:.0f} seconds."
+            )
+
+    def _record_unlock_failure(self) -> None:
+        import time
+
+        self._unlock_failure_count += 1
+        delay = min(30, 2 ** max(0, self._unlock_failure_count - 1))
+        self._unlock_block_until = time.monotonic() + delay
+
+    def _reset_unlock_failures(self) -> None:
+        self._unlock_failure_count = 0
+        self._unlock_block_until = 0.0
 
     def _require_server_mode(self, action: str) -> None:
         if self.mode != "server":

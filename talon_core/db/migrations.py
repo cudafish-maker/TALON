@@ -554,6 +554,21 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_sitrep_documents_document ON sitrep_documents(document_id);
     CREATE INDEX idx_sitrep_documents_sync_status ON sitrep_documents(sync_status);
     """,
+    """
+    -- 0018 — Hash enrollment tokens at rest and expire legacy pending tokens.
+    ALTER TABLE enrollment_tokens ADD COLUMN token_preview TEXT NOT NULL DEFAULT '';
+
+    UPDATE enrollment_tokens
+    SET
+        used_at = COALESCE(used_at, CAST(strftime('%s', 'now') AS INTEGER)),
+        expires_at = CASE
+            WHEN expires_at > CAST(strftime('%s', 'now') AS INTEGER)
+            THEN CAST(strftime('%s', 'now') AS INTEGER)
+            ELSE expires_at
+        END,
+        token_preview = 'legacy-expired',
+        token = 'legacy:' || lower(hex(randomblob(32)));
+    """,
 ]
 
 

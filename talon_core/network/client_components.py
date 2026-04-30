@@ -444,6 +444,40 @@ class ClientRecordApplier:
             except Exception as exc:
                 self._log.warning("Could not update lease in local DB: %s", exc)
 
+    def mark_operator_lease_expired(
+        self,
+        lease_expires_at: typing.Optional[typing.Any] = None,
+    ) -> None:
+        manager = self._manager
+        if manager._operator_id is None:
+            return
+        try:
+            expires_at = int(lease_expires_at) if lease_expires_at is not None else int(time.time())
+        except (TypeError, ValueError):
+            expires_at = int(time.time())
+
+        with manager._lock:
+            try:
+                manager._conn.execute(
+                    "UPDATE operators SET lease_expires_at = ? WHERE id = ?",
+                    (expires_at, manager._operator_id),
+                )
+                manager._conn.commit()
+            except Exception as exc:
+                self._log.warning(
+                    "Could not mark local lease expired id=%s: %s",
+                    manager._operator_id,
+                    exc,
+                )
+                return
+
+        self._ui_dispatcher.notify("operators")
+        self._log.warning(
+            "Local operator lease expired by server: id=%s",
+            manager._operator_id,
+        )
+        manager._trigger_local_lock_check()
+
     def mark_operator_revoked(
         self,
         operator_id: typing.Optional[typing.Any] = None,
@@ -1386,6 +1420,7 @@ class ClientLinkLifecycle:
                 result["ack"] = msg
             elif msg.get("type") == proto.MSG_ERROR:
                 result["error"] = msg.get("code") or msg.get("message", "unknown error")
+                result["lease_expires_at"] = msg.get("lease_expires_at")
             else:
                 result["error"] = f"unexpected response: {msg.get('type')}"
             event.set()
@@ -1408,6 +1443,8 @@ class ClientLinkLifecycle:
             self._log.warning("LoRa outbox push error: %s", result["error"])
             if result["error"] == proto.ERROR_OPERATOR_INACTIVE:
                 manager._handle_operator_inactive()
+            elif result["error"] == proto.ERROR_LEASE_EXPIRED:
+                manager._handle_lease_expired(result.get("lease_expires_at"))
         elif result["ack"]:
             ack = result["ack"]
             manager._apply_push_ack(
@@ -1473,6 +1510,7 @@ class ClientLinkLifecycle:
                 event.set()
             elif msg_type == proto.MSG_ERROR:
                 result["error"] = msg.get("code") or msg.get("message", "unknown error")
+                result["lease_expires_at"] = msg.get("lease_expires_at")
                 event.set()
 
         def _on_established(link: RNS.Link) -> None:
@@ -1516,6 +1554,8 @@ class ClientLinkLifecycle:
             self._log.warning("LoRa sync error: %s", result["error"])
             if result["error"] == proto.ERROR_OPERATOR_INACTIVE:
                 manager._handle_operator_inactive()
+            elif result["error"] == proto.ERROR_LEASE_EXPIRED:
+                manager._handle_lease_expired(result.get("lease_expires_at"))
             self._teardown(link)
             return
 
@@ -1603,6 +1643,8 @@ class ClientLinkLifecycle:
             self._log.warning("LoRa heartbeat error: %s", msg.get("message"))
             if msg.get("code") == proto.ERROR_OPERATOR_INACTIVE:
                 manager._handle_operator_inactive()
+            elif msg.get("code") == proto.ERROR_LEASE_EXPIRED:
+                manager._handle_lease_expired(msg.get("lease_expires_at"))
         self._teardown(link)
 
     def handle_incoming(
@@ -1711,5 +1753,9 @@ class ClientLinkLifecycle:
             self._log.warning("Error from server: %s", msg.get("message"))
             if msg.get("code") == proto.ERROR_OPERATOR_INACTIVE:
                 manager._handle_operator_inactive()
+                if manager._link is not None:
+                    self._teardown(manager._link)
+            elif msg.get("code") == proto.ERROR_LEASE_EXPIRED:
+                manager._handle_lease_expired(msg.get("lease_expires_at"))
                 if manager._link is not None:
                     self._teardown(manager._link)

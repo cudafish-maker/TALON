@@ -231,6 +231,13 @@ def test_core_session_document_delete_is_server_only(tmp_path: pathlib.Path) -> 
     session.unlock_with_key(TEST_KEY)
 
     with pytest.raises(CoreSessionError):
+        session.command(
+            "documents.upload",
+            raw_filename="client-note.txt",
+            file_data=b"client upload attempt",
+        )
+
+    with pytest.raises(CoreSessionError):
         session.command("documents.delete", document_id=1)
 
     with pytest.raises(DocumentError):
@@ -727,7 +734,10 @@ def test_core_session_server_admin_boundary(tmp_path: pathlib.Path) -> None:
     assert session.read_model("enrollment.server_hash") == ""
 
     pending = session.read_model("enrollment.pending_tokens")
-    assert [token.token for token in pending] == [token_result.token]
+    assert [token.token for token in pending] == [
+        f"{token_result.token[:8]}...{token_result.token[-8:]}"
+    ]
+    assert [token.token_hash for token in pending] != [token_result.token]
 
     session.close()
 
@@ -886,6 +896,58 @@ def test_core_reticulum_save_writes_private_permissions_and_backup(
     assert stat.S_IMODE(second.backup_path.stat().st_mode) == 0o600
     acceptance_mode = reticulum_acceptance_path(session.paths.rns_config_dir).stat().st_mode
     assert stat.S_IMODE(acceptance_mode) == 0o600
+
+    session.close()
+
+
+def test_core_reticulum_acceptance_marker_requires_current_hmac(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    config_text = session.load_reticulum_config_text()
+
+    result = session.save_reticulum_config_text(config_text)
+    marker_path = reticulum_acceptance_path(session.paths.rns_config_dir)
+    marker_text = marker_path.read_text(encoding="utf-8")
+
+    assert "version = 2" in marker_text
+    assert "mode = server" in marker_text
+    assert "sha256 =" in marker_text
+    assert "hmac =" in marker_text
+    assert session.reticulum_config_status().accepted is True
+
+    marker_path.write_text(
+        marker_text.replace("sha256 =", "sha256 = tampered"),
+        encoding="utf-8",
+    )
+    assert session.reticulum_config_status().accepted is False
+
+    marker_path.write_text(marker_text, encoding="utf-8")
+    assert session.reticulum_config_status().accepted is True
+
+    marker_path.write_text(
+        "\n".join(
+            line
+            for line in marker_text.splitlines()
+            if not line.startswith("hmac =")
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert session.reticulum_config_status().accepted is False
+
+    marker_path.write_text("version = 1\nsha256 = fake\n", encoding="utf-8")
+    assert session.reticulum_config_status().accepted is False
+
+    session.save_reticulum_config_text(config_text)
+    assert session.reticulum_config_status().accepted is True
+    result.path.write_text(
+        config_text.replace("loglevel = 4", "loglevel = 3"),
+        encoding="utf-8",
+    )
+    assert session.reticulum_config_status().accepted is False
 
     session.close()
 
@@ -1161,6 +1223,41 @@ def test_core_session_blocks_client_self_verification(tmp_path: pathlib.Path) ->
     with pytest.raises(CoreSessionError):
         session.command("missions.approve", mission_id=1)
     with pytest.raises(CoreSessionError):
+        session.command("operators.renew_lease", operator_id=2)
+    with pytest.raises(CoreSessionError):
+        session.command("operators.revoke", operator_id=2)
+    with pytest.raises(CoreSessionError):
         session.command("chat.delete_message", message_id=1)
+
+    session.close()
+
+
+def test_core_session_unlock_delay_increases_after_failures(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    now = [100.0]
+
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+
+    with pytest.raises(ValueError, match="Passphrase"):
+        session.unlock("Short-1", install_audit=False)
+
+    assert session._unlock_failure_count == 1
+    assert session._unlock_block_until == pytest.approx(101.0)
+
+    with pytest.raises(CoreSessionError, match="temporarily delayed"):
+        session.unlock("AnotherShort-1", install_audit=False)
+
+    assert session._unlock_failure_count == 1
+
+    now[0] = 101.0
+    with pytest.raises(ValueError, match="Passphrase"):
+        session.unlock("password123!", install_audit=False)
+
+    assert session._unlock_failure_count == 2
+    assert session._unlock_block_until == pytest.approx(103.0)
 
     session.close()

@@ -30,15 +30,16 @@ def generate_enrollment_token(conn: Connection) -> str:
     persist it, and return the hex string to present to the operator.
     """
     token = os.urandom(32).hex()
+    token_hash = _hash_token(token)
     now = int(time.time())
     conn.execute(
-        "INSERT INTO enrollment_tokens (token, created_at, expires_at) VALUES (?, ?, ?)",
-        (token, now, now + ENROLLMENT_TOKEN_EXPIRY_S),
+        "INSERT INTO enrollment_tokens "
+        "(token, token_preview, created_at, expires_at) VALUES (?, ?, ?, ?)",
+        (_stored_token_key(token), _token_preview(token), now, now + ENROLLMENT_TOKEN_EXPIRY_S),
     )
     conn.commit()
     # BUG-009: log a hash of the token so it can be correlated later without
     # exposing the raw token value in the audit record.
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
     audit("enrollment_token_generated", expires_at=now + ENROLLMENT_TOKEN_EXPIRY_S, token_hash=token_hash)
     _log.info("Enrollment token generated (expires in %ds)", ENROLLMENT_TOKEN_EXPIRY_S)
     return token
@@ -48,17 +49,18 @@ def list_pending_tokens(conn: Connection) -> list[EnrollmentToken]:
     """Return all tokens that have not yet been consumed and are not expired."""
     now = int(time.time())
     rows = conn.execute(
-        "SELECT token, created_at, expires_at, used_at, operator_id "
+        "SELECT token, token_preview, created_at, expires_at, used_at, operator_id "
         "FROM enrollment_tokens WHERE used_at IS NULL AND expires_at > ?",
         (now,),
     ).fetchall()
     return [
         EnrollmentToken(
-            token=r[0],
-            created_at=r[1],
-            expires_at=r[2],
-            used_at=r[3],
-            operator_id=r[4],
+            token_hash=r[0],
+            token_preview=r[1] or _hash_preview(r[0]),
+            created_at=r[2],
+            expires_at=r[3],
+            used_at=r[4],
+            operator_id=r[5],
         )
         for r in rows
     ]
@@ -87,7 +89,7 @@ def create_operator(
 
         row = conn.execute(
             "SELECT token, expires_at, used_at FROM enrollment_tokens WHERE token = ?",
-            (token,),
+            (_stored_token_key(token),),
         ).fetchone()
 
         if row is None:
@@ -108,7 +110,7 @@ def create_operator(
         operator_id = cursor.lastrowid
         conn.execute(
             "UPDATE enrollment_tokens SET used_at = ?, operator_id = ? WHERE token = ?",
-            (now, operator_id, token),
+            (now, operator_id, _stored_token_key(token)),
         )
         conn.commit()
     except ValueError:
@@ -131,6 +133,25 @@ def create_operator(
         lease_expires_at=lease_expires,
         revoked=False,
     )
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _stored_token_key(token: str) -> str:
+    return f"sha256:{_hash_token(token)}"
+
+
+def _token_preview(token: str) -> str:
+    return f"{token[:8]}...{token[-8:]}"
+
+
+def _hash_preview(stored_token: str) -> str:
+    value = str(stored_token)
+    if value.startswith("sha256:"):
+        value = value[len("sha256:"):]
+    return f"hash:{value[:12]}..."
 
 
 def renew_lease(conn: Connection, operator_id: int, duration_s: int) -> int:

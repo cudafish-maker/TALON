@@ -348,6 +348,12 @@ class ClientSyncManager:
     def _handle_operator_inactive(self) -> None:
         self._record_applier.mark_operator_revoked(self._operator_id)
 
+    def _handle_lease_expired(
+        self,
+        lease_expires_at: typing.Optional[typing.Any] = None,
+    ) -> None:
+        self._record_applier.mark_operator_lease_expired(lease_expires_at)
+
     def _trigger_local_lock_check(self) -> None:
         """
         Ask the app's lease monitor to re-check the local operator immediately.

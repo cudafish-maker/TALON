@@ -207,3 +207,51 @@ class TestMigrations:
         version_before = get_schema_version(conn)
         apply_migrations(conn)  # second call — should be a no-op
         assert get_schema_version(conn) == version_before
+
+    def test_enrollment_tokens_have_preview_metadata(self, tmp_db):
+        conn, _ = tmp_db
+        cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(enrollment_tokens)").fetchall()
+        }
+        assert "token_preview" in cols
+
+    def test_legacy_pending_enrollment_tokens_are_expired_and_redacted(
+        self,
+        tmp_path,
+        test_key,
+    ):
+        from talon.db.connection import close_db, open_db
+        from talon.db.migrations import MIGRATIONS, apply_migrations
+
+        conn = open_db(tmp_path / "legacy.db", test_key)
+        try:
+            for i, sql in enumerate(MIGRATIONS[:17]):
+                migration_version = i + 1
+                conn.executescript(
+                    "BEGIN;\n"
+                    f"{sql.strip()}\n"
+                    "UPDATE meta SET value = "
+                    f"'{migration_version}' WHERE key = 'schema_version';\n"
+                    "COMMIT;\n"
+                )
+            conn.execute(
+                "INSERT INTO enrollment_tokens (token, created_at, expires_at) "
+                "VALUES ('legacy-raw-token', 1, 9999999999)"
+            )
+            conn.commit()
+
+            before = int(time.time())
+            apply_migrations(conn)
+            row = conn.execute(
+                "SELECT token, token_preview, used_at, expires_at "
+                "FROM enrollment_tokens"
+            ).fetchone()
+
+            assert row[0] != "legacy-raw-token"
+            assert str(row[0]).startswith("legacy:")
+            assert row[1] == "legacy-expired"
+            assert row[2] >= before
+            assert row[3] <= row[2]
+        finally:
+            close_db(conn)

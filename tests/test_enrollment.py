@@ -9,6 +9,7 @@ from talon.server.enrollment import (
     list_pending_tokens,
     renew_lease,
 )
+from talon_core.server.enrollment import _stored_token_key
 
 
 class TestGenerateEnrollmentToken:
@@ -30,9 +31,12 @@ class TestGenerateEnrollmentToken:
         conn, _ = tmp_db
         token = generate_enrollment_token(conn)
         row = conn.execute(
-            "SELECT token FROM enrollment_tokens WHERE token = ?", (token,)
+            "SELECT token, token_preview FROM enrollment_tokens WHERE token = ?",
+            (_stored_token_key(token),),
         ).fetchone()
         assert row is not None
+        assert row[0] != token
+        assert row[1] == f"{token[:8]}...{token[-8:]}"
 
     def test_token_has_future_expiry(self, tmp_db):
         conn, _ = tmp_db
@@ -50,7 +54,8 @@ class TestListPendingTokens:
         token = generate_enrollment_token(conn)
         pending = list_pending_tokens(conn)
         tokens = [t.token for t in pending]
-        assert token in tokens
+        assert token not in tokens
+        assert f"{token[:8]}...{token[-8:]}" in tokens
 
     def test_excludes_consumed_token(self, tmp_db):
         conn, _ = tmp_db
@@ -64,7 +69,8 @@ class TestListPendingTokens:
         token = generate_enrollment_token(conn)
         # Back-date expiry to the past
         conn.execute(
-            "UPDATE enrollment_tokens SET expires_at = 1 WHERE token = ?", (token,)
+            "UPDATE enrollment_tokens SET expires_at = 1 WHERE token = ?",
+            (_stored_token_key(token),),
         )
         conn.commit()
         pending = [t.token for t in list_pending_tokens(conn)]
@@ -86,7 +92,8 @@ class TestCreateOperator:
         token = generate_enrollment_token(conn)
         create_operator(conn, "N0CALL", "deadbeef", token)
         row = conn.execute(
-            "SELECT used_at FROM enrollment_tokens WHERE token = ?", (token,)
+            "SELECT used_at FROM enrollment_tokens WHERE token = ?",
+            (_stored_token_key(token),),
         ).fetchone()
         assert row[0] is not None
 
@@ -95,7 +102,8 @@ class TestCreateOperator:
         token = generate_enrollment_token(conn)
         op = create_operator(conn, "N0CALL", "deadbeef", token)
         row = conn.execute(
-            "SELECT operator_id FROM enrollment_tokens WHERE token = ?", (token,)
+            "SELECT operator_id FROM enrollment_tokens WHERE token = ?",
+            (_stored_token_key(token),),
         ).fetchone()
         assert row[0] == op.id
 
@@ -115,7 +123,8 @@ class TestCreateOperator:
         conn, _ = tmp_db
         token = generate_enrollment_token(conn)
         conn.execute(
-            "UPDATE enrollment_tokens SET expires_at = 1 WHERE token = ?", (token,)
+            "UPDATE enrollment_tokens SET expires_at = 1 WHERE token = ?",
+            (_stored_token_key(token),),
         )
         conn.commit()
         with pytest.raises(ValueError, match="expired"):

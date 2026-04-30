@@ -40,6 +40,8 @@ import time
 import uuid
 
 from talon_core.constants import (
+    DOCUMENT_ALLOWED_EXTENSIONS,
+    DOCUMENT_ALLOWED_MIMES,
     DOCUMENT_BLOCKED_EXTENSIONS,
     DOCUMENT_BLOCKED_MIMES,
     MAX_DOCUMENT_SIZE_BYTES,
@@ -230,6 +232,10 @@ def upload_document(
 
     # 4. MIME magic bytes
     mime_type = _detect_mime(file_data, filename)
+    if not _is_allowed_upload_type(suffix, mime_type):
+        raise DocumentBlockedExtension(
+            f"File type {suffix or '<none>'!r} with content {mime_type!r} is not permitted."
+        )
     if mime_type in DOCUMENT_BLOCKED_MIMES:
         raise DocumentBlockedExtension(
             f"File content detected as {mime_type!r}, which is not permitted."
@@ -398,6 +404,20 @@ def cache_document_download(
 
     _log.info("Document cached locally: id=%s filename=%r", doc_id, doc.filename)
     return doc
+
+
+def _is_allowed_upload_type(suffix: str, mime_type: str) -> bool:
+    suffix = suffix.lower()
+    mime_type = mime_type.lower()
+    if suffix not in DOCUMENT_ALLOWED_EXTENSIONS:
+        return False
+    if mime_type in DOCUMENT_ALLOWED_MIMES:
+        return True
+    if suffix in {".txt", ".md", ".markdown", ".csv", ".json", ".geojson"}:
+        return mime_type.startswith("text/")
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}:
+        return mime_type.startswith("image/")
+    return False
 
 
 def evict_document_cache(
