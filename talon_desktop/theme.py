@@ -362,6 +362,13 @@ def _stylesheet(*, theme_key: str = "dark", font_scale: float = 1.0) -> str:
         border: 0;
     }
 
+    QTextEdit#sitrepDetailBody {
+        background: #0b1012;
+        border: 1px solid #253238;
+        border-radius: 5px;
+        color: #d8dee9;
+    }
+
     QListWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit,
     QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
         background: #11181b;

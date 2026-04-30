@@ -957,6 +957,20 @@ def row_for(window, key):
 
 try:
     core.unlock_with_key(bytes(range(32)))
+    long_body = "Lost dog found, coyote attack\n" + "\n".join(
+        f"Detail line {index}: continued operational context for review."
+        for index in range(40)
+    )
+    core.command(
+        "sitreps.create",
+        {
+            "level": "FLASH",
+            "body": long_body,
+            "location_label": "North trail",
+            "lat": 44.872081,
+            "lon": -73.162733,
+        },
+    )
     settings = QtCore.QSettings(settings_path, QtCore.QSettings.IniFormat)
     window = MainWindow(core, CoreEventBridge(), settings=settings)
     window.show()
@@ -975,6 +989,17 @@ try:
     assert not sitrep_page.isHidden()
     assert sitrep_page.new_button.text() == "New SITREP"
     assert not hasattr(sitrep_page, "template_combo")
+    sitrep_page.refresh()
+    app.processEvents()
+    assert isinstance(sitrep_page.detail_body_field, QtWidgets.QTextEdit)
+    assert sitrep_page.detail_body_field.isReadOnly()
+    assert (
+        sitrep_page.detail_body_field.verticalScrollBarPolicy()
+        == QtCore.Qt.ScrollBarAsNeeded
+    )
+    assert "Detail line 39" in sitrep_page.detail_body_field.toPlainText()
+    assert sitrep_page.detail_body_field.verticalScrollBar().maximum() > 0
+    assert sitrep_page.ack_button.isVisibleTo(sitrep_page)
 
     dialog = SitrepCreateDialog(core, parent=sitrep_page)
     dialog.show()

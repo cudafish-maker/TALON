@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON SITREP Detail Scroll Wireframe</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1214;
+      --shell: #080d0f;
+      --panel: #101719;
+      --panel-2: #0b1012;
+      --panel-3: #162126;
+      --line: #253238;
+      --line-strong: #35484f;
+      --text: #d8dee9;
+      --strong: #f6fbfb;
+      --muted: #93a1a8;
+      --teal: #8fbcbb;
+      --yellow: #f2df6b;
+      --orange: #f28c28;
+      --red: #ff5555;
+      --green: #7fb069;
+      --shadow: rgba(0, 0, 0, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, "Noto Sans", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .page {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--strong);
+      letter-spacing: 0;
+    }
+
+    h1 { font-size: 28px; line-height: 1.15; }
+    h2 { font-size: 20px; line-height: 1.2; }
+    h3 { font-size: 16px; line-height: 1.2; }
+
+    p {
+      margin: 8px 0 0;
+      max-width: 90ch;
+      color: var(--muted);
+    }
+
+    .brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 28px;
+    }
+
+    .approval {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 16px 38px var(--shadow);
+    }
+
+    .approval h2 {
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+
+    .approval ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .approval li + li { margin-top: 4px; }
+
+    .screen-title {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+
+    .screen-title span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .desktop-frame {
+      overflow: hidden;
+      min-height: 760px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) 34px;
+    }
+
+    .nav {
+      grid-row: 1 / span 2;
+      background: var(--shell);
+      border-right: 1px solid var(--line);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .brand {
+      padding: 8px 10px 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+    }
+
+    .brand .name {
+      color: var(--strong);
+      font-size: 18px;
+      font-weight: 850;
+    }
+
+    .brand .mode {
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .nav-item {
+      min-height: 34px;
+      padding: 8px 10px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      font-weight: 750;
+    }
+
+    .nav-item.active {
+      color: var(--strong);
+      background: #1f2f35;
+      border-color: #31434a;
+    }
+
+    .content {
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .topbar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar h2 { flex: 1; }
+
+    .control {
+      min-height: 34px;
+      padding: 7px 10px;
+      background: var(--panel-3);
+      color: var(--text);
+      border: 1px solid #31434a;
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .control.primary {
+      color: #071012;
+      background: var(--teal);
+      border-color: var(--teal);
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(112px, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      min-height: 72px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .metric .value {
+      margin-top: 4px;
+      color: var(--strong);
+      font-size: 24px;
+      font-weight: 850;
+    }
+
+    .metric .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric.warn {
+      border-color: #6a4e1d;
+      background: #201b10;
+    }
+
+    .metric.alert {
+      border-color: #74323a;
+      background: #211318;
+    }
+
+    .main-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(430px, 1fr) minmax(360px, 0.72fr);
+      gap: 10px;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      min-height: 42px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-head strong {
+      flex: 1;
+      color: var(--strong);
+      font-size: 14px;
+      font-weight: 850;
+    }
+
+    .panel-body {
+      min-height: 0;
+      padding: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      color: var(--text);
+      background: var(--panel-3);
+      font-size: 11px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .tag.red {
+      color: #fff4f5;
+      background: #8b2630;
+      border-color: #b33642;
+    }
+
+    .tag.green {
+      color: #08110b;
+      background: var(--green);
+      border-color: var(--green);
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .filter,
+    .select {
+      min-height: 36px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #0a0f11;
+      color: var(--text);
+      padding: 8px;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .feed {
+      flex: 1;
+      min-height: 0;
+      border: 1px solid #1c282c;
+      border-radius: 6px;
+      background: #0b1012;
+      padding: 14px;
+    }
+
+    .feed-card {
+      min-height: 112px;
+      border: 1px solid #74323a;
+      border-radius: 6px;
+      background: #211318;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr) 62px;
+      gap: 10px;
+    }
+
+    .stamp,
+    .meta,
+    .history-note {
+      color: var(--muted);
+    }
+
+    .feed-title,
+    .history-title {
+      color: var(--strong);
+      font-weight: 850;
+    }
+
+    .detail-card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      padding: 10px;
+      display: grid;
+      grid-template-rows: auto minmax(112px, 180px) auto auto;
+      gap: 8px;
+    }
+
+    .detail-card h3 {
+      font-size: 14px;
+      font-weight: 850;
+    }
+
+    .body-scroll {
+      min-height: 0;
+      border: 1px solid #243238;
+      border-radius: 5px;
+      background: #080d0f;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 12px;
+      overflow: hidden;
+    }
+
+    .body-text {
+      min-width: 0;
+      padding: 10px;
+      color: var(--text);
+    }
+
+    .body-text strong {
+      display: block;
+      color: var(--strong);
+      margin-bottom: 6px;
+    }
+
+    .scroll-track {
+      width: 12px;
+      border-left: 1px solid #253238;
+      background: #101719;
+      position: relative;
+    }
+
+    .scroll-thumb {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      top: 10px;
+      height: 54px;
+      border-radius: 6px;
+      background: #4d6570;
+      border: 1px solid #6c8791;
+    }
+
+    .callout-ring {
+      position: absolute;
+      width: 44px;
+      height: 150px;
+      border: 5px solid var(--yellow);
+      border-radius: 26px;
+      right: -18px;
+      top: 46px;
+      pointer-events: none;
+    }
+
+    .scroll-wrap {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .meta-box {
+      min-height: 58px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: var(--panel);
+    }
+
+    .meta-box strong {
+      display: block;
+      color: var(--strong);
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+
+    .meta-box span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .button-grid .wide { grid-column: 1 / -1; }
+
+    .history {
+      flex: 1;
+      min-height: 0;
+      border: 1px solid #1c282c;
+      border-radius: 6px;
+      background: #0b1012;
+      padding: 10px 10px 10px 10px;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 12px;
+      gap: 0;
+    }
+
+    .history-list {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-right: 8px;
+    }
+
+    .history-card {
+      min-height: 54px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #080d0f;
+      padding: 8px 10px;
+    }
+
+    .doc-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .statusbar {
+      grid-column: 2;
+      background: var(--shell);
+      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .statusbar span:last-child { margin-left: auto; }
+
+    @media (max-width: 1150px) {
+      .brief,
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .desktop-frame {
+        grid-template-columns: 64px minmax(0, 1fr);
+      }
+
+      .nav-item span,
+      .brand .mode {
+        display: none;
+      }
+
+      .metric-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brief">
+      <div>
+        <h1>SITREP Detail Scroll Wireframe</h1>
+        <p>
+          This mockup adds a vertical scrollbar inside the selected SITREP
+          detail text area so long bodies, links, document counts, and
+          dispositions remain readable without pushing action controls off the
+          panel.
+        </p>
+      </div>
+      <aside class="approval">
+        <h2>Approval Target</h2>
+        <ul>
+          <li>Add the scrollbar at the right edge of the selected-detail text area.</li>
+          <li>Keep Age, Ack, Handler, and action buttons visible below the text.</li>
+          <li>Keep the existing activity/history list and document link controls below.</li>
+          <li>No feed layout or SITREP creation behavior changes are included here.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section>
+      <div class="screen-title">
+        <h2>Desktop SITREP Screen</h2>
+        <span>Selected-detail body scrolls when content is taller than the card</span>
+      </div>
+      <div class="desktop-frame">
+        <nav class="nav">
+          <div class="brand">
+            <div class="name">T.A.L.O.N.</div>
+            <div class="mode">SERVER NODE</div>
+          </div>
+          <div class="nav-item"><span>Map</span></div>
+          <div class="nav-item"><span>Chat</span></div>
+          <div class="nav-item"><span>Missions</span></div>
+          <div class="nav-item active"><span>SITREPs</span></div>
+          <div class="nav-item"><span>Incidents</span></div>
+          <div class="nav-item"><span>Assets</span></div>
+          <div class="nav-item"><span>Assignments</span></div>
+          <div class="nav-item"><span>Documents</span></div>
+          <div class="nav-item"><span>Operators</span></div>
+        </nav>
+
+        <section class="content">
+          <div class="topbar">
+            <h2>SITREPs</h2>
+            <button class="control">Refresh</button>
+            <button class="control">Audio</button>
+            <button class="control primary">New SITREP</button>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric"><div class="label">Total</div><div class="value">1</div><div class="sub">Current feed</div></div>
+            <div class="metric warn"><div class="label">Unresolved</div><div class="value">0</div><div class="sub">Needs action</div></div>
+            <div class="metric alert"><div class="label">Emergency</div><div class="value">1</div><div class="sub">Flash active</div></div>
+            <div class="metric"><div class="label">With Location</div><div class="value">1</div><div class="sub">Native or linked</div></div>
+            <div class="metric"><div class="label">Pending Sync</div><div class="value">0</div><div class="sub">Queued over RNS</div></div>
+            <div class="metric"><div class="label">Attachments</div><div class="value">0</div><div class="sub">Linked docs</div></div>
+          </div>
+
+          <div class="main-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Operational Feed</strong>
+                <span class="tag red">FLASH</span>
+                <span class="tag">IMMEDIATE</span>
+              </div>
+              <div class="panel-body">
+                <div class="filters">
+                  <div class="filter">All severities</div>
+                  <div class="filter">All statuses</div>
+                  <div class="filter">Unresolved</div>
+                </div>
+                <div class="feed">
+                  <div class="feed-card">
+                    <div class="stamp">2026-04-30<br>11:45</div>
+                    <div>
+                      <div class="feed-title">FLASH / SERVER</div>
+                      <div>Lost dog found, coyote attack</div>
+                      <div class="meta">Location linked | Assignment | Asset: cudacabin</div>
+                    </div>
+                    <span class="tag green">Closed</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <strong>Selected Detail</strong>
+                <span class="tag green">Closed</span>
+              </div>
+              <div class="panel-body">
+                <div class="detail-card">
+                  <h3>FLASH #5 / Closed</h3>
+                  <div class="scroll-wrap">
+                    <div class="body-scroll">
+                      <div class="body-text">
+                        <strong>Lost dog found, coyote attack</strong>
+                        Reporter: SERVER<br>
+                        Mission: None<br>
+                        Assignment: lost dog<br>
+                        Asset: cudacabin<br>
+                        Location: No label | 44.872081, -73.162733<br>
+                        Documents: 0 | Linked incidents: 2<br>
+                        Disposition: Animal secured, handler notified, incident review complete. Additional notes remain readable instead of being clipped behind the metrics row.
+                      </div>
+                      <div class="scroll-track"><div class="scroll-thumb"></div></div>
+                    </div>
+                    <div class="callout-ring"></div>
+                  </div>
+                  <div class="meta-grid">
+                    <div class="meta-box"><strong>Age</strong><span>2026-04-30 11:45</span></div>
+                    <div class="meta-box"><strong>Ack</strong><span>Command</span></div>
+                    <div class="meta-box"><strong>Handler</strong><span>AlphaTest</span></div>
+                  </div>
+                  <div class="button-grid">
+                    <button class="control">Acknowledge</button>
+                    <button class="control">Assign</button>
+                    <button class="control">Close</button>
+                    <button class="control">Create Follow-up Incident</button>
+                    <button class="control wide">Delete</button>
+                  </div>
+                </div>
+
+                <div class="history">
+                  <div class="history-list">
+                    <div class="history-card">
+                      <div class="history-title">2026-04-30 11:46 Assigned</div>
+                      <div class="history-note">AlphaTest</div>
+                    </div>
+                    <div class="history-card">
+                      <div class="history-title">2026-04-30 11:49 Acknowledged</div>
+                      <div class="history-note">acknowledged</div>
+                    </div>
+                  </div>
+                  <div class="scroll-track"><div class="scroll-thumb"></div></div>
+                </div>
+
+                <div class="doc-row">
+                  <div class="select">None</div>
+                  <button class="control">Link Document</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <footer class="statusbar">
+          <span>Connected via Yggdrasil</span>
+          <span>Network Setup</span>
+          <span>Logs (3)</span>
+        </footer>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

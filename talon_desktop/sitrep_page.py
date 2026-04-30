@@ -117,8 +117,19 @@ class SitrepPage(QtWidgets.QWidget):
         self.detail_title_label = QtWidgets.QLabel("Select a SITREP")
         self.detail_title_label.setObjectName("sitrepDetailTitle")
         self.detail_status_tag = _tag_label("Open")
-        self.detail_body_label = QtWidgets.QLabel("")
-        self.detail_body_label.setWordWrap(True)
+        self.detail_body_field = QtWidgets.QTextEdit()
+        self.detail_body_field.setObjectName("sitrepDetailBody")
+        self.detail_body_field.setReadOnly(True)
+        self.detail_body_field.setAcceptRichText(False)
+        self.detail_body_field.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth)
+        self.detail_body_field.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.detail_body_field.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.detail_body_field.setMinimumHeight(118)
+        self.detail_body_field.setMaximumHeight(190)
+        self.detail_body_field.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Fixed,
+        )
         self.detail_age_metric = _MiniMetaBox("Age", "-")
         self.detail_ack_metric = _MiniMetaBox("Ack", "-")
         self.detail_handler_metric = _MiniMetaBox("Handler", "-")
@@ -172,7 +183,7 @@ class SitrepPage(QtWidgets.QWidget):
         detail_card.setObjectName("sitrepDetailCard")
         detail_card_layout = QtWidgets.QVBoxLayout(detail_card)
         detail_card_layout.addWidget(self.detail_title_label)
-        detail_card_layout.addWidget(self.detail_body_label)
+        detail_card_layout.addWidget(self.detail_body_field)
         detail_meta_row = QtWidgets.QHBoxLayout()
         for metric in (self.detail_age_metric, self.detail_ack_metric, self.detail_handler_metric):
             detail_meta_row.addWidget(metric)
@@ -390,7 +401,7 @@ class SitrepPage(QtWidgets.QWidget):
             detail = self._core.read_model("sitreps.detail", {"sitrep_id": sitrep_id})
         except Exception as exc:
             self.detail_title_label.setText("Unable to load SITREP detail")
-            self.detail_body_label.setText(str(exc))
+            self.detail_body_field.setPlainText(str(exc))
             self.activity_list.clear()
             return
         sitrep = detail["sitrep"]
@@ -418,7 +429,7 @@ class SitrepPage(QtWidgets.QWidget):
         ]
         if sitrep.disposition:
             body_lines.append(f"Disposition: {sitrep.disposition}")
-        self.detail_body_label.setText("\n".join(body_lines))
+        self.detail_body_field.setPlainText("\n".join(body_lines))
         self.detail_age_metric.set_value(format_created_at(sitrep.created_at))
         acknowledged = any(item.action == "acknowledged" for item in followups)
         self.detail_ack_metric.set_value("Command" if acknowledged else "Open")
@@ -446,7 +457,7 @@ class SitrepPage(QtWidgets.QWidget):
         self.detail_status_tag.setProperty("tone", "red")
         self.detail_status_tag.style().unpolish(self.detail_status_tag)
         self.detail_status_tag.style().polish(self.detail_status_tag)
-        self.detail_body_label.setText("")
+        self.detail_body_field.clear()
         self.detail_age_metric.set_value("-")
         self.detail_ack_metric.set_value("-")
         self.detail_handler_metric.set_value("-")
