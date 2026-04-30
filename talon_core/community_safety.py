@@ -434,6 +434,14 @@ def clear_incident_follow_up(
     return updated
 
 
+def delete_incident(conn: Connection, incident_id: int) -> None:
+    row = conn.execute("SELECT id FROM incidents WHERE id = ?", (int(incident_id),)).fetchone()
+    if row is None:
+        raise ValueError(f"Incident {incident_id} not found.")
+    conn.execute("DELETE FROM incidents WHERE id = ?", (int(incident_id),))
+    conn.commit()
+
+
 def list_assignments(
     conn: Connection,
     *,

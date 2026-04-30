@@ -493,6 +493,12 @@ class IncidentPage(QtWidgets.QWidget):
         self.new_button.clicked.connect(self._create_incident)
         self.clear_followup_button = QtWidgets.QPushButton("Clear Follow-up")
         self.clear_followup_button.clicked.connect(self._clear_followup)
+        self.delete_button = QtWidgets.QPushButton("Delete Incident")
+        self.delete_button.clicked.connect(self._delete_incident)
+        self.delete_button.setVisible(self._core.mode == "server")
+        self.delete_button.setStyleSheet(
+            "QPushButton { border-color: #c2665e; background: #3b2423; color: #ffd2cd; }"
+        )
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
@@ -501,6 +507,7 @@ class IncidentPage(QtWidgets.QWidget):
         top_row.addWidget(self.follow_up_filter)
         top_row.addWidget(self.refresh_button)
         top_row.addWidget(self.clear_followup_button)
+        top_row.addWidget(self.delete_button)
         top_row.addWidget(self.new_button)
 
         self.table = QtWidgets.QTableWidget(0, 5)
@@ -577,8 +584,11 @@ class IncidentPage(QtWidgets.QWidget):
         item = self._selected_item()
         if item is None:
             self.clear_followup_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
+            self.detail.clear()
             return
         self.clear_followup_button.setEnabled(item.follow_up_needed)
+        self.delete_button.setEnabled(self._core.mode == "server")
         try:
             detail = self._core.read_model("incidents.detail", {"incident_id": item.id})
         except Exception as exc:
@@ -636,6 +646,26 @@ class IncidentPage(QtWidgets.QWidget):
             self.refresh()
         except Exception as exc:
             _log.warning("Incident create failed: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
+
+    def _delete_incident(self) -> None:
+        item = self._selected_item()
+        if item is None or self._core.mode != "server":
+            return
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Incident",
+            f"Delete {item.title}? This cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if answer != QtWidgets.QMessageBox.Yes:
+            return
+        try:
+            self._core.command("incidents.delete", {"incident_id": item.id})
+            self.refresh()
+        except Exception as exc:
+            _log.warning("Incident delete failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
 
     def _clear_followup(self) -> None:

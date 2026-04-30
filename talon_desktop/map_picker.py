@@ -26,6 +26,10 @@ from talon_desktop.map_tiles import (
     scene_point_for_lat_lon,
     zoom_bounds_around_scene_point,
 )
+from talon_desktop.mission_icons import (
+    draw_mission_location_icon,
+    mission_location_icon_key,
+)
 
 _log = get_logger("desktop.map_picker")
 
@@ -35,6 +39,7 @@ class DraftMapOverlay:
     label: str
     mode: typing.Literal["point", "polygon", "route"]
     points: tuple[tuple[float, float], ...]
+    icon_key: str = ""
 
 
 class MapPickView(QtWidgets.QGraphicsView):
@@ -193,6 +198,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         initial_points: typing.Iterable[tuple[float, float]] = (),
         draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]] = (),
         minimum_points: int | None = None,
+        selection_icon_key: str = "",
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -201,6 +207,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self._minimum_points = minimum_points or (3 if mode == "polygon" else 1)
         self._points = [(_clamp_lat(lat), _clamp_lon(lon)) for lat, lon in initial_points]
         self._draft_overlays = _normalise_draft_overlays(draft_overlays)
+        self._selection_icon_key = mission_location_icon_key(selection_icon_key or title)
         self._context: object | None = None
         self._sitrep_entries: list[object] = []
         self._bounds = DEFAULT_MAP_BOUNDS
@@ -297,6 +304,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         initial_points: typing.Iterable[tuple[float, float]] = (),
         draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]] = (),
         minimum_points: int | None = None,
+        selection_icon_key: str = "",
         refit: bool = True,
     ) -> None:
         self._mode = mode
@@ -306,6 +314,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             for lat, lon in initial_points
         ]
         self._draft_overlays = _normalise_draft_overlays(draft_overlays)
+        self._selection_icon_key = mission_location_icon_key(selection_icon_key or title)
         self.setWindowTitle(title)
         self.use_button.setText(_use_button_label(mode))
         if refit:
@@ -477,7 +486,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             path.moveTo(first.x, first.y)
             for point in route.points[1:]:
                 path.lineTo(point.x, point.y)
-            item = self._scene.addPath(path, QtGui.QPen(QtGui.QColor("#f1c40f"), 2))
+            item = self._scene.addPath(path, QtGui.QPen(QtGui.QColor("#3498db"), 2))
             item.setToolTip(route.mission_label)
             item.setZValue(6)
         for waypoint in bundle.waypoints:
@@ -486,11 +495,21 @@ class MapCoordinateDialog(QtWidgets.QDialog):
                 waypoint.point.y - 4,
                 8,
                 8,
-                QtGui.QPen(QtGui.QColor("#f39c12"), 1),
-                QtGui.QBrush(QtGui.QColor("#f1c40f")),
+                QtGui.QPen(QtGui.QColor("#1f6fa8"), 1),
+                QtGui.QBrush(QtGui.QColor("#3498db")),
             )
             item.setToolTip(waypoint.label)
             item.setZValue(7)
+        for location in bundle.mission_locations:
+            item = draw_mission_location_icon(
+                self._scene,
+                location.key,
+                location.point.x,
+                location.point.y,
+                z=8,
+                size=10,
+            )
+            item.setToolTip(f"{location.label}: {location.mission_label}")
         for asset in bundle.assets:
             color = QtGui.QColor("#2ecc71") if asset.verified else QtGui.QColor("#e67e22")
             item = self._scene.addEllipse(
@@ -533,8 +552,8 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             if not scene_points:
                 continue
             if overlay.mode == "polygon":
-                pen = QtGui.QPen(QtGui.QColor("#e74c3c"), 2)
-                fill = QtGui.QBrush(QtGui.QColor(231, 76, 60, 76))
+                pen = QtGui.QPen(QtGui.QColor("#3498db"), 2)
+                fill = QtGui.QBrush(QtGui.QColor(52, 152, 219, 54))
             elif overlay.mode == "route":
                 pen = QtGui.QPen(QtGui.QColor("#3498db"), 2)
                 fill = QtGui.QBrush(QtGui.QColor(52, 152, 219, 54))
@@ -554,15 +573,25 @@ class MapCoordinateDialog(QtWidgets.QDialog):
                 item.setZValue(14)
             else:
                 point = scene_points[0]
-                item = self._scene.addEllipse(
-                    point.x() - 7,
-                    point.y() - 7,
-                    14,
-                    14,
-                    pen,
-                    QtGui.QBrush(QtGui.QColor(255, 223, 110, 155)),
-                )
-                item.setZValue(15)
+                if overlay.icon_key:
+                    item = draw_mission_location_icon(
+                        self._scene,
+                        overlay.icon_key,
+                        point.x(),
+                        point.y(),
+                        z=15,
+                        size=11,
+                    )
+                else:
+                    item = self._scene.addEllipse(
+                        point.x() - 7,
+                        point.y() - 7,
+                        14,
+                        14,
+                        pen,
+                        QtGui.QBrush(QtGui.QColor(255, 223, 110, 155)),
+                    )
+                    item.setZValue(15)
             item.setToolTip(overlay.label)
             label = self._scene.addText(overlay.label)
             label.setDefaultTextColor(QtGui.QColor("#ffdf6e"))
@@ -599,13 +628,13 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             for lat, lon in self._points
         ]
         pen = QtGui.QPen(QtGui.QColor("#f6fbfb"), 2)
-        accent_pen = QtGui.QPen(QtGui.QColor("#ffdf6e"), 3)
+        accent_pen = QtGui.QPen(QtGui.QColor("#3498db"), 3)
         if self._mode == "polygon" and len(scene_points) >= 3:
             polygon = QtGui.QPolygonF(scene_points)
             item = self._scene.addPolygon(
                 polygon,
                 accent_pen,
-                QtGui.QBrush(QtGui.QColor(255, 223, 110, 44)),
+                QtGui.QBrush(QtGui.QColor(52, 152, 219, 54)),
             )
             item.setZValue(20)
         elif self._mode == "route" and len(scene_points) >= 2:
@@ -617,17 +646,27 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             item.setZValue(20)
 
         for index, point in enumerate(scene_points, start=1):
+            if self._mode == "point" and self._selection_icon_key:
+                draw_mission_location_icon(
+                    self._scene,
+                    self._selection_icon_key,
+                    point.x(),
+                    point.y(),
+                    z=25,
+                    size=12,
+                )
+                continue
             ellipse = self._scene.addEllipse(
                 point.x() - 8,
                 point.y() - 8,
                 16,
                 16,
                 pen,
-                QtGui.QBrush(QtGui.QColor("#ffdf6e")),
+                QtGui.QBrush(QtGui.QColor("#3498db")),
             )
             ellipse.setZValue(25)
             label = self._scene.addText(str(index))
-            label.setDefaultTextColor(QtGui.QColor("#111619"))
+            label.setDefaultTextColor(QtGui.QColor("#edf3f5"))
             label.setZValue(26)
             rect = label.boundingRect()
             label.setPos(point.x() - rect.width() / 2, point.y() - rect.height() / 2)
@@ -727,6 +766,7 @@ def pick_point_on_map(
     initial_lat: float | None = None,
     initial_lon: float | None = None,
     draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]] = (),
+    selection_icon_key: str = "",
     parent: QtWidgets.QWidget | None = None,
 ) -> tuple[float, float] | None:
     initial = []
@@ -738,6 +778,7 @@ def pick_point_on_map(
         mode="point",
         initial_points=initial,
         draft_overlays=draft_overlays,
+        selection_icon_key=selection_icon_key,
         parent=parent,
     )
     if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -793,6 +834,7 @@ def _normalise_draft_overlays(
                 label=str(overlay.get("label", "Draft")),
                 mode=typing.cast(typing.Literal["point", "polygon", "route"], mode),
                 points=points,
+                icon_key=mission_location_icon_key(str(overlay.get("icon_key", ""))),
             )
         if candidate.points:
             result.append(candidate)

@@ -24,6 +24,13 @@ from talon_desktop.map_picker import (
     MapCoordinateDialog,
     format_coordinate,
 )
+from talon_desktop.mission_icons import (
+    MISSION_LOCATION_ICON_KEYS,
+    MISSION_LOCATION_ICON_LABELS,
+    draw_mission_location_icon,
+    mission_location_icon_pixmap,
+    mission_location_icon_key,
+)
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.missions")
@@ -95,8 +102,8 @@ class MissionDraftPreview(QtWidgets.QGraphicsView):
             )
             self._scene.addPolygon(
                 polygon,
-                QtGui.QPen(QtGui.QColor("#e74c3c"), 2),
-                QtGui.QBrush(QtGui.QColor(231, 76, 60, 76)),
+                QtGui.QPen(QtGui.QColor("#3498db"), 2),
+                QtGui.QBrush(QtGui.QColor(52, 152, 219, 54)),
             ).setZValue(5)
         if len(route_points) >= 2:
             path = QtGui.QPainterPath()
@@ -189,62 +196,7 @@ class MissionDraftPreview(QtWidgets.QGraphicsView):
             self._scene.addLine(0, y, width, y, pen).setZValue(-10)
 
     def _draw_location_icon(self, icon: str, x: float, y: float) -> None:
-        pen = QtGui.QPen(QtGui.QColor("#ecf0f1"), 2)
-        brush = QtGui.QBrush(QtGui.QColor("#1f2930"))
-        if icon in {"staging_area", "demob_point"}:
-            polygon = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(x, y - 10),
-                    QtCore.QPointF(x + 10, y),
-                    QtCore.QPointF(x, y + 10),
-                    QtCore.QPointF(x - 10, y),
-                ]
-            )
-            self._scene.addPolygon(polygon, pen, QtGui.QBrush(QtGui.QColor("#3498db"))).setZValue(12)
-            return
-        if icon == "medical":
-            self._scene.addRect(x - 10, y - 10, 20, 20, pen, QtGui.QBrush(QtGui.QColor("#e74c3c"))).setZValue(12)
-            self._scene.addLine(x - 6, y, x + 6, y, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(13)
-            self._scene.addLine(x, y - 6, x, y + 6, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(13)
-            return
-        if icon == "evacuation":
-            polygon = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(x, y - 12),
-                    QtCore.QPointF(x + 12, y + 10),
-                    QtCore.QPointF(x - 12, y + 10),
-                ]
-            )
-            self._scene.addPolygon(polygon, pen, QtGui.QBrush(QtGui.QColor("#f1c40f"))).setZValue(12)
-            return
-        if icon == "supply":
-            polygon = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(x - 9, y - 8),
-                    QtCore.QPointF(x + 5, y - 8),
-                    QtCore.QPointF(x + 11, y),
-                    QtCore.QPointF(x + 5, y + 8),
-                    QtCore.QPointF(x - 9, y + 8),
-                    QtCore.QPointF(x - 13, y),
-                ]
-            )
-            self._scene.addPolygon(polygon, pen, QtGui.QBrush(QtGui.QColor("#8fbcbb"))).setZValue(12)
-            return
-        self._scene.addRect(x - 10, y - 10, 20, 20, pen, brush).setZValue(12)
-        if icon == "incident_command_post":
-            flag_pen = QtGui.QPen(QtGui.QColor("#ecf0f1"), 2)
-            self._scene.addLine(x - 4, y + 6, x - 4, y - 8, flag_pen).setZValue(13)
-            self._scene.addPolygon(
-                QtGui.QPolygonF(
-                    [
-                        QtCore.QPointF(x - 4, y - 8),
-                        QtCore.QPointF(x + 7, y - 5),
-                        QtCore.QPointF(x - 4, y - 2),
-                    ]
-                ),
-                flag_pen,
-                QtGui.QBrush(QtGui.QColor("#e74c3c")),
-            ).setZValue(13)
+        draw_mission_location_icon(self._scene, icon, x, y, z=12, size=11)
 
     def _draw_label(self, text: str, x: float, y: float, color: QtGui.QColor) -> None:
         label = self._scene.addText(text)
@@ -364,6 +316,8 @@ class MissionCreateDialog(QtWidgets.QDialog):
         tabs.addTab(self._scroll_page(self._assets_tab()), "Assets")
         tabs.addTab(self._scroll_page(self._area_tab()), "Area / Route")
         tabs.addTab(self._scroll_page(self._support_tab()), "Support")
+        tabs.setCurrentIndex(3)
+        self.tabs = tabs
         self.map_picker = MapCoordinateDialog(
             core=self._core,
             title="Mission Map",
@@ -394,10 +348,13 @@ class MissionCreateDialog(QtWidgets.QDialog):
         self.cancel_button = QtWidgets.QPushButton("Cancel")
         self.save_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
-        button_row = QtWidgets.QHBoxLayout()
-        button_row.addStretch(1)
-        button_row.addWidget(self.cancel_button)
-        button_row.addWidget(self.save_button)
+        heading = QtWidgets.QLabel("Create Mission")
+        heading.setObjectName("pageHeading")
+        toolbar = QtWidgets.QHBoxLayout()
+        toolbar.addWidget(heading)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self.cancel_button)
+        toolbar.addWidget(self.save_button)
 
         content = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         content.addWidget(tabs)
@@ -406,9 +363,9 @@ class MissionCreateDialog(QtWidgets.QDialog):
         content.setStretchFactor(1, 2)
 
         layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(toolbar)
         layout.addWidget(content, stretch=1)
         layout.addWidget(self.status_label)
-        layout.addLayout(button_row)
         QtCore.QTimer.singleShot(0, self._refresh_embedded_map_drafts)
 
     def payload(self) -> dict[str, object]:
@@ -545,6 +502,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         form.addRow("AO Polygon", self._geometry_row(self.ao_field, self._draw_ao))
         form.addRow("Route / Waypoints", self._geometry_row(self.route_field, self._draw_route))
         form.addRow("Objectives", self._table_with_buttons(self.objective_table))
+        form.addRow("Mission Location Icons", self._mission_icon_legend())
 
         key_group = QtWidgets.QGroupBox("Key Locations")
         key_form = QtWidgets.QFormLayout(key_group)
@@ -560,6 +518,32 @@ class MissionCreateDialog(QtWidgets.QDialog):
             key_form.addRow(label, self._point_row(field, label))
         form.addRow(key_group)
         return page
+
+    def _mission_icon_legend(self) -> QtWidgets.QWidget:
+        grid = QtWidgets.QWidget()
+        grid.setObjectName("missionIconLegend")
+        layout = QtWidgets.QGridLayout(grid)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+        for index, key in enumerate(MISSION_LOCATION_ICON_KEYS):
+            card = QtWidgets.QFrame()
+            card.setFrameShape(QtWidgets.QFrame.StyledPanel)
+            card_layout = QtWidgets.QHBoxLayout(card)
+            card_layout.setContentsMargins(8, 8, 8, 8)
+            icon = QtWidgets.QLabel()
+            icon.setFixedSize(38, 38)
+            icon.setPixmap(mission_location_icon_pixmap(key))
+            icon.setAlignment(QtCore.Qt.AlignCenter)
+            label = QtWidgets.QLabel(
+                f"<strong>{MISSION_LOCATION_ICON_LABELS[key]}</strong><br>"
+                f"<span style='color:#98a8ae;'>Global key: {key}</span>"
+            )
+            label.setWordWrap(True)
+            card_layout.addWidget(icon)
+            card_layout.addWidget(label, stretch=1)
+            layout.addWidget(card, index // 3, index % 3)
+        return grid
 
     def _support_tab(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
@@ -691,6 +675,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
             initial_points=initial,
             draft_overlays=self._draft_overlays(exclude_widget=field),
             minimum_points=1,
+            selection_icon_key=mission_location_icon_key(title),
         )
         self.map_picker.use_button.setText("Use Selected")
         self.status_label.setText(f"Map target: {title}.")
@@ -793,6 +778,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
                 initial_points=points,
                 draft_overlays=self._draft_overlays(exclude_widget=widget),
                 minimum_points=1,
+                selection_icon_key=mission_location_icon_key(title),
                 refit=False,
             )
         self.map_picker.use_button.setText("Use Selected")
@@ -840,12 +826,14 @@ class MissionCreateDialog(QtWidgets.QDialog):
         self._append_point_overlay(
             overlays,
             label="Draft Staging Area",
+            icon_key="staging_area",
             field=self.staging_area_field,
             exclude_widget=exclude_widget,
         )
         self._append_point_overlay(
             overlays,
             label="Draft Demob Point",
+            icon_key="demob_point",
             field=self.demob_point_field,
             exclude_widget=exclude_widget,
         )
@@ -853,6 +841,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
             self._append_point_overlay(
                 overlays,
                 label=f"Draft {key.replace('_', ' ').title()}",
+                icon_key=key,
                 field=field,
                 exclude_widget=exclude_widget,
             )
@@ -886,6 +875,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         overlays: list[DraftMapOverlay],
         *,
         label: str,
+        icon_key: str,
         field: QtWidgets.QLineEdit,
         exclude_widget: QtWidgets.QWidget | None,
     ) -> None:
@@ -900,7 +890,14 @@ class MissionCreateDialog(QtWidgets.QDialog):
             )
         except ValueError:
             return
-        overlays.append(DraftMapOverlay(label=label, mode="point", points=tuple(points[:1])))
+        overlays.append(
+            DraftMapOverlay(
+                label=label,
+                mode="point",
+                points=tuple(points[:1]),
+                icon_key=icon_key,
+            )
+        )
 
     def _activation_text(self) -> str:
         if not self.activation_enabled.isChecked():
@@ -912,12 +909,11 @@ class MissionCreateDialog(QtWidgets.QDialog):
             return ""
         start = self.operation_start_time.dateTime()
         end = self.operation_end_time.dateTime()
-        if end < start:
+        start_text = start.toString("yyyy-MM-dd HH:mm")
+        end_text = end.toString("yyyy-MM-dd HH:mm")
+        if end_text <= start_text:
             raise ValueError("Operation window end must be after start.")
-        return (
-            f"{start.toString('yyyy-MM-dd HH:mm')} - "
-            f"{end.toString('yyyy-MM-dd HH:mm')}"
-        )
+        return f"{start_text} - {end_text}"
 
     def _constraints(self) -> list[str]:
         values = [

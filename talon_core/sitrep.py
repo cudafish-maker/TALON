@@ -177,12 +177,23 @@ def create_sitrep(
     return cursor.lastrowid
 
 
-def delete_sitrep(conn: Connection, sitrep_id: int) -> None:
+def delete_sitrep(conn: Connection, sitrep_id: int) -> tuple[int, ...]:
     """Permanently delete a SITREP.  Server operator only."""
+    sitrep_id = int(sitrep_id)
     with conn.transaction():
+        incident_rows = conn.execute(
+            "SELECT id FROM incidents WHERE linked_sitrep_id = ?",
+            (sitrep_id,),
+        ).fetchall()
+        conn.execute(
+            "UPDATE incidents SET linked_sitrep_id = NULL, version = version + 1 "
+            "WHERE linked_sitrep_id = ?",
+            (sitrep_id,),
+        )
         conn.execute("DELETE FROM sitrep_documents WHERE sitrep_id = ?", (sitrep_id,))
         conn.execute("DELETE FROM sitrep_followups WHERE sitrep_id = ?", (sitrep_id,))
         conn.execute("DELETE FROM sitreps WHERE id = ?", (sitrep_id,))
+    return tuple(int(row[0]) for row in incident_rows)
 
 
 def link_sitreps_to_mission(

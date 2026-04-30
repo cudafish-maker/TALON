@@ -1316,6 +1316,11 @@ class TalonCoreSession:
             )
 
             return clear_incident_follow_up_command(self._conn, **payload)
+        if name == "incidents.delete":
+            self._require_server_mode("Incident delete")
+            from talon_core.services.community_safety import delete_incident_command
+
+            return delete_incident_command(self._conn, **payload)
 
         if name == "chat.ensure_defaults":
             from talon_core.chat import ensure_default_channels
@@ -1420,12 +1425,22 @@ class TalonCoreSession:
 
     def _sitreps_delete(self, *, sitrep_id: int) -> RecordCommandResult:
         self._require_server_mode("SITREP delete")
-        from talon_core.services.events import record_deleted
+        from talon_core.services.events import record_changed, record_deleted
         from talon_core.sitrep import delete_sitrep
 
-        doc_id = int(sitrep_id)
-        delete_sitrep(self._conn, doc_id)
-        return RecordCommandResult("sitreps", doc_id, (record_deleted("sitreps", doc_id),))
+        record_id = int(sitrep_id)
+        unlinked_incident_ids = delete_sitrep(self._conn, record_id)
+        return RecordCommandResult(
+            "sitreps",
+            record_id,
+            (
+                record_deleted("sitreps", record_id),
+                *(
+                    record_changed("incidents", incident_id)
+                    for incident_id in unlinked_incident_ids
+                ),
+            ),
+        )
 
     def _sitreps_followup(
         self,

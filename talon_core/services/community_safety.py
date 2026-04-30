@@ -10,6 +10,7 @@ from talon_core.community_safety import (
     create_assignment,
     create_checkin,
     create_incident,
+    delete_incident,
     get_assignment,
     get_incident,
     update_assignment_status,
@@ -20,7 +21,12 @@ from talon_core.db.models import (
     CommunityAssignment,
     CommunityIncident,
 )
-from talon_core.services.events import DomainEvent, linked_records_changed, record_changed
+from talon_core.services.events import (
+    DomainEvent,
+    linked_records_changed,
+    record_changed,
+    record_deleted,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -328,4 +334,17 @@ def clear_incident_follow_up_command(
         tuple(events),
         incident.follow_up_assignment_id,
         assignment,
+    )
+
+
+def delete_incident_command(
+    conn: Connection,
+    *,
+    incident_id: int,
+) -> IncidentCommandResult:
+    delete_incident(conn, incident_id)
+    return IncidentCommandResult(
+        int(incident_id),
+        None,
+        (record_deleted("incidents", int(incident_id)),),
     )

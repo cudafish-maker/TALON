@@ -34,6 +34,7 @@ from talon_desktop.map_tiles import (
     pan_bounds_by_scene_delta,
     zoom_bounds_around_scene_point,
 )
+from talon_desktop.mission_icons import draw_mission_location_icon
 
 _log = get_logger("desktop.map")
 
@@ -994,83 +995,7 @@ class MapPage(QtWidgets.QWidget):
     def _draw_mission_location(self, location: MissionLocationOverlay) -> None:
         x = location.point.x
         y = location.point.y
-        pen = QtGui.QPen(QtGui.QColor("#ecf0f1"), 2)
-        key = location.key
-        if key in {"staging_area", "demob_point"}:
-            polygon = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(x, y - 10),
-                    QtCore.QPointF(x + 10, y),
-                    QtCore.QPointF(x, y + 10),
-                    QtCore.QPointF(x - 10, y),
-                ]
-            )
-            item = self._scene.addPolygon(
-                polygon,
-                pen,
-                QtGui.QBrush(QtGui.QColor("#3498db")),
-            )
-        elif key == "medical":
-            item = self._scene.addRect(
-                x - 10,
-                y - 10,
-                20,
-                20,
-                pen,
-                QtGui.QBrush(QtGui.QColor("#e74c3c")),
-            )
-            self._scene.addLine(x - 6, y, x + 6, y, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(18)
-            self._scene.addLine(x, y - 6, x, y + 6, QtGui.QPen(QtGui.QColor("#ffffff"), 2)).setZValue(18)
-        elif key == "evacuation":
-            item = self._scene.addPolygon(
-                QtGui.QPolygonF(
-                    [
-                        QtCore.QPointF(x, y - 12),
-                        QtCore.QPointF(x + 12, y + 10),
-                        QtCore.QPointF(x - 12, y + 10),
-                    ]
-                ),
-                pen,
-                QtGui.QBrush(QtGui.QColor("#f1c40f")),
-            )
-        elif key == "supply":
-            item = self._scene.addPolygon(
-                QtGui.QPolygonF(
-                    [
-                        QtCore.QPointF(x - 9, y - 8),
-                        QtCore.QPointF(x + 5, y - 8),
-                        QtCore.QPointF(x + 11, y),
-                        QtCore.QPointF(x + 5, y + 8),
-                        QtCore.QPointF(x - 9, y + 8),
-                        QtCore.QPointF(x - 13, y),
-                    ]
-                ),
-                pen,
-                QtGui.QBrush(QtGui.QColor("#8fbcbb")),
-            )
-        else:
-            item = self._scene.addRect(
-                x - 10,
-                y - 10,
-                20,
-                20,
-                pen,
-                QtGui.QBrush(QtGui.QColor("#1f2930")),
-            )
-            if key == "incident_command_post":
-                self._scene.addLine(x - 4, y + 6, x - 4, y - 8, pen).setZValue(18)
-                self._scene.addPolygon(
-                    QtGui.QPolygonF(
-                        [
-                            QtCore.QPointF(x - 4, y - 8),
-                            QtCore.QPointF(x + 7, y - 5),
-                            QtCore.QPointF(x - 4, y - 2),
-                        ]
-                    ),
-                    pen,
-                    QtGui.QBrush(QtGui.QColor("#e74c3c")),
-                ).setZValue(18)
-        item.setZValue(17)
+        item = draw_mission_location_icon(self._scene, location.key, x, y, z=17, size=12)
         self._register_item(
             item,
             key=f"mission-location:{location.mission_id}:{location.key}",

@@ -552,6 +552,22 @@ def test_core_session_community_safety_commands_and_read_models(
     dashboard = session.read_model("dashboard.summary")
     assert dashboard.counts["incident_follow_ups"] == 0
 
+    session._mode = "client"
+    with pytest.raises(CoreSessionError, match="server mode"):
+        session.command("incidents.delete", {"incident_id": incident_result.incident_id})
+    session._mode = "server"
+
+    delete_result = session.command(
+        "incidents.delete",
+        {"incident_id": incident_result.incident_id},
+    )
+    assert delete_result.incident_id == incident_result.incident_id
+    with pytest.raises(ValueError, match="not found"):
+        session.read_model(
+            "incidents.detail",
+            {"incident_id": incident_result.incident_id},
+        )
+
     tables = {mutation.table for event in received for mutation in event.iter_records()}
     assert {"assignments", "checkins", "incidents"}.issubset(tables)
 
@@ -650,14 +666,41 @@ def test_core_session_sitrep_followups_locations_and_documents(
     assert dashboard.counts["sitrep_followups"] == 4
     assert dashboard.counts["sitrep_documents"] == 1
 
+    incident_result = session.command(
+        "incidents.create",
+        {
+            "category": "unsafe_area",
+            "severity": "PRIORITY",
+            "title": "North Gate follow-up",
+            "location_label": "North Gate",
+            "narrative": "Linked to the SITREP for command review.",
+            "linked_sitrep_id": sitrep_id,
+        },
+    )
+    assert session.read_model(
+        "incidents.detail",
+        {"incident_id": incident_result.incident_id},
+    )["incident"].linked_sitrep_id == sitrep_id
+
     deleted = session.command("documents.delete", document_id=upload.document_id)
     assert deleted.document_id == upload.document_id
     assert session.read_model("sitreps.detail", {"sitrep_id": sitrep_id})["documents"] == []
 
+    deleted_sitrep = session.command("sitreps.delete", sitrep_id=sitrep_id)
+    assert deleted_sitrep.record_id == sitrep_id
+    assert session.read_model(
+        "incidents.detail",
+        {"incident_id": incident_result.incident_id},
+    )["incident"].linked_sitrep_id is None
+
     tables = {mutation.table for event in received for mutation in event.iter_records()}
-    assert {"sitreps", "sitrep_followups", "sitrep_documents", "documents"}.issubset(
-        tables
-    )
+    assert {
+        "sitreps",
+        "sitrep_followups",
+        "sitrep_documents",
+        "documents",
+        "incidents",
+    }.issubset(tables)
 
     session.close()
 

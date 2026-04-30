@@ -214,7 +214,7 @@ import hashlib
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from talon_core import TalonCoreSession
 from talon_core.crypto.keystore import derive_key, load_or_create_salt
@@ -1060,7 +1060,7 @@ import types
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from talon_desktop.map_picker import MapCoordinateDialog
 from talon_desktop.mission_page import MissionCreateDialog
@@ -1095,9 +1095,27 @@ class FakeCore:
 
 dialog = MissionCreateDialog(FakeCore())
 try:
+    dialog.operation_window_enabled.setChecked(True)
+    start = QtCore.QDateTime.fromString("2026-04-30 10:00", "yyyy-MM-dd HH:mm")
+    dialog.operation_start_time.setDateTime(start)
+    dialog.operation_end_time.setDateTime(start)
+    try:
+        dialog._operation_window_text()
+    except ValueError as exc:
+        assert "after start" in str(exc)
+    else:
+        raise AssertionError("Equal operation window endpoints should be rejected")
+    dialog.operation_end_time.setDateTime(start.addSecs(60))
+    assert dialog._operation_window_text() == (
+        "2026-04-30 10:00 - 2026-04-30 10:01"
+    )
+
     assert isinstance(dialog.map_picker, MapCoordinateDialog)
     assert not dialog.map_picker.isWindow()
     assert dialog.map_picker.cancel_button.isHidden()
+    assert dialog.tabs.tabText(dialog.tabs.currentIndex()) == "Area / Route"
+    legend = dialog.findChild(QtWidgets.QWidget, "missionIconLegend")
+    assert legend is not None
     assert dialog._map_target is not None
     assert dialog._map_target[2] == "AO Polygon"
     dialog.ao_field.setPlainText(
@@ -1450,7 +1468,7 @@ try:
     page.refresh()
     page._select_document_id(1)
     row = page.table.selectionModel().selectedRows()[0].row()
-    page.table.item(row, 1).setText("renamed-alpha.txt")
+    page.table.item(row, 0).setText("renamed-alpha.txt")
     app.processEvents()
     assert core._doc(1).filename == "renamed-alpha.txt"
     assert core.commands[-1][0] == "documents.rename"
@@ -1591,6 +1609,112 @@ finally:
     app.processEvents()
 """
 
+_QT_INCIDENT_DELETE_SCRIPT = r"""
+import os
+import pathlib
+import sys
+import types
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_desktop.community_safety_page import IncidentPage
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+class FakeCore:
+    mode = "server"
+
+    def __init__(self) -> None:
+        self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
+        self.commands = []
+        self.incidents = [
+            types.SimpleNamespace(
+                id=77,
+                category="community_conflict",
+                severity="PRIORITY",
+                title="Shelter support follow-up",
+                occurred_at=1_700_000_000,
+                location_label="North Shelter",
+                lat=None,
+                lon=None,
+                narrative="Team documented a conflict.",
+                actions_taken="De-escalation support notified.",
+                outcome="",
+                follow_up_needed=True,
+                follow_up_type="revisit_location",
+                follow_up_action="Revisit and confirm resolved.",
+                follow_up_responsible="Aster",
+                follow_up_due="Tonight",
+                follow_up_urgency="priority",
+                follow_up_assignment_id=None,
+                notified_services="None",
+                linked_mission_id=None,
+                linked_assignment_id=None,
+                linked_asset_id=None,
+                linked_sitrep_id=None,
+                created_by=1,
+                created_at=1_700_000_000,
+                version=1,
+            )
+        ]
+
+    def read_model(self, name, filters=None):
+        filters = filters or {}
+        if name == "incidents.list":
+            return list(self.incidents)
+        if name == "incidents.detail":
+            incident_id = int(filters["incident_id"])
+            for incident in self.incidents:
+                if incident.id == incident_id:
+                    return {
+                        "incident": incident,
+                        "creator_callsign": "SERVER",
+                        "assignment_title": "",
+                        "mission_title": "",
+                        "asset_label": "",
+                        "sitrep_label": "",
+                        "follow_up_assignment_title": "",
+                    }
+            raise ValueError("Incident not found.")
+        raise KeyError(name)
+
+    def command(self, name, payload=None, **kwargs):
+        data = dict(payload or {})
+        data.update(kwargs)
+        self.commands.append((name, data))
+        if name == "incidents.delete":
+            incident_id = int(data["incident_id"])
+            self.incidents = [
+                incident for incident in self.incidents if incident.id != incident_id
+            ]
+            return types.SimpleNamespace(incident_id=incident_id)
+        raise KeyError(name)
+
+
+core = FakeCore()
+page = IncidentPage(core)
+try:
+    page.refresh()
+    assert not page.delete_button.isHidden()
+    assert page.delete_button.isEnabled()
+
+    QtWidgets.QMessageBox.question = staticmethod(
+        lambda *args, **kwargs: QtWidgets.QMessageBox.Yes
+    )
+    page._delete_incident()
+    assert core.commands[-1] == ("incidents.delete", {"incident_id": 77})
+    assert page.table.rowCount() == 0
+    assert "0 incident" in page.summary.text()
+
+    print("incident-delete-actions-ok")
+finally:
+    page.close()
+    app.processEvents()
+"""
+
 _QT_ICON_RENDER_SCRIPT = r"""
 import os
 
@@ -1600,6 +1724,7 @@ from PySide6 import QtWidgets
 
 from talon_core.assets import CATEGORY_LABEL
 from talon_desktop.icons import asset_marker_pixmap, desktop_nav_icon
+from talon_desktop.mission_icons import MISSION_LOCATION_ICON_KEYS, draw_mission_location_icon
 from talon_desktop.navigation import navigation_items
 
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -1615,6 +1740,11 @@ for category in CATEGORY_LABEL:
     assert not verified.isNull(), category
     assert not unverified.isNull(), category
     assert not selected.isNull(), category
+
+scene = QtWidgets.QGraphicsScene()
+for index, key in enumerate(MISSION_LOCATION_ICON_KEYS):
+    item = draw_mission_location_icon(scene, key, 24 + index * 30, 24)
+    assert item.data(0) == key
 
 print("icons-ok")
 """
@@ -2156,6 +2286,20 @@ def test_qt_assignment_closeout_and_server_checkin_actions(
     )
 
     assert "assignment-closeout-actions-ok" in result.stdout
+
+
+def test_qt_incident_delete_action_is_server_only(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_INCIDENT_DELETE_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="incident-delete",
+        timeout=30,
+    )
+
+    assert "incident-delete-actions-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))

@@ -1,10 +1,11 @@
 """PySide6 document repository page."""
 from __future__ import annotations
 
+import html
 import pathlib
 import threading
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from talon_core import TalonCoreSession
 from talon_core.utils.logging import get_logger
@@ -23,11 +24,196 @@ _log = get_logger("desktop.documents")
 
 _DOCUMENT_ID_MIME = "application/x-talon-document-id"
 _ORIGINAL_TEXT_ROLE = QtCore.Qt.UserRole + 1
+_DOCUMENTS_STYLESHEET = """
+QWidget#documentsExplorerPage {
+    background: #171e22;
+}
+
+QFrame#documentsToolbar {
+    background: #11181b;
+    border-bottom: 1px solid #334047;
+}
+
+QLabel#documentsHeading {
+    color: #edf3f5;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+QPushButton#documentsButton {
+    min-height: 34px;
+    border: 1px solid #566973;
+    background: #243139;
+    color: #edf3f5;
+    padding: 7px 11px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QPushButton#documentsPrimaryButton {
+    min-height: 34px;
+    border: 1px solid #d9bd5c;
+    background: #ffdf6e;
+    color: #151a1d;
+    padding: 7px 11px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+QLabel#documentsSummary {
+    padding: 10px 16px;
+    border-bottom: 1px solid #334047;
+    background: #141b1f;
+    color: #98a8ae;
+    font-size: 13px;
+}
+
+QSplitter#documentsBody::handle {
+    background: #334047;
+    width: 1px;
+}
+
+QFrame#documentsPane {
+    background: #101619;
+    border-right: 1px solid #334047;
+}
+
+QWidget#documentsPaneBody {
+    background: #101619;
+}
+
+QLabel#documentsPaneTitle {
+    padding: 10px 12px;
+    border-bottom: 1px solid #334047;
+    background: #141b1f;
+    color: #98a8ae;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+QTreeWidget#documentFolderTree,
+QTableWidget#documentFileTable,
+QTextEdit#documentDetail {
+    background: #101619;
+    color: #edf3f5;
+    border: 0;
+    selection-background-color: #1b252a;
+    selection-color: #edf3f5;
+}
+
+QTreeWidget#documentFolderTree::item {
+    min-height: 34px;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+}
+
+QTreeWidget#documentFolderTree::item:selected,
+QTableWidget#documentFileTable::item:selected {
+    background: #1b252a;
+    border: 1px solid #60717a;
+    color: #edf3f5;
+}
+
+QHeaderView::section {
+    min-height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-bottom: 1px solid #334047;
+    background: #141b1f;
+    color: #98a8ae;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+QTableWidget#documentFileTable::item {
+    min-height: 42px;
+    padding: 0 10px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+}
+
+QTextEdit#documentDetail {
+    padding: 10px;
+}
+
+QFrame#documentsStatusBar {
+    min-height: 32px;
+    border-top: 1px solid #334047;
+    background: #11181b;
+}
+
+QLabel#documentsStatusText {
+    color: #98a8ae;
+    font-size: 12px;
+}
+
+QMenu {
+    background: #0f1518;
+    border: 1px solid #5a6a72;
+    color: #edf3f5;
+    padding: 6px 0;
+}
+
+QMenu::item {
+    min-height: 30px;
+    padding: 6px 26px 6px 12px;
+}
+
+QMenu::item:selected {
+    background: #243139;
+}
+
+QMenu::separator {
+    height: 1px;
+    margin: 6px 0;
+    background: #334047;
+}
+"""
+_FOLDER_ICON_CACHE: QtGui.QIcon | None = None
+_FILE_ICON_CACHE: QtGui.QIcon | None = None
 
 
 class _ActionSignals(QtCore.QObject):
     succeeded = QtCore.Signal(object)
     failed = QtCore.Signal(str)
+
+
+def _folder_icon() -> QtGui.QIcon:
+    global _FOLDER_ICON_CACHE
+    if _FOLDER_ICON_CACHE is not None:
+        return _FOLDER_ICON_CACHE
+    pixmap = QtGui.QPixmap(18, 16)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    pen = QtGui.QPen(QtGui.QColor("#f2d97b"))
+    pen.setWidth(1)
+    painter.setPen(pen)
+    painter.setBrush(QtGui.QColor("#d8b94f"))
+    painter.drawRect(1, 5, 16, 10)
+    painter.drawRect(1, 2, 9, 4)
+    painter.end()
+    _FOLDER_ICON_CACHE = QtGui.QIcon(pixmap)
+    return _FOLDER_ICON_CACHE
+
+
+def _file_icon() -> QtGui.QIcon:
+    global _FILE_ICON_CACHE
+    if _FILE_ICON_CACHE is not None:
+        return _FILE_ICON_CACHE
+    pixmap = QtGui.QPixmap(16, 16)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    painter.setPen(QtGui.QPen(QtGui.QColor("#8aa0aa")))
+    painter.setBrush(QtGui.QColor("#26343c"))
+    painter.drawRect(2, 1, 12, 14)
+    painter.drawLine(5, 5, 11, 5)
+    painter.drawLine(5, 8, 11, 8)
+    painter.end()
+    _FILE_ICON_CACHE = QtGui.QIcon(pixmap)
+    return _FILE_ICON_CACHE
 
 
 class DocumentTableWidget(QtWidgets.QTableWidget):
@@ -175,11 +361,14 @@ class DocumentPage(QtWidgets.QWidget):
         self._known_empty_folders: set[str] = set()
         self._refreshing_table = False
         self._refreshing_folders = False
+        self.setObjectName("documentsExplorerPage")
+        self.setStyleSheet(_DOCUMENTS_STYLESHEET)
 
         self.heading = QtWidgets.QLabel("Documents")
-        self.heading.setObjectName("pageHeading")
+        self.heading.setObjectName("documentsHeading")
         self.summary = QtWidgets.QLabel("")
         self.summary.setWordWrap(True)
+        self.summary.setObjectName("documentsSummary")
         self.client_upload_note = QtWidgets.QLabel(
             "Upload is server-only; clients receive documents through sync."
         )
@@ -187,33 +376,40 @@ class DocumentPage(QtWidgets.QWidget):
         self.client_upload_note.setVisible(not can_upload_document(self._core.mode))
 
         self.refresh_button = QtWidgets.QPushButton("Refresh")
+        self.refresh_button.setObjectName("documentsButton")
         self.refresh_button.clicked.connect(self.refresh)
         self.upload_button = QtWidgets.QPushButton("Upload")
+        self.upload_button.setObjectName("documentsPrimaryButton")
         self.upload_button.clicked.connect(self._upload_document)
         self.upload_button.setVisible(can_upload_document(self._core.mode))
-        self.download_button = QtWidgets.QPushButton("Download")
+        self.download_button = QtWidgets.QPushButton("Download", self)
         self.download_button.clicked.connect(self._download_selected)
-        self.delete_button = QtWidgets.QPushButton("Delete")
+        self.download_button.setVisible(False)
+        self.delete_button = QtWidgets.QPushButton("Delete", self)
         self.delete_button.clicked.connect(self._delete_selected)
-        self.delete_button.setVisible(self._core.mode == "server")
-        self.move_button = QtWidgets.QPushButton("Move")
+        self.delete_button.setVisible(False)
+        self.move_button = QtWidgets.QPushButton("Move", self)
         self.move_button.clicked.connect(self._move_selected)
-        self.move_button.setVisible(self._core.mode == "server")
+        self.move_button.setVisible(False)
 
-        top_row = QtWidgets.QHBoxLayout()
+        toolbar = QtWidgets.QFrame()
+        toolbar.setObjectName("documentsToolbar")
+        top_row = QtWidgets.QHBoxLayout(toolbar)
+        top_row.setContentsMargins(16, 12, 16, 12)
+        top_row.setSpacing(10)
         top_row.addWidget(self.heading)
         top_row.addStretch(1)
         top_row.addWidget(self.refresh_button)
         top_row.addWidget(self.upload_button)
-        top_row.addWidget(self.move_button)
-        top_row.addWidget(self.download_button)
-        top_row.addWidget(self.delete_button)
 
         self.folder_tree = DocumentFolderTree()
         self.folder_tree.setObjectName("documentFolderTree")
+        self.folder_tree.setColumnCount(2)
         self.folder_tree.setHeaderHidden(True)
         self.folder_tree.setMinimumWidth(220)
         self.folder_tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.folder_tree.setIndentation(18)
+        self.folder_tree.setIconSize(QtCore.QSize(16, 16))
         self.folder_tree.itemSelectionChanged.connect(self._folder_selection_changed)
         self.folder_tree.itemChanged.connect(self._folder_item_changed)
         self.folder_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -226,28 +422,49 @@ class DocumentPage(QtWidgets.QWidget):
 
         self.new_folder_button = QtWidgets.QPushButton("New Folder")
         self.new_folder_button.clicked.connect(self._new_folder)
-        self.new_folder_button.setVisible(self._core.mode == "server")
+        self.new_folder_button.setVisible(False)
 
         left_panel = QtWidgets.QFrame()
-        left_panel.setObjectName("documentExplorerPanel")
+        left_panel.setObjectName("documentsPane")
         left_layout = QtWidgets.QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(8, 8, 8, 8)
-        left_layout.setSpacing(8)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
         left_title = QtWidgets.QLabel("Repository")
-        left_title.setObjectName("sideMode")
+        left_title.setObjectName("documentsPaneTitle")
         left_layout.addWidget(left_title)
-        left_layout.addWidget(self.folder_tree, stretch=1)
-        left_layout.addWidget(self.new_folder_button)
+        left_content = QtWidgets.QWidget()
+        left_content.setObjectName("documentsPaneBody")
+        left_content_layout = QtWidgets.QVBoxLayout(left_content)
+        left_content_layout.setContentsMargins(10, 10, 10, 10)
+        left_content_layout.setSpacing(8)
+        left_content_layout.addWidget(self.folder_tree, stretch=1)
+        left_layout.addWidget(left_content, stretch=1)
 
-        self.table = DocumentTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(
-            ["ID", "Filename", "Folder", "Size", "Uploader", "Uploaded"]
-        )
+        self.file_title = QtWidgets.QLabel("All Documents")
+        self.file_title.setObjectName("documentsPaneTitle")
+        file_panel = QtWidgets.QFrame()
+        file_panel.setObjectName("documentsPane")
+        file_layout = QtWidgets.QVBoxLayout(file_panel)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        file_layout.setSpacing(0)
+        file_layout.addWidget(self.file_title)
+
+        self.table = DocumentTableWidget(0, 4)
+        self.table.setObjectName("documentFileTable")
+        self.table.setHorizontalHeaderLabels(["Name", "Size", "Uploader", "Uploaded"])
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditKeyPressed)
         self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)
+        self.table.setColumnWidth(1, 100)
+        self.table.setColumnWidth(2, 118)
+        self.table.setColumnWidth(3, 140)
         self.table.setDragEnabled(self._core.mode == "server")
         self.table.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
         self.table.setDefaultDropAction(QtCore.Qt.MoveAction)
@@ -256,29 +473,60 @@ class DocumentPage(QtWidgets.QWidget):
             self._show_document_context_menu
         )
         configure_data_table(self.table)
+        self.table.verticalHeader().setDefaultSectionSize(42)
+        self.table.setIconSize(QtCore.QSize(16, 16))
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.itemChanged.connect(self._document_item_changed)
+        file_layout.addWidget(self.table, stretch=1)
 
+        detail_panel = QtWidgets.QFrame()
+        detail_panel.setObjectName("documentsPane")
+        detail_layout = QtWidgets.QVBoxLayout(detail_panel)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.setSpacing(0)
+        detail_title = QtWidgets.QLabel("Details")
+        detail_title.setObjectName("documentsPaneTitle")
+        detail_layout.addWidget(detail_title)
         self.detail = QtWidgets.QTextEdit()
+        self.detail.setObjectName("documentDetail")
         self.detail.setReadOnly(True)
-        self.detail.setMinimumWidth(360)
-        self.status_label = QtWidgets.QLabel("")
+        self.detail.setMinimumWidth(340)
+        detail_layout.addWidget(self.detail, stretch=1)
+
+        self.status_label = QtWidgets.QLabel(
+            "Context actions are server-only. Clients keep download and detail actions only."
+        )
+        self.status_label.setObjectName("documentsStatusText")
         self.status_label.setWordWrap(True)
+        self.rename_hint_label = QtWidgets.QLabel("Rename accepts Enter, Escape cancels.")
+        self.rename_hint_label.setObjectName("documentsStatusText")
+
+        status_bar = QtWidgets.QFrame()
+        status_bar.setObjectName("documentsStatusBar")
+        status_layout = QtWidgets.QHBoxLayout(status_bar)
+        status_layout.setContentsMargins(12, 7, 12, 7)
+        status_layout.addWidget(self.status_label, stretch=1)
+        status_layout.addWidget(self.rename_hint_label)
 
         body = QtWidgets.QSplitter()
+        body.setObjectName("documentsBody")
         body.addWidget(left_panel)
-        body.addWidget(self.table)
-        body.addWidget(self.detail)
-        body.setStretchFactor(0, 1)
-        body.setStretchFactor(1, 2)
-        body.setStretchFactor(2, 2)
+        body.addWidget(file_panel)
+        body.addWidget(detail_panel)
+        body.setStretchFactor(0, 0)
+        body.setStretchFactor(1, 1)
+        body.setStretchFactor(2, 0)
+        body.setHandleWidth(1)
+        body.setSizes([255, 625, 340])
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(top_row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(toolbar)
         layout.addWidget(self.summary)
         layout.addWidget(self.client_upload_note)
         layout.addWidget(body, stretch=1)
-        layout.addWidget(self.status_label)
+        layout.addWidget(status_bar)
 
     def refresh(self) -> None:
         try:
@@ -298,6 +546,11 @@ class DocumentPage(QtWidgets.QWidget):
             f"{len(self._items)} document(s), "
             f"{self._format_total_size(total_size)} total, "
             f"{macro_count} macro-risk type(s)."
+            + (
+                " Server mode: context menus manage repository structure."
+                if self._core.mode == "server"
+                else ""
+            )
         )
         if self._visible_items:
             self.table.selectRow(0)
@@ -314,20 +567,17 @@ class DocumentPage(QtWidgets.QWidget):
         row = self.table.rowCount()
         self.table.insertRow(row)
         values = [
-            str(item.id),
             item.filename,
-            self._folder_label(item.folder_path),
             item.size_label,
             item.uploader_callsign,
-            item.uploaded_label,
+            self._uploaded_date_label(item.uploaded_label),
         ]
         for column, value in enumerate(values):
             cell = QtWidgets.QTableWidgetItem(value)
             if column == 0:
                 cell.setData(QtCore.Qt.UserRole, item.id)
-            if column == 1:
-                cell.setData(QtCore.Qt.UserRole, item.id)
                 cell.setData(_ORIGINAL_TEXT_ROLE, item.filename)
+                cell.setIcon(_file_icon())
                 if self._core.mode == "server":
                     cell.setFlags(
                         cell.flags()
@@ -346,7 +596,7 @@ class DocumentPage(QtWidgets.QWidget):
         if item is None:
             self.detail.clear()
             return
-        self.detail.setPlainText(self._detail_text(item))
+        self.detail.setHtml(self._detail_html(item))
 
     def _selected_item(self) -> DesktopDocumentItem | None:
         selected = self.table.selectionModel().selectedRows()
@@ -596,13 +846,13 @@ class DocumentPage(QtWidgets.QWidget):
         if not selected:
             return
         row = selected[0].row()
-        filename_cell = self.table.item(row, 1)
+        filename_cell = self.table.item(row, 0)
         if filename_cell is not None:
-            self.table.setCurrentCell(row, 1)
+            self.table.setCurrentCell(row, 0)
             self.table.editItem(filename_cell)
 
     def _document_item_changed(self, cell: QtWidgets.QTableWidgetItem) -> None:
-        if self._refreshing_table or cell.column() != 1 or self._core.mode != "server":
+        if self._refreshing_table or cell.column() != 0 or self._core.mode != "server":
             return
         document_id = cell.data(QtCore.Qt.UserRole)
         original = str(cell.data(_ORIGINAL_TEXT_ROLE) or "")
@@ -876,28 +1126,94 @@ class DocumentPage(QtWidgets.QWidget):
         )
         return response == QtWidgets.QMessageBox.Yes
 
-    @staticmethod
-    def _detail_text(item: DesktopDocumentItem) -> str:
-        warning = "Macro-capable type: yes" if item.is_macro_risk else "Macro-capable type: no"
-        lines = [
-            f"#{item.id} {item.filename}",
-            f"Folder: {DocumentPage._folder_label(item.folder_path)}",
-            f"Type: {item.mime_type}",
-            f"Size: {item.size_label}",
-            f"Uploaded by: {item.uploader_callsign}",
-            f"Uploaded: {item.uploaded_label}",
-            f"SHA-256: {item.hash_preview}",
-            warning,
-        ]
-        if item.description:
-            lines.extend(("", item.description))
-        return "\n".join(lines)
+    def _detail_html(self, item: DesktopDocumentItem) -> str:
+        description = html.escape(item.description.strip())
+        hint = (
+            "Right-click this document for file actions. "
+            "Drag it onto a folder to move it there."
+            if self._core.mode == "server"
+            else "Right-click this document to download it."
+        )
+        rows = (
+            ("Folder", self._folder_label(item.folder_path)),
+            ("Size", item.size_label),
+            ("Uploader", item.uploader_callsign),
+            ("Uploaded", item.uploaded_label),
+            ("SHA-256", item.hash_preview),
+        )
+        meta = "\n".join(
+            "<tr>"
+            f"<th>{html.escape(label)}</th>"
+            f"<td>{html.escape(value)}</td>"
+            "</tr>"
+            for label, value in rows
+        )
+        description_block = (
+            f"<p class=\"description\">{description}</p>" if description else ""
+        )
+        return f"""
+        <html>
+        <head>
+          <style>
+            body {{
+              background: #101619;
+              color: #edf3f5;
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 13px;
+            }}
+            h2 {{
+              margin: 0 0 8px 0;
+              color: #edf3f5;
+              font-size: 18px;
+              font-weight: 700;
+            }}
+            .muted {{
+              color: #98a8ae;
+              margin-bottom: 12px;
+            }}
+            table {{
+              width: 100%;
+              border-collapse: collapse;
+            }}
+            th {{
+              width: 92px;
+              color: #edf3f5;
+              text-align: left;
+              font-weight: 700;
+              padding: 8px 10px 8px 0;
+              border-bottom: 1px solid rgba(255,255,255,.08);
+            }}
+            td {{
+              color: #edf3f5;
+              padding: 8px 0;
+              border-bottom: 1px solid rgba(255,255,255,.08);
+            }}
+            .description {{
+              margin-top: 14px;
+              color: #edf3f5;
+            }}
+          </style>
+        </head>
+        <body>
+          <h2>{html.escape(item.filename)}</h2>
+          <div class="muted">{html.escape(hint)}</div>
+          <table>{meta}</table>
+          {description_block}
+        </body>
+        </html>
+        """
 
     @staticmethod
     def _format_total_size(size_bytes: int) -> str:
         from talon_desktop.documents import format_size
 
         return format_size(size_bytes)
+
+    @staticmethod
+    def _uploaded_date_label(uploaded_label: str) -> str:
+        if len(uploaded_label) >= 10 and uploaded_label[4:5] == "-":
+            return uploaded_label[:10]
+        return uploaded_label
 
     def _folder_selection_changed(self) -> None:
         item = self.folder_tree.currentItem()
@@ -908,6 +1224,9 @@ class DocumentPage(QtWidgets.QWidget):
 
     def _refresh_table(self) -> None:
         selected = self._selected_folder_path
+        self.file_title.setText(
+            "All Documents" if selected is None else self._folder_label(str(selected))
+        )
         self._visible_items = [
             item
             for item in self._items
@@ -929,14 +1248,19 @@ class DocumentPage(QtWidgets.QWidget):
         self.folder_tree.blockSignals(True)
         self.folder_tree.clear()
 
-        all_item = QtWidgets.QTreeWidgetItem(["All Documents"])
+        all_item = QtWidgets.QTreeWidgetItem(["All Documents", str(len(self._items))])
         all_item.setData(0, QtCore.Qt.UserRole, None)
         all_item.setFlags(all_item.flags() | QtCore.Qt.ItemIsDropEnabled)
+        all_item.setTextAlignment(1, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.folder_tree.addTopLevelItem(all_item)
 
-        root_item = QtWidgets.QTreeWidgetItem(["Root"])
+        root_item = QtWidgets.QTreeWidgetItem(
+            ["Root", str(self._folder_document_count(""))]
+        )
+        root_item.setIcon(0, _folder_icon())
         root_item.setData(0, QtCore.Qt.UserRole, "")
         root_item.setFlags(root_item.flags() | QtCore.Qt.ItemIsDropEnabled)
+        root_item.setTextAlignment(1, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.folder_tree.addTopLevelItem(root_item)
 
         path_items: dict[str, QtWidgets.QTreeWidgetItem] = {}
@@ -949,18 +1273,27 @@ class DocumentPage(QtWidgets.QWidget):
                 current_path = f"{current_path}/{part}".strip("/")
                 node = path_items.get(current_path)
                 if node is None:
-                    node = QtWidgets.QTreeWidgetItem([part])
+                    node = QtWidgets.QTreeWidgetItem(
+                        [part, str(self._folder_document_count(current_path))]
+                    )
+                    node.setIcon(0, _folder_icon())
                     node.setData(0, QtCore.Qt.UserRole, current_path)
                     node.setFlags(
                         node.flags()
                         | QtCore.Qt.ItemIsDropEnabled
                         | QtCore.Qt.ItemIsEditable
                     )
+                    node.setTextAlignment(
+                        1,
+                        QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
+                    )
                     parent.addChild(node)
                     path_items[current_path] = node
                 parent = node
 
         self.folder_tree.expandAll()
+        self.folder_tree.setColumnWidth(0, 172)
+        self.folder_tree.setColumnWidth(1, 42)
         if selected is None:
             target = all_item
             next_selected = None
@@ -979,9 +1312,28 @@ class DocumentPage(QtWidgets.QWidget):
         self._refreshing_folders = False
 
     def _known_folder_paths(self) -> list[str]:
-        paths = {item.folder_path for item in self._items}
-        paths.update(self._known_empty_folders)
-        return sorted(paths)
+        paths: list[str] = []
+        seen: set[str] = set()
+
+        def add_path(folder_path: str) -> None:
+            current = ""
+            if folder_path == "" and folder_path not in seen:
+                paths.append(folder_path)
+                seen.add(folder_path)
+                return
+            for part in folder_path.split("/"):
+                if not part:
+                    continue
+                current = f"{current}/{part}".strip("/")
+                if current not in seen:
+                    paths.append(current)
+                    seen.add(current)
+
+        for item in self._items:
+            add_path(item.folder_path)
+        for folder_path in sorted(self._known_empty_folders):
+            add_path(folder_path)
+        return paths
 
     def _selected_upload_folder(self) -> str:
         if self._selected_folder_path is None:
@@ -991,6 +1343,9 @@ class DocumentPage(QtWidgets.QWidget):
     @staticmethod
     def _folder_label(folder_path: str) -> str:
         return folder_path or "Root"
+
+    def _folder_document_count(self, folder_path: str) -> int:
+        return sum(1 for item in self._items if item.folder_path == folder_path)
 
     def _select_document_id(self, document_id: int) -> None:
         for row, item in enumerate(self._visible_items):
