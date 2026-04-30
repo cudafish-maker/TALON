@@ -466,6 +466,86 @@ def move_document(conn: Connection, doc_id: int, *, folder_path: str) -> Documen
     return get_document(conn, doc_id)
 
 
+def rename_document(conn: Connection, doc_id: int, *, filename: str) -> Document:
+    """Rename an existing document display filename."""
+    doc = get_document(conn, doc_id)
+    next_filename = _sanitize_filename(filename)
+    suffix = pathlib.Path(next_filename).suffix.lower()
+    if suffix in DOCUMENT_BLOCKED_EXTENSIONS:
+        raise DocumentBlockedExtension(f"File type {suffix!r} is not permitted.")
+    if not _is_allowed_upload_type(suffix, doc.mime_type):
+        raise DocumentBlockedExtension(
+            f"Filename extension {suffix or '<none>'!r} is not valid for "
+            f"stored content {doc.mime_type!r}."
+        )
+    if doc.filename == next_filename:
+        return doc
+    conn.execute(
+        "UPDATE documents SET filename = ?, version = version + 1 WHERE id = ?",
+        (next_filename, int(doc_id)),
+    )
+    conn.commit()
+    return get_document(conn, doc_id)
+
+
+def rename_folder(
+    conn: Connection,
+    *,
+    folder_path: str,
+    new_folder_path: str,
+) -> list[Document]:
+    """Rename or move a logical folder and all nested document paths."""
+    current_folder = sanitize_folder_path(folder_path)
+    next_folder = sanitize_folder_path(new_folder_path)
+    if not current_folder:
+        raise DocumentFilenameInvalid("Root folder cannot be renamed.")
+    if not next_folder:
+        raise DocumentFilenameInvalid("Folder name is required.")
+    if current_folder == next_folder:
+        return _documents_under_folder(conn, current_folder)
+    if next_folder.startswith(current_folder + "/"):
+        raise DocumentFilenameInvalid("Folder cannot be moved inside itself.")
+
+    affected = _documents_under_folder(conn, current_folder)
+    if not affected:
+        return []
+    with conn.transaction():
+        for doc in affected:
+            suffix = doc.folder_path[len(current_folder):].lstrip("/")
+            replacement = next_folder if not suffix else f"{next_folder}/{suffix}"
+            conn.execute(
+                "UPDATE documents SET folder_path = ?, version = version + 1 "
+                "WHERE id = ?",
+                (replacement, doc.id),
+            )
+    return _documents_under_folder(conn, next_folder)
+
+
+def delete_folder(
+    conn: Connection,
+    storage_root: pathlib.Path,
+    *,
+    folder_path: str,
+) -> list[Document]:
+    """Delete a logical folder and all documents contained beneath it."""
+    current_folder = sanitize_folder_path(folder_path)
+    if not current_folder:
+        raise DocumentFilenameInvalid("Root folder cannot be deleted.")
+    affected = _documents_under_folder(conn, current_folder)
+    for doc in affected:
+        delete_document(conn, storage_root, doc.id)
+    return affected
+
+
+def _documents_under_folder(conn: Connection, folder_path: str) -> list[Document]:
+    rows = conn.execute(
+        f"{_SELECT} WHERE folder_path = ? OR folder_path LIKE ? "
+        "ORDER BY folder_path ASC, uploaded_at DESC",
+        (folder_path, f"{folder_path}/%"),
+    ).fetchall()
+    return [_row_to_document(r) for r in rows]
+
+
 def _is_allowed_upload_type(suffix: str, mime_type: str) -> bool:
     suffix = suffix.lower()
     mime_type = mime_type.lower()

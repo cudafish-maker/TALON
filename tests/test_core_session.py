@@ -220,15 +220,47 @@ def test_core_session_document_commands_and_read_models(tmp_path: pathlib.Path) 
     )
     assert moved.document.folder_path == "Plans/Archive"
 
+    renamed = session.command(
+        "documents.rename",
+        document_id=upload.document_id,
+        filename="renamed-report.txt",
+    )
+    assert renamed.document.filename == "renamed-report.txt"
+
+    nested = session.command(
+        "documents.upload",
+        raw_filename="nested.txt",
+        file_data=b"nested report",
+        folder_path="Plans/Archive/Day 1",
+    )
+    folder_result = session.command(
+        "documents.rename_folder",
+        folder_path="Plans/Archive",
+        new_folder_path="Plans/Renamed",
+    )
+    assert folder_result.document_id in {upload.document_id, nested.document_id}
+    folders = {
+        item.document.filename: item.document.folder_path
+        for item in session.read_model("documents.list")
+    }
+    assert folders["renamed-report.txt"] == "Plans/Renamed"
+    assert folders["nested.txt"] == "Plans/Renamed/Day 1"
+
     downloaded = session.command("documents.download", document_id=upload.document_id)
     assert downloaded.document.id == upload.document_id
     assert downloaded.plaintext == b"field report"
 
-    deleted = session.command("documents.delete", document_id=upload.document_id)
-    assert deleted.document_id == upload.document_id
-    assert deleted.document.filename == "report.txt"
-    assert received[-1].kind == "record_deleted"
-    assert received[-1].table == "documents"
+    deleted_folder = session.command(
+        "documents.delete_folder",
+        folder_path="Plans/Renamed",
+    )
+    assert deleted_folder.document_id in {upload.document_id, nested.document_id}
+    assert received[-1].kind == "linked_records_changed"
+    assert {
+        record.record_id
+        for record in received[-1].records
+        if record.table == "documents"
+    } == {upload.document_id, nested.document_id}
     assert session.read_model("documents.list") == []
 
     session.close()

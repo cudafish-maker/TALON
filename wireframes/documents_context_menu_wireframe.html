@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON Documents Context Menu Wireframe</title>
+  <style>
+    :root {
+      --bg: #0f1417;
+      --panel: #171e22;
+      --panel-2: #20292e;
+      --line: #334047;
+      --text: #edf3f5;
+      --muted: #98a8ae;
+      --accent: #ffdf6e;
+      --blue: #3498db;
+      --red: #e74c3c;
+      --green: #2ecc71;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      background: #0b1012;
+      line-height: 1.4;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 28px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 56px 56px,
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px) 0 0 / 56px 56px,
+        var(--bg);
+    }
+
+    .caption {
+      max-width: 1220px;
+      margin: 0 auto 18px;
+      color: var(--muted);
+    }
+
+    .caption h1 {
+      margin: 0 0 6px;
+      color: var(--text);
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .app {
+      max-width: 1220px;
+      min-height: 760px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 22px 60px rgba(0,0,0,.38);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #11181b;
+    }
+
+    .heading {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .spacer { flex: 1; }
+
+    .button {
+      min-height: 34px;
+      border: 1px solid #566973;
+      background: #243139;
+      color: var(--text);
+      padding: 7px 11px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      border-color: #d9bd5c;
+      color: #151a1d;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .summary {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      background: #141b1f;
+      font-size: 13px;
+    }
+
+    .body {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 255px minmax(440px, 1fr) 340px;
+    }
+
+    .pane {
+      min-width: 0;
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: #101619;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .pane:last-child { border-right: 0; }
+
+    .pane-title {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      background: #141b1f;
+    }
+
+    .tree,
+    .file-list,
+    .detail {
+      padding: 10px;
+    }
+
+    .tree-row,
+    .file-row {
+      min-height: 34px;
+      display: grid;
+      align-items: center;
+      border: 1px solid transparent;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .tree-row {
+      grid-template-columns: 20px 1fr auto;
+      gap: 8px;
+      padding: 6px 8px;
+    }
+
+    .tree-row.child { padding-left: 28px; }
+    .tree-row.active,
+    .file-row.active {
+      border-color: #60717a;
+      background: #1b252a;
+    }
+
+    .tree-row.drop-target {
+      border-color: var(--accent);
+      background: rgba(255,223,110,.12);
+    }
+
+    .file-head,
+    .file-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.4fr) 100px 118px 100px;
+      gap: 10px;
+      padding: 0 10px;
+    }
+
+    .file-head {
+      min-height: 34px;
+      align-items: center;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+      background: #141b1f;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .file-row {
+      min-height: 42px;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+
+    .name-cell {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .file-icon,
+    .folder-icon {
+      width: 16px;
+      height: 14px;
+      border: 1px solid #8aa0aa;
+      background: #26343c;
+      flex: 0 0 auto;
+    }
+
+    .folder-icon {
+      background: #d8b94f;
+      border-color: #f2d97b;
+      position: relative;
+    }
+
+    .folder-icon::before {
+      content: "";
+      position: absolute;
+      top: -5px;
+      left: -1px;
+      width: 9px;
+      height: 5px;
+      border: 1px solid #f2d97b;
+      border-bottom: 0;
+      background: #d8b94f;
+    }
+
+    .ellipsis {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .muted { color: var(--muted); }
+
+    .rename-box {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      padding: 4px 8px;
+      border: 1px solid var(--accent);
+      background: #0f1417;
+      color: var(--text);
+    }
+
+    .context-menu {
+      position: absolute;
+      width: 210px;
+      border: 1px solid #5a6a72;
+      background: #0f1518;
+      box-shadow: 0 16px 36px rgba(0,0,0,.45);
+      padding: 6px 0;
+      z-index: 5;
+    }
+
+    .context-menu.folder { left: 118px; top: 164px; }
+    .context-menu.file { right: 42px; top: 194px; }
+    .context-menu.empty { left: 292px; top: 540px; }
+
+    .menu-item {
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 12px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .menu-item:hover,
+    .menu-item.active {
+      background: #243139;
+    }
+
+    .menu-item.danger { color: #ffb0a9; }
+    .menu-separator {
+      height: 1px;
+      margin: 6px 0;
+      background: var(--line);
+    }
+
+    .menu-icon {
+      width: 13px;
+      height: 13px;
+      border: 1px solid currentColor;
+      flex: 0 0 auto;
+    }
+
+    .detail h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .meta {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      font-size: 13px;
+    }
+
+    .modal {
+      position: absolute;
+      right: 86px;
+      bottom: 74px;
+      width: 360px;
+      border: 1px solid #5a6a72;
+      background: #11181b;
+      box-shadow: 0 16px 44px rgba(0,0,0,.48);
+      z-index: 6;
+    }
+
+    .modal-head {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .modal-body {
+      padding: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .statusbar {
+      min-height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      background: #11181b;
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .page { padding: 14px; }
+      .body { grid-template-columns: 1fr; }
+      .pane { min-height: 260px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .context-menu.file { right: 20px; top: 490px; }
+      .modal { right: 24px; left: 24px; width: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="caption">
+      <h1>Documents Explorer Context Menus</h1>
+      <div>Approval wireframe: use standard file explorer behavior. Right-click folders, documents, or empty space for the primary actions; support inline rename and drag/drop move to folders.</div>
+    </section>
+
+    <section class="app">
+      <header class="toolbar">
+        <div class="heading">Documents</div>
+        <div class="spacer"></div>
+        <button class="button">Refresh</button>
+        <button class="button primary">Upload</button>
+      </header>
+
+      <div class="summary">7 documents, 18.4 MB total, 1 macro-risk type. Server mode: context menus manage repository structure.</div>
+
+      <section class="body">
+        <aside class="pane">
+          <div class="pane-title">Repository</div>
+          <div class="tree">
+            <div class="tree-row"><span></span><span>All Documents</span><span class="muted">7</span></div>
+            <div class="tree-row"><span class="folder-icon"></span><span>Root</span><span class="muted">2</span></div>
+            <div class="tree-row active"><span class="folder-icon"></span><span>Mission Files</span><span class="muted">3</span></div>
+            <div class="tree-row child drop-target"><span class="folder-icon"></span><span>Lost Dog</span><span class="muted">2</span></div>
+            <div class="tree-row child"><span class="folder-icon"></span><span>Medical</span><span class="muted">1</span></div>
+            <div class="tree-row"><span class="folder-icon"></span><span>Maps</span><span class="muted">2</span></div>
+            <div class="tree-row child"><span class="folder-icon"></span><span>Topo</span><span class="muted">1</span></div>
+          </div>
+
+          <div class="context-menu folder">
+            <div class="menu-item active"><span class="menu-icon"></span><span>New Folder</span></div>
+            <div class="menu-item"><span class="menu-icon"></span><span>Upload Here</span></div>
+            <div class="menu-separator"></div>
+            <div class="menu-item"><span class="menu-icon"></span><span>Rename Folder</span></div>
+            <div class="menu-item"><span class="menu-icon"></span><span>Move Folder To...</span></div>
+            <div class="menu-item danger"><span class="menu-icon"></span><span>Delete Folder...</span></div>
+          </div>
+        </aside>
+
+        <section class="pane">
+          <div class="pane-title">Mission Files</div>
+          <div class="file-head">
+            <div>Name</div>
+            <div>Size</div>
+            <div>Uploader</div>
+            <div>Uploaded</div>
+          </div>
+          <div class="file-list">
+            <div class="file-row active">
+              <div class="name-cell"><span class="file-icon"></span><span class="ellipsis">alpha-brief.txt</span></div>
+              <div>42 KB</div>
+              <div>SERVER</div>
+              <div>2026-04-30</div>
+            </div>
+            <div class="file-row">
+              <div class="name-cell"><span class="file-icon"></span><span class="rename-box">search-grid-v2.pdf</span></div>
+              <div>2.8 MB</div>
+              <div>ASTER</div>
+              <div>2026-04-30</div>
+            </div>
+            <div class="file-row">
+              <div class="name-cell"><span class="file-icon"></span><span class="ellipsis">radio-plan.csv</span></div>
+              <div>14 KB</div>
+              <div>SERVER</div>
+              <div>2026-04-29</div>
+            </div>
+          </div>
+
+          <div class="context-menu file">
+            <div class="menu-item"><span class="menu-icon"></span><span>Download</span></div>
+            <div class="menu-item active"><span class="menu-icon"></span><span>Rename</span></div>
+            <div class="menu-item"><span class="menu-icon"></span><span>Move To...</span></div>
+            <div class="menu-separator"></div>
+            <div class="menu-item danger"><span class="menu-icon"></span><span>Delete Document...</span></div>
+          </div>
+
+          <div class="context-menu empty">
+            <div class="menu-item"><span class="menu-icon"></span><span>Upload Document</span></div>
+            <div class="menu-item active"><span class="menu-icon"></span><span>New Folder</span></div>
+            <div class="menu-separator"></div>
+            <div class="menu-item"><span class="menu-icon"></span><span>Refresh</span></div>
+          </div>
+        </section>
+
+        <aside class="pane">
+          <div class="pane-title">Details</div>
+          <div class="detail">
+            <h2>alpha-brief.txt</h2>
+            <div class="muted">Right-click this document for file actions. Drag it onto a folder to move it there.</div>
+            <div class="meta">
+              <div class="meta-row"><strong>Folder</strong><span>Mission Files</span></div>
+              <div class="meta-row"><strong>Size</strong><span>42 KB</span></div>
+              <div class="meta-row"><strong>Uploader</strong><span>SERVER</span></div>
+              <div class="meta-row"><strong>Uploaded</strong><span>2026-04-30 14:35</span></div>
+              <div class="meta-row"><strong>SHA-256</strong><span>ab46d90f32d4f8a6b20d...</span></div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <div class="modal">
+        <div class="modal-head">Delete Folder</div>
+        <div class="modal-body">Delete "Mission Files/Lost Dog" and its 2 document(s)? This removes the folder and contained documents from the server repository after confirmation.</div>
+        <div class="modal-actions">
+          <button class="button">Cancel</button>
+          <button class="button primary">Delete Folder</button>
+        </div>
+      </div>
+
+      <footer class="statusbar">
+        <span>Context actions are server-only. Clients keep download and detail actions only.</span>
+        <span>Rename accepts Enter, Escape cancels.</span>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

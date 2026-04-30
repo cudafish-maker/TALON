@@ -21,10 +21,66 @@ from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.documents")
 
+_DOCUMENT_ID_MIME = "application/x-talon-document-id"
+_ORIGINAL_TEXT_ROLE = QtCore.Qt.UserRole + 1
+
 
 class _ActionSignals(QtCore.QObject):
     succeeded = QtCore.Signal(object)
     failed = QtCore.Signal(str)
+
+
+class DocumentTableWidget(QtWidgets.QTableWidget):
+    """Document table that can drag the selected document into the folder tree."""
+
+    def mimeData(self, items: list[QtWidgets.QTableWidgetItem]) -> QtCore.QMimeData:
+        mime = super().mimeData(items)
+        rows = {item.row() for item in items}
+        if len(rows) != 1:
+            return mime
+        id_item = self.item(next(iter(rows)), 0)
+        if id_item is None:
+            return mime
+        document_id = id_item.data(QtCore.Qt.UserRole)
+        if document_id is not None:
+            mime.setData(_DOCUMENT_ID_MIME, str(int(document_id)).encode("ascii"))
+        return mime
+
+    def supportedDragActions(self) -> QtCore.Qt.DropActions:
+        return QtCore.Qt.MoveAction
+
+
+class DocumentFolderTree(QtWidgets.QTreeWidget):
+    """Folder tree that accepts document drops."""
+
+    documentDropped = QtCore.Signal(int, str)
+
+    def dragEnterEvent(self, event: QtCore.QEvent) -> None:
+        if event.mimeData().hasFormat(_DOCUMENT_ID_MIME):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QtCore.QEvent) -> None:
+        if event.mimeData().hasFormat(_DOCUMENT_ID_MIME):
+            event.acceptProposedAction()
+            item = self.itemAt(event.position().toPoint())
+            if item is not None:
+                self.setCurrentItem(item)
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QtCore.QEvent) -> None:
+        if not event.mimeData().hasFormat(_DOCUMENT_ID_MIME):
+            super().dropEvent(event)
+            return
+        item = self.itemAt(event.position().toPoint())
+        folder_path = "" if item is None else item.data(0, QtCore.Qt.UserRole)
+        if folder_path is None:
+            folder_path = ""
+        document_id = int(bytes(event.mimeData().data(_DOCUMENT_ID_MIME)).decode("ascii"))
+        self.documentDropped.emit(document_id, str(folder_path))
+        event.acceptProposedAction()
 
 
 class DocumentUploadDialog(QtWidgets.QDialog):
@@ -117,6 +173,8 @@ class DocumentPage(QtWidgets.QWidget):
         self._workers: list[_ActionSignals] = []
         self._selected_folder_path: str | None = None
         self._known_empty_folders: set[str] = set()
+        self._refreshing_table = False
+        self._refreshing_folders = False
 
         self.heading = QtWidgets.QLabel("Documents")
         self.heading.setObjectName("pageHeading")
@@ -151,12 +209,20 @@ class DocumentPage(QtWidgets.QWidget):
         top_row.addWidget(self.download_button)
         top_row.addWidget(self.delete_button)
 
-        self.folder_tree = QtWidgets.QTreeWidget()
+        self.folder_tree = DocumentFolderTree()
         self.folder_tree.setObjectName("documentFolderTree")
         self.folder_tree.setHeaderHidden(True)
         self.folder_tree.setMinimumWidth(220)
         self.folder_tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.folder_tree.itemSelectionChanged.connect(self._folder_selection_changed)
+        self.folder_tree.itemChanged.connect(self._folder_item_changed)
+        self.folder_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.folder_tree.customContextMenuRequested.connect(
+            self._show_folder_context_menu
+        )
+        self.folder_tree.setAcceptDrops(self._core.mode == "server")
+        self.folder_tree.setDragDropMode(QtWidgets.QAbstractItemView.DropOnly)
+        self.folder_tree.documentDropped.connect(self._move_document_to_folder)
 
         self.new_folder_button = QtWidgets.QPushButton("New Folder")
         self.new_folder_button.clicked.connect(self._new_folder)
@@ -173,17 +239,25 @@ class DocumentPage(QtWidgets.QWidget):
         left_layout.addWidget(self.folder_tree, stretch=1)
         left_layout.addWidget(self.new_folder_button)
 
-        self.table = QtWidgets.QTableWidget(0, 6)
+        self.table = DocumentTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
             ["ID", "Filename", "Folder", "Size", "Uploader", "Uploaded"]
         )
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditKeyPressed)
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setDragEnabled(self._core.mode == "server")
+        self.table.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
+        self.table.setDefaultDropAction(QtCore.Qt.MoveAction)
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(
+            self._show_document_context_menu
+        )
         configure_data_table(self.table)
         self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.table.itemChanged.connect(self._document_item_changed)
 
         self.detail = QtWidgets.QTextEdit()
         self.detail.setReadOnly(True)
@@ -251,6 +325,17 @@ class DocumentPage(QtWidgets.QWidget):
             cell = QtWidgets.QTableWidgetItem(value)
             if column == 0:
                 cell.setData(QtCore.Qt.UserRole, item.id)
+            if column == 1:
+                cell.setData(QtCore.Qt.UserRole, item.id)
+                cell.setData(_ORIGINAL_TEXT_ROLE, item.filename)
+                if self._core.mode == "server":
+                    cell.setFlags(
+                        cell.flags()
+                        | QtCore.Qt.ItemIsEditable
+                        | QtCore.Qt.ItemIsDragEnabled
+                    )
+            else:
+                cell.setFlags(cell.flags() & ~QtCore.Qt.ItemIsEditable)
             self.table.setItem(row, column, cell)
 
     def _selection_changed(self) -> None:
@@ -272,12 +357,82 @@ class DocumentPage(QtWidgets.QWidget):
             return None
         return self._visible_items[row]
 
+    def _show_document_context_menu(self, pos: QtCore.QPoint) -> None:
+        row = self.table.rowAt(pos.y())
+        if row >= 0:
+            self.table.selectRow(row)
+        item = self._selected_item() if row >= 0 else None
+        menu = QtWidgets.QMenu(self)
+        if item is None:
+            if can_upload_document(self._core.mode):
+                upload_action = menu.addAction("Upload Document")
+                upload_action.triggered.connect(self._upload_document)
+                new_folder_action = menu.addAction("New Folder")
+                new_folder_action.triggered.connect(
+                    lambda _checked=False: self._new_folder(
+                        parent_path=self._selected_upload_folder()
+                    )
+                )
+                menu.addSeparator()
+            refresh_action = menu.addAction("Refresh")
+            refresh_action.triggered.connect(self.refresh)
+        else:
+            download_action = menu.addAction("Download")
+            download_action.triggered.connect(self._download_selected)
+            if self._core.mode == "server":
+                rename_action = menu.addAction("Rename")
+                rename_action.triggered.connect(self._start_document_rename)
+                move_action = menu.addAction("Move To...")
+                move_action.triggered.connect(self._move_selected)
+                menu.addSeparator()
+                delete_action = menu.addAction("Delete Document...")
+                delete_action.triggered.connect(self._delete_selected)
+        if menu.actions():
+            menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _show_folder_context_menu(self, pos: QtCore.QPoint) -> None:
+        item = self.folder_tree.itemAt(pos)
+        if item is not None:
+            self.folder_tree.setCurrentItem(item)
+        folder_path = "" if item is None else item.data(0, QtCore.Qt.UserRole)
+        menu = QtWidgets.QMenu(self)
+        if self._core.mode == "server":
+            parent_path = "" if folder_path is None else str(folder_path)
+            new_folder_action = menu.addAction("New Folder")
+            new_folder_action.triggered.connect(
+                lambda _checked=False, path=parent_path: self._new_folder(
+                    parent_path=path
+                )
+            )
+            upload_action = menu.addAction("Upload Here")
+            upload_action.triggered.connect(
+                lambda _checked=False, path=parent_path: self._upload_document_to_folder(
+                    path
+                )
+            )
+            if folder_path not in (None, ""):
+                menu.addSeparator()
+                rename_action = menu.addAction("Rename Folder")
+                rename_action.triggered.connect(self._start_folder_rename)
+                move_action = menu.addAction("Move Folder To...")
+                move_action.triggered.connect(self._move_selected_folder)
+                delete_action = menu.addAction("Delete Folder...")
+                delete_action.triggered.connect(self._delete_selected_folder)
+        if menu.actions() and self._core.mode == "server":
+            menu.addSeparator()
+        refresh_action = menu.addAction("Refresh")
+        refresh_action.triggered.connect(self.refresh)
+        menu.exec(self.folder_tree.viewport().mapToGlobal(pos))
+
     def _upload_document(self) -> None:
+        self._upload_document_to_folder(self._selected_upload_folder())
+
+    def _upload_document_to_folder(self, folder_path: str) -> None:
         if not can_upload_document(self._core.mode):
             self.status_label.setText("Upload is available in server mode only.")
             return
         dialog = DocumentUploadDialog(
-            initial_folder_path=self._selected_upload_folder(),
+            initial_folder_path=folder_path,
             parent=self,
         )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -296,21 +451,44 @@ class DocumentPage(QtWidgets.QWidget):
         item = self._selected_item()
         if self._core.mode != "server" or item is None:
             return
+        folder_path = self._choose_folder_path(
+            title="Move Document",
+            label=item.filename,
+            current_folder=item.folder_path,
+        )
+        if folder_path is None:
+            return
+        self._move_document_to_folder(item.id, folder_path)
+
+    def _choose_folder_path(
+        self,
+        *,
+        title: str,
+        label: str,
+        current_folder: str = "",
+        exclude_folder: str | None = None,
+    ) -> str | None:
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Move Document")
+        dialog.setWindowTitle(title)
         dialog.setMinimumWidth(420)
 
         folder_combo = QtWidgets.QComboBox()
         folder_combo.setEditable(True)
         folder_combo.addItem("Root", "")
         for folder in self._known_folder_paths():
+            if not folder:
+                continue
+            if exclude_folder and (
+                folder == exclude_folder or folder.startswith(exclude_folder + "/")
+            ):
+                continue
             if folder:
                 folder_combo.addItem(folder, folder)
-        current_index = folder_combo.findData(item.folder_path)
+        current_index = folder_combo.findData(current_folder)
         if current_index >= 0:
             folder_combo.setCurrentIndex(current_index)
         else:
-            folder_combo.setEditText(item.folder_path)
+            folder_combo.setEditText(current_folder)
 
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Cancel | QtWidgets.QDialogButtonBox.Ok
@@ -319,11 +497,11 @@ class DocumentPage(QtWidgets.QWidget):
         buttons.rejected.connect(dialog.reject)
 
         form = QtWidgets.QFormLayout(dialog)
-        form.addRow("Document", QtWidgets.QLabel(item.filename))
+        form.addRow("Item", QtWidgets.QLabel(label))
         form.addRow("Folder", folder_combo)
         form.addRow("", buttons)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
-            return
+            return None
 
         current_index = folder_combo.currentIndex()
         current_data = folder_combo.currentData()
@@ -335,10 +513,25 @@ class DocumentPage(QtWidgets.QWidget):
             folder_path = str(current_data)
         else:
             folder_path = folder_combo.currentText()
+        from talon_core.documents import sanitize_folder_path
+
+        try:
+            return sanitize_folder_path(folder_path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Folder",
+                document_error_message(exc),
+            )
+            return None
+
+    def _move_document_to_folder(self, document_id: int, folder_path: str) -> None:
+        if self._core.mode != "server":
+            return
         try:
             result = self._core.command(
                 "documents.move",
-                document_id=item.id,
+                document_id=int(document_id),
                 folder_path=folder_path,
             )
         except Exception as exc:
@@ -352,21 +545,26 @@ class DocumentPage(QtWidgets.QWidget):
         self.status_label.setText("Document moved.")
         self.refresh()
 
-    def _new_folder(self) -> None:
+    def _new_folder(self, *, parent_path: str | None = None) -> None:
         if self._core.mode != "server":
             return
         from talon_core.documents import sanitize_folder_path
 
+        if parent_path is None:
+            parent_path = self._selected_upload_folder()
         text, accepted = QtWidgets.QInputDialog.getText(
             self,
             "New Folder",
-            "Folder path",
-            text=self._selected_upload_folder(),
+            "Folder name",
+            text="New Folder",
         )
         if not accepted:
             return
         try:
-            folder_path = sanitize_folder_path(text)
+            folder_name = sanitize_folder_path(text)
+            folder_path = sanitize_folder_path(
+                f"{parent_path}/{folder_name}" if parent_path else folder_name
+            )
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self,
@@ -377,6 +575,12 @@ class DocumentPage(QtWidgets.QWidget):
         if not folder_path:
             self.status_label.setText("Root folder already exists.")
             return
+        if folder_path in self._known_folder_paths():
+            self._selected_folder_path = folder_path
+            self._refresh_folder_tree()
+            self._refresh_table()
+            self.status_label.setText("Folder already exists.")
+            return
         self._known_empty_folders.add(folder_path)
         self._selected_folder_path = folder_path
         self._refresh_folder_tree()
@@ -384,6 +588,203 @@ class DocumentPage(QtWidgets.QWidget):
         self.status_label.setText(
             "Folder is ready. Upload or move a document into it to sync it."
         )
+
+    def _start_document_rename(self) -> None:
+        if self._core.mode != "server":
+            return
+        selected = self.table.selectionModel().selectedRows()
+        if not selected:
+            return
+        row = selected[0].row()
+        filename_cell = self.table.item(row, 1)
+        if filename_cell is not None:
+            self.table.setCurrentCell(row, 1)
+            self.table.editItem(filename_cell)
+
+    def _document_item_changed(self, cell: QtWidgets.QTableWidgetItem) -> None:
+        if self._refreshing_table or cell.column() != 1 or self._core.mode != "server":
+            return
+        document_id = cell.data(QtCore.Qt.UserRole)
+        original = str(cell.data(_ORIGINAL_TEXT_ROLE) or "")
+        next_filename = cell.text().strip()
+        if document_id is None or not next_filename or next_filename == original:
+            if not next_filename:
+                self._set_cell_text_without_signal(cell, original)
+            return
+        try:
+            result = self._core.command(
+                "documents.rename",
+                document_id=int(document_id),
+                filename=next_filename,
+            )
+        except Exception as exc:
+            message = document_error_message(exc)
+            _log.warning("Document rename failed: %s", message)
+            self._set_cell_text_without_signal(cell, original)
+            QtWidgets.QMessageBox.warning(self, "Rename Failed", message)
+            return
+        renamed = getattr(result, "document", None)
+        self.status_label.setText("Document renamed.")
+        self.refresh()
+        if renamed is not None:
+            self._select_document_id(int(getattr(renamed, "id")))
+
+    def _start_folder_rename(self) -> None:
+        if self._core.mode != "server":
+            return
+        item = self.folder_tree.currentItem()
+        if item is None:
+            return
+        folder_path = item.data(0, QtCore.Qt.UserRole)
+        if folder_path in (None, ""):
+            self.status_label.setText("Select a folder to rename.")
+            return
+        self.folder_tree.editItem(item, 0)
+
+    def _folder_item_changed(
+        self,
+        item: QtWidgets.QTreeWidgetItem,
+        column: int,
+    ) -> None:
+        if (
+            self._refreshing_folders
+            or column != 0
+            or self._core.mode != "server"
+        ):
+            return
+        folder_path = item.data(0, QtCore.Qt.UserRole)
+        if folder_path in (None, ""):
+            return
+        old_path = str(folder_path)
+        parent_path, _separator, _name = old_path.rpartition("/")
+        try:
+            from talon_core.documents import sanitize_folder_path
+
+            new_name = sanitize_folder_path(item.text(0))
+            new_path = sanitize_folder_path(
+                f"{parent_path}/{new_name}" if parent_path else new_name
+            )
+        except Exception as exc:
+            self._refresh_folder_tree()
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Rename Failed",
+                document_error_message(exc),
+            )
+            return
+        if new_path == old_path:
+            return
+        self._rename_folder_path(old_path, new_path)
+
+    def _move_selected_folder(self) -> None:
+        if self._core.mode != "server":
+            return
+        item = self.folder_tree.currentItem()
+        if item is None:
+            return
+        folder_path = item.data(0, QtCore.Qt.UserRole)
+        if folder_path in (None, ""):
+            self.status_label.setText("Select a folder to move.")
+            return
+        old_path = str(folder_path)
+        destination = self._choose_folder_path(
+            title="Move Folder",
+            label=old_path,
+            current_folder="",
+            exclude_folder=old_path,
+        )
+        if destination is None:
+            return
+        basename = old_path.rsplit("/", 1)[-1]
+        new_path = f"{destination}/{basename}".strip("/")
+        self._rename_folder_path(old_path, new_path)
+
+    def _rename_folder_path(self, old_path: str, new_path: str) -> None:
+        try:
+            from talon_core.documents import sanitize_folder_path
+
+            old_path = sanitize_folder_path(old_path)
+            new_path = sanitize_folder_path(new_path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Rename Failed",
+                document_error_message(exc),
+            )
+            return
+        if not old_path or not new_path:
+            self.status_label.setText("Root folder cannot be renamed.")
+            self._refresh_folder_tree()
+            return
+        if old_path == new_path:
+            self.status_label.setText("Folder is already in that location.")
+            self._refresh_folder_tree()
+            return
+        if new_path.startswith(old_path + "/"):
+            self.status_label.setText("Folder cannot be moved inside itself.")
+            self._refresh_folder_tree()
+            return
+        docs = self._items_in_folder_path(old_path)
+        if docs:
+            try:
+                self._core.command(
+                    "documents.rename_folder",
+                    folder_path=old_path,
+                    new_folder_path=new_path,
+                )
+            except Exception as exc:
+                message = document_error_message(exc)
+                _log.warning("Folder rename failed: %s", message)
+                QtWidgets.QMessageBox.warning(self, "Rename Failed", message)
+                self._refresh_folder_tree()
+                return
+        self._rewrite_empty_folder_prefix(old_path, new_path)
+        self._selected_folder_path = new_path
+        self.status_label.setText("Folder renamed.")
+        self.refresh()
+
+    def _delete_selected_folder(self) -> None:
+        if self._core.mode != "server":
+            return
+        item = self.folder_tree.currentItem()
+        if item is None:
+            return
+        folder_path = item.data(0, QtCore.Qt.UserRole)
+        if folder_path in (None, ""):
+            self.status_label.setText("Select a folder to delete.")
+            return
+        folder_path = str(folder_path)
+        docs = self._items_in_folder_path(folder_path)
+        empty_descendants = self._empty_folder_descendants(folder_path)
+        detail = (
+            f"Delete {folder_path} and {len(docs)} document(s)? "
+            "This cannot be undone."
+            if docs
+            else f"Delete empty folder {folder_path}?"
+        )
+        if empty_descendants and not docs:
+            detail = f"Delete empty folder {folder_path} and its empty subfolders?"
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Folder",
+            detail,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            return
+        if docs:
+            try:
+                self._core.command("documents.delete_folder", folder_path=folder_path)
+            except Exception as exc:
+                message = document_error_message(exc)
+                _log.warning("Folder delete failed: %s", message)
+                QtWidgets.QMessageBox.warning(self, "Delete Failed", message)
+                return
+        self._drop_empty_folder_prefix(folder_path)
+        self._selected_folder_path = self._parent_folder_path(folder_path)
+        self.status_label.setText("Folder deleted.")
+        self.refresh()
 
     def _download_selected(self) -> None:
         item = self._selected_item()
@@ -512,9 +913,11 @@ class DocumentPage(QtWidgets.QWidget):
             for item in self._items
             if selected is None or item.folder_path == selected
         ]
+        self._refreshing_table = True
         self.table.setRowCount(0)
         for item in self._visible_items:
             self._add_row(item)
+        self._refreshing_table = False
         if self._visible_items:
             self.table.selectRow(0)
         else:
@@ -522,15 +925,18 @@ class DocumentPage(QtWidgets.QWidget):
 
     def _refresh_folder_tree(self) -> None:
         selected = self._selected_folder_path
+        self._refreshing_folders = True
         self.folder_tree.blockSignals(True)
         self.folder_tree.clear()
 
         all_item = QtWidgets.QTreeWidgetItem(["All Documents"])
         all_item.setData(0, QtCore.Qt.UserRole, None)
+        all_item.setFlags(all_item.flags() | QtCore.Qt.ItemIsDropEnabled)
         self.folder_tree.addTopLevelItem(all_item)
 
         root_item = QtWidgets.QTreeWidgetItem(["Root"])
         root_item.setData(0, QtCore.Qt.UserRole, "")
+        root_item.setFlags(root_item.flags() | QtCore.Qt.ItemIsDropEnabled)
         self.folder_tree.addTopLevelItem(root_item)
 
         path_items: dict[str, QtWidgets.QTreeWidgetItem] = {}
@@ -545,6 +951,11 @@ class DocumentPage(QtWidgets.QWidget):
                 if node is None:
                     node = QtWidgets.QTreeWidgetItem([part])
                     node.setData(0, QtCore.Qt.UserRole, current_path)
+                    node.setFlags(
+                        node.flags()
+                        | QtCore.Qt.ItemIsDropEnabled
+                        | QtCore.Qt.ItemIsEditable
+                    )
                     parent.addChild(node)
                     path_items[current_path] = node
                 parent = node
@@ -552,12 +963,20 @@ class DocumentPage(QtWidgets.QWidget):
         self.folder_tree.expandAll()
         if selected is None:
             target = all_item
+            next_selected = None
         elif selected == "":
             target = root_item
+            next_selected = ""
         else:
-            target = path_items.get(selected, all_item)
+            target = path_items.get(selected)
+            next_selected = selected
+            if target is None:
+                target = all_item
+                next_selected = None
         self.folder_tree.setCurrentItem(target)
+        self._selected_folder_path = next_selected
         self.folder_tree.blockSignals(False)
+        self._refreshing_folders = False
 
     def _known_folder_paths(self) -> list[str]:
         paths = {item.folder_path for item in self._items}
@@ -572,3 +991,59 @@ class DocumentPage(QtWidgets.QWidget):
     @staticmethod
     def _folder_label(folder_path: str) -> str:
         return folder_path or "Root"
+
+    def _select_document_id(self, document_id: int) -> None:
+        for row, item in enumerate(self._visible_items):
+            if item.id == document_id:
+                self.table.selectRow(row)
+                return
+
+    def _set_cell_text_without_signal(
+        self,
+        cell: QtWidgets.QTableWidgetItem,
+        text: str,
+    ) -> None:
+        self.table.blockSignals(True)
+        try:
+            cell.setText(text)
+        finally:
+            self.table.blockSignals(False)
+
+    def _items_in_folder_path(self, folder_path: str) -> list[DesktopDocumentItem]:
+        return [
+            item
+            for item in self._items
+            if item.folder_path == folder_path
+            or item.folder_path.startswith(folder_path + "/")
+        ]
+
+    def _empty_folder_descendants(self, folder_path: str) -> set[str]:
+        return {
+            path
+            for path in self._known_empty_folders
+            if path == folder_path or path.startswith(folder_path + "/")
+        }
+
+    def _rewrite_empty_folder_prefix(self, old_path: str, new_path: str) -> None:
+        rewritten: set[str] = set()
+        for path in self._known_empty_folders:
+            if path == old_path:
+                rewritten.add(new_path)
+            elif path.startswith(old_path + "/"):
+                rewritten.add(f"{new_path}/{path[len(old_path) + 1:]}")
+            else:
+                rewritten.add(path)
+        if old_path in self._known_empty_folders:
+            rewritten.discard(old_path)
+        self._known_empty_folders = rewritten
+
+    def _drop_empty_folder_prefix(self, folder_path: str) -> None:
+        self._known_empty_folders = {
+            path
+            for path in self._known_empty_folders
+            if path != folder_path and not path.startswith(folder_path + "/")
+        }
+
+    @staticmethod
+    def _parent_folder_path(folder_path: str) -> str:
+        return folder_path.rpartition("/")[0]

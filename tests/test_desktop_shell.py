@@ -1327,6 +1327,152 @@ finally:
     app.processEvents()
 """
 
+_QT_DOCUMENT_EXPLORER_SCRIPT = r"""
+import os
+import pathlib
+import sys
+import types
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtCore, QtWidgets
+
+from talon_desktop.document_page import DocumentPage, DocumentTableWidget
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+class FakeCore:
+    mode = "server"
+
+    def __init__(self) -> None:
+        self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
+        self.commands = []
+        self.documents = [
+            types.SimpleNamespace(
+                id=1,
+                filename="alpha.txt",
+                mime_type="text/plain",
+                size_bytes=12,
+                file_path="1.bin",
+                sha256_hash="a" * 64,
+                folder_path="Mission Files",
+                description="Alpha",
+                uploaded_by=1,
+                uploaded_at=1_700_000_000,
+                version=1,
+            ),
+            types.SimpleNamespace(
+                id=2,
+                filename="nested.txt",
+                mime_type="text/plain",
+                size_bytes=24,
+                file_path="2.bin",
+                sha256_hash="b" * 64,
+                folder_path="Mission Files/Lost Dog",
+                description="Nested",
+                uploaded_by=1,
+                uploaded_at=1_700_000_001,
+                version=1,
+            ),
+        ]
+
+    def read_model(self, name, filters=None):
+        if name == "documents.list":
+            return [
+                types.SimpleNamespace(document=document, uploader_callsign="SERVER")
+                for document in self.documents
+            ]
+        raise KeyError(name)
+
+    def command(self, name, **kwargs):
+        self.commands.append((name, dict(kwargs)))
+        if name == "documents.move":
+            doc = self._doc(kwargs["document_id"])
+            doc.folder_path = kwargs["folder_path"]
+            return types.SimpleNamespace(document=doc)
+        if name == "documents.rename":
+            doc = self._doc(kwargs["document_id"])
+            doc.filename = kwargs["filename"]
+            return types.SimpleNamespace(document=doc)
+        if name == "documents.rename_folder":
+            old = kwargs["folder_path"]
+            new = kwargs["new_folder_path"]
+            changed = []
+            for doc in self.documents:
+                if doc.folder_path == old or doc.folder_path.startswith(old + "/"):
+                    suffix = doc.folder_path[len(old):].lstrip("/")
+                    doc.folder_path = new if not suffix else f"{new}/{suffix}"
+                    changed.append(doc)
+            return types.SimpleNamespace(document=changed[0] if changed else None)
+        if name == "documents.delete_folder":
+            folder = kwargs["folder_path"]
+            self.documents = [
+                doc
+                for doc in self.documents
+                if doc.folder_path != folder and not doc.folder_path.startswith(folder + "/")
+            ]
+            return types.SimpleNamespace(document=None)
+        raise KeyError(name)
+
+    def _doc(self, document_id):
+        for document in self.documents:
+            if document.id == int(document_id):
+                return document
+        raise KeyError(document_id)
+
+
+def folder_item(page, folder_path):
+    iterator = QtWidgets.QTreeWidgetItemIterator(page.folder_tree)
+    while iterator.value():
+        item = iterator.value()
+        if item.data(0, QtCore.Qt.UserRole) == folder_path:
+            return item
+        iterator += 1
+    raise AssertionError(folder_path)
+
+
+core = FakeCore()
+page = DocumentPage(core)
+try:
+    page.refresh()
+    assert isinstance(page.table, DocumentTableWidget)
+    assert page.table.contextMenuPolicy() == QtCore.Qt.CustomContextMenu
+    assert page.folder_tree.contextMenuPolicy() == QtCore.Qt.CustomContextMenu
+    assert page.table.dragEnabled()
+    assert page.folder_tree.acceptDrops()
+
+    page._move_document_to_folder(1, "Archive")
+    assert core._doc(1).folder_path == "Archive"
+    assert core.commands[-1][0] == "documents.move"
+
+    page._selected_folder_path = None
+    page.refresh()
+    page._select_document_id(1)
+    row = page.table.selectionModel().selectedRows()[0].row()
+    page.table.item(row, 1).setText("renamed-alpha.txt")
+    app.processEvents()
+    assert core._doc(1).filename == "renamed-alpha.txt"
+    assert core.commands[-1][0] == "documents.rename"
+
+    page._rename_folder_path("Archive", "Renamed Archive")
+    assert core._doc(1).folder_path == "Renamed Archive"
+    assert core.commands[-1][0] == "documents.rename_folder"
+
+    page.folder_tree.setCurrentItem(folder_item(page, "Mission Files"))
+    QtWidgets.QMessageBox.question = staticmethod(
+        lambda *args, **kwargs: QtWidgets.QMessageBox.Yes
+    )
+    page._delete_selected_folder()
+    assert all(not doc.folder_path.startswith("Mission Files") for doc in core.documents)
+    assert core.commands[-1][0] == "documents.delete_folder"
+
+    print("document-explorer-actions-ok")
+finally:
+    page.close()
+    app.processEvents()
+"""
+
 _QT_ICON_RENDER_SCRIPT = r"""
 import os
 
@@ -1866,6 +2012,18 @@ def test_qt_map_page_has_collapsible_side_panels(
     )
 
     assert f"map-panels-ok-{mode}" in result.stdout
+
+
+def test_qt_document_page_explorer_actions(tmp_path: pathlib.Path) -> None:
+    result = _run_qt_subprocess(
+        _QT_DOCUMENT_EXPLORER_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="document-explorer",
+        timeout=30,
+    )
+
+    assert "document-explorer-actions-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))

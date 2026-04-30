@@ -1341,6 +1341,15 @@ class TalonCoreSession:
         if name == "documents.move":
             self._require_server_mode("Document move")
             return self._documents_move(**payload)
+        if name == "documents.rename":
+            self._require_server_mode("Document rename")
+            return self._documents_rename(**payload)
+        if name == "documents.rename_folder":
+            self._require_server_mode("Folder rename")
+            return self._documents_rename_folder(**payload)
+        if name == "documents.delete_folder":
+            self._require_server_mode("Folder delete")
+            return self._documents_delete_folder(**payload)
 
         if name == "enrollment.generate_token":
             return self._generate_enrollment_token()
@@ -1620,6 +1629,91 @@ class TalonCoreSession:
             document_id=doc.id,
             document=doc,
             events=(record_changed("documents", doc.id),),
+        )
+
+    def _documents_rename(
+        self,
+        *,
+        document_id: int,
+        filename: str,
+    ) -> DocumentCommandResult:
+        from talon_core.documents import rename_document
+        from talon_core.services.events import record_changed
+
+        doc = rename_document(self._conn, int(document_id), filename=filename)
+        return DocumentCommandResult(
+            document_id=doc.id,
+            document=doc,
+            events=(record_changed("documents", doc.id),),
+        )
+
+    def _documents_rename_folder(
+        self,
+        *,
+        folder_path: str,
+        new_folder_path: str,
+    ) -> DocumentCommandResult:
+        from talon_core.documents import rename_folder
+        from talon_core.services.events import RecordMutation, linked_records_changed
+
+        docs = rename_folder(
+            self._conn,
+            folder_path=folder_path,
+            new_folder_path=new_folder_path,
+        )
+        records = [
+            RecordMutation("changed", "documents", int(doc.id))
+            for doc in docs
+        ]
+        events = (linked_records_changed(*records),) if records else ()
+        return DocumentCommandResult(
+            document_id=int(docs[0].id) if docs else 0,
+            document=docs[0] if docs else None,
+            events=events,
+        )
+
+    def _documents_delete_folder(
+        self,
+        *,
+        folder_path: str,
+        storage_root: typing.Optional[pathlib.Path] = None,
+    ) -> DocumentCommandResult:
+        from talon_core.documents import delete_folder, sanitize_folder_path
+        from talon_core.services.events import RecordMutation, linked_records_changed
+
+        sanitized = sanitize_folder_path(folder_path)
+        rows = self._conn.execute(
+            "SELECT id FROM documents WHERE folder_path = ? OR folder_path LIKE ? "
+            "ORDER BY id ASC",
+            (sanitized, f"{sanitized}/%"),
+        ).fetchall()
+        doc_ids = [int(row[0]) for row in rows]
+        sitrep_ids: list[int] = []
+        if doc_ids:
+            placeholders = ",".join("?" * len(doc_ids))
+            sitrep_ids = [
+                int(row[0])
+                for row in self._conn.execute(
+                    "SELECT DISTINCT sitrep_id FROM sitrep_documents "
+                    f"WHERE document_id IN ({placeholders}) ORDER BY sitrep_id ASC",
+                    doc_ids,
+                ).fetchall()
+            ]
+
+        docs = delete_folder(
+            self._conn,
+            pathlib.Path(storage_root) if storage_root is not None else self.paths.document_storage_path,
+            folder_path=sanitized,
+        )
+        records = [
+            *(RecordMutation("deleted", "documents", doc_id) for doc_id in doc_ids),
+            *(RecordMutation("changed", "sitreps", sitrep_id) for sitrep_id in sitrep_ids),
+        ]
+        events = (linked_records_changed(*records),) if records else ()
+        return DocumentCommandResult(
+            document_id=doc_ids[0] if doc_ids else 0,
+            document=docs[0] if docs else None,
+            events=events,
         )
 
     def _document_callsigns(self) -> dict[int, str]:
