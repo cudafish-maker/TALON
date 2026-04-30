@@ -212,6 +212,7 @@ def run_loopback_smoke_server(config_path: pathlib.Path) -> int:
     core = TalonCoreSession(config_path=config_path, mode="server").start()
     try:
         core.unlock_with_key(bytes(range(32)))
+        _accept_loopback_reticulum_config(core)
         core.start_sync(init_reticulum=True)
         asset = core.command(
             "assets.create",
@@ -247,6 +248,7 @@ def run_loopback_smoke_client(config_path: pathlib.Path, combined: str) -> int:
     exit_code = 1
     try:
         core.unlock_with_key(bytes(range(32)))
+        _accept_loopback_reticulum_config(core)
         core.start_reticulum()
         operator_id = core.enroll_client(combined, "PKGSMOKE", timeout_s=30.0)
         deadline = time.time() + 45.0
@@ -424,6 +426,11 @@ def _write_rns_config(
         text,
         mode="server" if enable_transport else "client",
     )
+
+
+def _accept_loopback_reticulum_config(core: typing.Any) -> None:
+    """Accept the temporary loopback RNS config after the DB key is available."""
+    core.save_reticulum_config_text(core.load_reticulum_config_text())
 
 
 def _server_tcp_interface(port: int) -> str:

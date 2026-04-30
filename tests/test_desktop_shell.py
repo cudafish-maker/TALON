@@ -1751,6 +1751,48 @@ def test_desktop_cli_exposes_package_loopback_smoke() -> None:
     assert args.loopback_smoke is True
 
 
+@pytest.mark.parametrize(
+    ("mode", "enable_transport"),
+    (("server", True), ("client", False)),
+)
+def test_loopback_smoke_accepts_temp_reticulum_config_after_unlock(
+    tmp_path: pathlib.Path,
+    mode: str,
+    enable_transport: bool,
+) -> None:
+    from talon_core import TalonCoreSession
+    from talon_core.network.rns_config import reticulum_acceptance_path
+    from talon_desktop.main import (
+        _accept_loopback_reticulum_config,
+        _client_tcp_interface,
+        _server_tcp_interface,
+        _write_loopback_app_config,
+        _write_rns_config,
+    )
+
+    config_path, rns_dir = _write_loopback_app_config(tmp_path, mode)
+    stanza = (
+        _server_tcp_interface(4242)
+        if mode == "server"
+        else _client_tcp_interface(4242)
+    )
+    _write_rns_config(rns_dir, stanza, enable_transport=enable_transport)
+    core = TalonCoreSession(config_path=config_path, mode=mode).start()
+    try:
+        core.unlock_with_key(bytes(range(32)))
+        assert core.reticulum_config_status().accepted is False
+
+        _accept_loopback_reticulum_config(core)
+
+        assert core.reticulum_config_status().accepted is True
+        marker_text = reticulum_acceptance_path(rns_dir).read_text(encoding="utf-8")
+        assert "version = 2" in marker_text
+        assert f"mode = {mode}" in marker_text
+        assert "hmac =" in marker_text
+    finally:
+        core.close()
+
+
 def _run_qt_smoke(
     tmp_path: pathlib.Path,
     *,
