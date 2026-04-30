@@ -182,6 +182,8 @@ class MapPickView(QtWidgets.QGraphicsView):
 class MapCoordinateDialog(QtWidgets.QDialog):
     """Pick a point, polygon, or route on the operational map context."""
 
+    selectionChanged = QtCore.Signal()
+
     def __init__(
         self,
         *,
@@ -287,12 +289,56 @@ class MapCoordinateDialog(QtWidgets.QDialog):
     def selected_points(self) -> list[tuple[float, float]]:
         return list(self._points)
 
-    def accept(self) -> None:
+    def configure_selection(
+        self,
+        *,
+        title: str,
+        mode: typing.Literal["point", "polygon", "route"],
+        initial_points: typing.Iterable[tuple[float, float]] = (),
+        draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]] = (),
+        minimum_points: int | None = None,
+        refit: bool = True,
+    ) -> None:
+        self._mode = mode
+        self._minimum_points = minimum_points or (3 if mode == "polygon" else 1)
+        self._points = [
+            (_clamp_lat(lat), _clamp_lon(lon))
+            for lat, lon in initial_points
+        ]
+        self._draft_overlays = _normalise_draft_overlays(draft_overlays)
+        self.setWindowTitle(title)
+        self.use_button.setText(_use_button_label(mode))
+        if refit:
+            self._bounds = self._initial_bounds()
+            self.view.set_bounds(self._bounds)
+        self._render()
+        self._sync_status()
+        self.selectionChanged.emit()
+
+    def set_draft_overlays(
+        self,
+        draft_overlays: typing.Iterable[DraftMapOverlay | typing.Mapping[str, object]],
+        *,
+        refit: bool = False,
+    ) -> None:
+        self._draft_overlays = _normalise_draft_overlays(draft_overlays)
+        if refit:
+            self._bounds = self._initial_bounds()
+            self.view.set_bounds(self._bounds)
+        self._render()
+
+    def selection_error(self) -> str:
         if len(self._points) < self._minimum_points:
-            self.status_label.setText(
+            return (
                 f"{_mode_label(self._mode)} requires at least "
                 f"{self._minimum_points} point(s)."
             )
+        return ""
+
+    def accept(self) -> None:
+        error = self.selection_error()
+        if error:
+            self.status_label.setText(error)
             return
         super().accept()
 
@@ -594,17 +640,20 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             self._points.append(point)
         self._render()
         self._sync_status()
+        self.selectionChanged.emit()
 
     def _clear_points(self) -> None:
         self._points.clear()
         self._render()
         self._sync_status()
+        self.selectionChanged.emit()
 
     def _undo_point(self) -> None:
         if self._points:
             self._points.pop()
         self._render()
         self._sync_status()
+        self.selectionChanged.emit()
 
     def _set_tile_layer(self, key: str) -> None:
         if key == self._active_tile_layer_key:

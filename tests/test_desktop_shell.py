@@ -1052,6 +1052,82 @@ finally:
     app.processEvents()
 """
 
+_QT_MISSION_CREATE_EMBEDDED_MAP_SCRIPT = r"""
+import os
+import pathlib
+import sys
+import types
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_desktop.map_picker import MapCoordinateDialog
+from talon_desktop.mission_page import MissionCreateDialog
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+class FakeCore:
+    mode = sys.argv[2]
+
+    def __init__(self) -> None:
+        self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
+
+    def read_model(self, name, filters=None):
+        if name in {"assets.list", "operators.list"}:
+            return []
+        if name == "assignments.board":
+            return {"assignments": []}
+        if name == "map.context":
+            return types.SimpleNamespace(
+                assets=[],
+                zones=[],
+                waypoints=[],
+                missions=[],
+                assignments=[],
+                incidents=[],
+            )
+        if name == "sitreps.list":
+            return []
+        raise KeyError(name)
+
+
+dialog = MissionCreateDialog(FakeCore())
+try:
+    assert isinstance(dialog.map_picker, MapCoordinateDialog)
+    assert not dialog.map_picker.isWindow()
+    assert dialog.map_picker.cancel_button.isHidden()
+    assert dialog._map_target is not None
+    assert dialog._map_target[2] == "AO Polygon"
+    dialog.ao_field.setPlainText(
+        "40.000000, -75.000000\n"
+        "40.010000, -75.000000\n"
+        "40.010000, -75.010000"
+    )
+    app.processEvents()
+    assert len(dialog.map_picker.selected_points) == 3
+
+    dialog._draw_route()
+    assert dialog._map_target[2] == "Route / Waypoints"
+    assert not any(
+        isinstance(widget, MapCoordinateDialog) and widget.isWindow()
+        for widget in QtWidgets.QApplication.topLevelWidgets()
+    )
+    dialog.map_picker._add_point(40.1, -75.1)
+    dialog._apply_map_selection()
+    assert dialog.route_field.toPlainText() == "40.100000, -75.100000"
+
+    dialog._pick_point(dialog.staging_area_field, "Staging Area")
+    dialog.map_picker._add_point(40.2, -75.2)
+    dialog._apply_map_selection()
+    assert dialog.staging_area_field.text() == "40.200000, -75.200000"
+    print("mission-create-embedded-map-ok")
+finally:
+    dialog.close()
+    app.processEvents()
+"""
+
 _QT_MAP_TILE_RENDERER_SCRIPT = r"""
 import logging
 import os
@@ -1746,6 +1822,20 @@ def test_qt_picker_zoom_refreshes_tiles_and_bounds(tmp_path: pathlib.Path) -> No
     )
 
     assert "picker-zoom-refresh-ok" in result.stdout
+
+
+def test_qt_mission_create_uses_embedded_map_picker(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_MISSION_CREATE_EMBEDDED_MAP_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="mission-create-embedded-map",
+        timeout=30,
+    )
+
+    assert "mission-create-embedded-map-ok" in result.stdout
 
 
 def test_qt_map_tile_renderer_keeps_stale_tiles_until_replacement(

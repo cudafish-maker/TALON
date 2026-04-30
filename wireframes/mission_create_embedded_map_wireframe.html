@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON Mission Create Embedded Map Wireframe</title>
+  <style>
+    :root {
+      --bg: #0f1417;
+      --panel: #171e22;
+      --panel-2: #20292e;
+      --line: #334047;
+      --text: #edf3f5;
+      --muted: #98a8ae;
+      --accent: #ffdf6e;
+      --blue: #3498db;
+      --red: #e74c3c;
+      --green: #2ecc71;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #0b1012;
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.4;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 28px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 56px 56px,
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px) 0 0 / 56px 56px,
+        var(--bg);
+    }
+
+    .caption {
+      max-width: 1180px;
+      margin: 0 auto 18px;
+      color: var(--muted);
+    }
+
+    .caption h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    .dialog {
+      max-width: 1180px;
+      margin: 0 auto;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 22px 60px rgba(0,0,0,.38);
+      min-height: 760px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dialog-header,
+    .dialog-footer {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #11181b;
+    }
+
+    .dialog-footer {
+      border-top: 1px solid var(--line);
+      border-bottom: 0;
+      justify-content: flex-end;
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .status {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .body {
+      display: grid;
+      grid-template-columns: minmax(430px, 1fr) minmax(460px, 1.05fr);
+      min-height: 0;
+    }
+
+    .form {
+      border-right: 1px solid var(--line);
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 2px;
+      padding: 10px 12px 0;
+      background: #141b1f;
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+    }
+
+    .tab {
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-bottom: 0;
+      background: #101619;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tab.active {
+      color: var(--text);
+      background: var(--panel);
+    }
+
+    .form-content {
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .input,
+    .textarea,
+    .select {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      background: #101619;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+
+    .textarea {
+      min-height: 98px;
+      white-space: pre-line;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .button {
+      min-height: 36px;
+      border: 1px solid #566973;
+      background: #243139;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      border-color: #d9bd5c;
+      color: #151a1d;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .map-panel {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      background: #0f1518;
+    }
+
+    .map-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #141b1f;
+    }
+
+    .segmented {
+      display: flex;
+      border: 1px solid var(--line);
+      background: #101619;
+    }
+
+    .segment {
+      padding: 7px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      border-right: 1px solid var(--line);
+    }
+
+    .segment:last-child { border-right: 0; }
+    .segment.active {
+      color: #111619;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .map-status {
+      padding: 9px 12px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      background: #101619;
+    }
+
+    .map {
+      position: relative;
+      overflow: hidden;
+      min-height: 520px;
+      background:
+        linear-gradient(90deg, rgba(237,243,245,.08) 1px, transparent 1px) 0 0 / 80px 80px,
+        linear-gradient(rgba(237,243,245,.08) 1px, transparent 1px) 0 0 / 80px 80px,
+        #11181b;
+    }
+
+    .tile {
+      position: absolute;
+      border: 1px solid rgba(255,255,255,.035);
+      background: #182329;
+    }
+
+    .tile:nth-child(1) { left: 0; top: 0; width: 33.33%; height: 50%; }
+    .tile:nth-child(2) { left: 33.33%; top: 0; width: 33.33%; height: 50%; background: #1b272d; }
+    .tile:nth-child(3) { right: 0; top: 0; width: 33.34%; height: 50%; }
+    .tile:nth-child(4) { left: 0; bottom: 0; width: 33.33%; height: 50%; background: #1b272d; }
+    .tile:nth-child(5) { left: 33.33%; bottom: 0; width: 33.33%; height: 50%; }
+    .tile:nth-child(6) { right: 0; bottom: 0; width: 33.34%; height: 50%; background: #1b272d; }
+
+    .ao {
+      position: absolute;
+      left: 20%;
+      top: 18%;
+      width: 48%;
+      height: 34%;
+      border: 2px solid var(--red);
+      background: rgba(231, 76, 60, .16);
+      clip-path: polygon(8% 20%, 76% 5%, 96% 54%, 48% 100%, 0 70%);
+    }
+
+    .route {
+      position: absolute;
+      left: 32%;
+      top: 44%;
+      width: 44%;
+      height: 24%;
+      border-top: 4px solid var(--blue);
+      transform: rotate(-8deg);
+    }
+
+    .point {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      margin: -8px 0 0 -8px;
+      border: 2px solid #fff;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(255,223,110,.24);
+    }
+
+    .point.staging { left: 30%; top: 63%; }
+    .point.demob { left: 72%; top: 41%; background: var(--green); }
+    .point.active { left: 48%; top: 31%; background: var(--accent); }
+
+    .map-label {
+      position: absolute;
+      padding: 4px 7px;
+      background: rgba(10,15,17,.86);
+      border: 1px solid rgba(255,255,255,.14);
+      color: var(--text);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .map-label.one { left: 31%; top: 64%; }
+    .map-label.two { left: 73%; top: 42%; }
+    .map-label.three { left: 49%; top: 32%; color: var(--accent); }
+
+    .attribution {
+      position: absolute;
+      right: 12px;
+      bottom: 10px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .map-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      background: #141b1f;
+    }
+
+    .map-actions .grow { flex: 1; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 900px) {
+      .page { padding: 14px; }
+      .body { grid-template-columns: 1fr; }
+      .form { border-right: 0; border-bottom: 1px solid var(--line); }
+      .map { min-height: 380px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="caption">
+      <h1>Mission Create Embedded Map</h1>
+      <div>Approval wireframe: mission geometry is selected in the built-in map panel. The picker buttons select a target field/mode and keep the map visible instead of opening a popup.</div>
+    </section>
+
+    <section class="dialog">
+      <header class="dialog-header">
+        <div class="title">Mission</div>
+        <div class="status">Unsaved draft geometry visible on map</div>
+      </header>
+
+      <div class="body">
+        <section class="form">
+          <nav class="tabs">
+            <div class="tab">Overview</div>
+            <div class="tab">Timing</div>
+            <div class="tab">Assets</div>
+            <div class="tab active">Area / Route</div>
+            <div class="tab">Support</div>
+          </nav>
+          <div class="form-content">
+            <div class="field-row">
+              <div class="field">
+                <div class="label">AO Polygon</div>
+                <div class="textarea">40.123400, -75.250000
+40.126800, -75.241200
+40.119700, -75.239500</div>
+              </div>
+              <button class="button primary">Edit on Map</button>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <div class="label">Route / Waypoints</div>
+                <div class="textarea">40.120500, -75.248900
+40.121800, -75.244200</div>
+              </div>
+              <button class="button">Edit on Map</button>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <div class="label">Incident Command Post</div>
+                <div class="input">40.124200, -75.245900</div>
+              </div>
+              <button class="button">Pick on Map</button>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <div class="label">Medical</div>
+                <div class="input">Not set</div>
+              </div>
+              <button class="button">Pick on Map</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="map-panel">
+          <div class="map-toolbar">
+            <div class="segmented">
+              <div class="segment active">OSM</div>
+              <div class="segment">TOPO</div>
+              <div class="segment">Satellite</div>
+            </div>
+            <div class="segmented">
+              <div class="segment active">AO Polygon</div>
+              <div class="segment">Route</div>
+              <div class="segment">Point</div>
+            </div>
+          </div>
+          <div class="map-status">Active target: AO Polygon. Click to add points, drag to pan, mouse wheel to zoom.</div>
+          <div class="map">
+            <div class="tile"></div>
+            <div class="tile"></div>
+            <div class="tile"></div>
+            <div class="tile"></div>
+            <div class="tile"></div>
+            <div class="tile"></div>
+            <div class="ao"></div>
+            <div class="route"></div>
+            <div class="point staging"></div>
+            <div class="point demob"></div>
+            <div class="point active"></div>
+            <div class="map-label one">Staging Area</div>
+            <div class="map-label two">Demob Point</div>
+            <div class="map-label three">Current AO point</div>
+            <div class="attribution">OpenStreetMap contributors</div>
+          </div>
+          <footer class="map-actions">
+            <div class="grow">Clear and Undo affect the active target only. Use Selected writes the visible map selection back to the mission field.</div>
+            <button class="button">Clear</button>
+            <button class="button">Undo</button>
+            <button class="button primary">Use Selected</button>
+          </footer>
+        </section>
+      </div>
+
+      <footer class="dialog-footer">
+        <button class="button">Cancel</button>
+        <button class="button primary">Create</button>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

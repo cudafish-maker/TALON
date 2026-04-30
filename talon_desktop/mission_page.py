@@ -21,9 +21,8 @@ from talon_desktop.missions import (
 )
 from talon_desktop.map_picker import (
     DraftMapOverlay,
+    MapCoordinateDialog,
     format_coordinate,
-    pick_path_on_map,
-    pick_point_on_map,
 )
 from talon_desktop.theme import configure_data_table
 
@@ -275,6 +274,15 @@ class MissionCreateDialog(QtWidgets.QDialog):
     ) -> None:
         super().__init__(parent)
         self._core = core
+        self._updating_map_field = False
+        self._map_target: (
+            tuple[
+                typing.Literal["path", "point"],
+                QtWidgets.QPlainTextEdit | QtWidgets.QLineEdit,
+                str,
+            ]
+            | None
+        ) = None
         self._key_location_fields: dict[str, QtWidgets.QLineEdit] = {}
         self._constraint_checks: dict[str, QtWidgets.QCheckBox] = {}
         self.setWindowTitle("Mission")
@@ -356,11 +364,31 @@ class MissionCreateDialog(QtWidgets.QDialog):
         tabs.addTab(self._scroll_page(self._assets_tab()), "Assets")
         tabs.addTab(self._scroll_page(self._area_tab()), "Area / Route")
         tabs.addTab(self._scroll_page(self._support_tab()), "Support")
-        self.preview = MissionDraftPreview()
-        self._wire_preview_updates()
-
+        self.map_picker = MapCoordinateDialog(
+            core=self._core,
+            title="Mission Map",
+            mode="polygon",
+            parent=self,
+        )
+        self.map_picker.setWindowFlags(QtCore.Qt.Widget)
+        self.map_picker.setMinimumSize(420, 520)
+        self.map_picker.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+        )
+        self.map_picker.cancel_button.setVisible(False)
+        self.map_picker.use_button.clicked.disconnect()
+        self.map_picker.use_button.clicked.connect(self._apply_map_selection)
+        self.map_picker.selectionChanged.connect(self._sync_map_apply_state)
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setWordWrap(True)
+        self._wire_map_updates()
+        self._activate_path_picker(
+            self.ao_field,
+            "AO Polygon",
+            "polygon",
+            3,
+        )
 
         self.save_button = QtWidgets.QPushButton("Create")
         self.cancel_button = QtWidgets.QPushButton("Cancel")
@@ -373,7 +401,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
 
         content = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         content.addWidget(tabs)
-        content.addWidget(self.preview)
+        content.addWidget(self.map_picker)
         content.setStretchFactor(0, 3)
         content.setStretchFactor(1, 2)
 
@@ -381,7 +409,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         layout.addWidget(content, stretch=1)
         layout.addWidget(self.status_label)
         layout.addLayout(button_row)
-        QtCore.QTimer.singleShot(0, self._update_preview)
+        QtCore.QTimer.singleShot(0, self._refresh_embedded_map_drafts)
 
     def payload(self) -> dict[str, object]:
         return build_create_payload(
@@ -600,38 +628,42 @@ class MissionCreateDialog(QtWidgets.QDialog):
         return container
 
     def _draw_ao(self) -> None:
-        points = self._parse_existing_points(self.ao_field, "AO polygon", 3)
-        if points is None:
-            return
-        selected = pick_path_on_map(
-            core=self._core,
-            title="AO Polygon",
-            mode="polygon",
-            initial_points=points,
-            draft_overlays=self._draft_overlays(exclude_widget=self.ao_field),
-            parent=self,
+        self._activate_path_picker(
+            self.ao_field,
+            "AO Polygon",
+            "polygon",
+            3,
         )
-        if selected is not None:
-            self.ao_field.setPlainText(format_coordinate_lines(selected))
-            self.status_label.clear()
-            self._update_preview()
 
     def _draw_route(self) -> None:
-        points = self._parse_existing_points(self.route_field, "Route", 1)
+        self._activate_path_picker(
+            self.route_field,
+            "Route / Waypoints",
+            "route",
+            1,
+        )
+
+    def _activate_path_picker(
+        self,
+        editor: QtWidgets.QPlainTextEdit,
+        title: str,
+        mode: typing.Literal["polygon", "route"],
+        minimum_points: int,
+    ) -> None:
+        points = self._parse_existing_points(editor, title, minimum_points)
         if points is None:
             return
-        selected = pick_path_on_map(
-            core=self._core,
-            title="Route / Waypoints",
-            mode="route",
+        self._map_target = ("path", editor, title)
+        self.map_picker.configure_selection(
+            title=title,
+            mode=mode,
             initial_points=points,
-            draft_overlays=self._draft_overlays(exclude_widget=self.route_field),
-            parent=self,
+            draft_overlays=self._draft_overlays(exclude_widget=editor),
+            minimum_points=minimum_points,
         )
-        if selected is not None:
-            self.route_field.setPlainText(format_coordinate_lines(selected))
-            self.status_label.clear()
-            self._update_preview()
+        self.map_picker.use_button.setText("Use Selected")
+        self.status_label.setText(f"Map target: {title}.")
+        self._sync_map_apply_state()
 
     def _pick_point(self, field: QtWidgets.QLineEdit, title: str) -> None:
         initial_lat = None
@@ -649,39 +681,122 @@ class MissionCreateDialog(QtWidgets.QDialog):
             except ValueError as exc:
                 self.status_label.setText(str(exc))
                 return
-        selected = pick_point_on_map(
-            core=self._core,
+        initial = []
+        if initial_lat is not None and initial_lon is not None:
+            initial.append((initial_lat, initial_lon))
+        self._map_target = ("point", field, title)
+        self.map_picker.configure_selection(
             title=title,
-            initial_lat=initial_lat,
-            initial_lon=initial_lon,
+            mode="point",
+            initial_points=initial,
             draft_overlays=self._draft_overlays(exclude_widget=field),
-            parent=self,
+            minimum_points=1,
         )
-        if selected is None:
+        self.map_picker.use_button.setText("Use Selected")
+        self.status_label.setText(f"Map target: {title}.")
+        self._sync_map_apply_state()
+
+    def _apply_map_selection(self) -> None:
+        if self._map_target is None:
+            self.status_label.setText("Choose a mission field before using a map point.")
+            self._sync_map_apply_state()
             return
-        field.setText(format_coordinate(*selected))
-        self.status_label.clear()
-        self._update_preview()
+        error = self.map_picker.selection_error()
+        if error:
+            self.status_label.setText(error)
+            return
+        kind, widget, title = self._map_target
+        selected = self.map_picker.selected_points
+        self._updating_map_field = True
+        try:
+            if kind == "path":
+                typing.cast(QtWidgets.QPlainTextEdit, widget).setPlainText(
+                    format_coordinate_lines(selected)
+                )
+            else:
+                typing.cast(QtWidgets.QLineEdit, widget).setText(
+                    format_coordinate(*selected[0])
+                )
+        finally:
+            self._updating_map_field = False
+        self.status_label.setText(f"Applied {title} from map.")
+        self._refresh_embedded_map_drafts()
 
-    def _wire_preview_updates(self) -> None:
-        self.ao_field.textChanged.connect(self._update_preview)
-        self.route_field.textChanged.connect(self._update_preview)
-        self.staging_area_field.textChanged.connect(self._update_preview)
-        self.demob_point_field.textChanged.connect(self._update_preview)
-        for field in self._key_location_fields.values():
-            field.textChanged.connect(self._update_preview)
-
-    def _update_preview(self) -> None:
-        self.preview.update_from(
-            self.ao_field.toPlainText(),
-            self.route_field.toPlainText(),
-            self.staging_area_field.text(),
-            self.demob_point_field.text(),
-            {
-                key: field.text()
-                for key, field in self._key_location_fields.items()
-            },
+    def _sync_map_apply_state(self) -> None:
+        self.map_picker.use_button.setEnabled(
+            self._map_target is not None and not self.map_picker.selection_error()
         )
+
+    def _wire_map_updates(self) -> None:
+        self.ao_field.textChanged.connect(self._refresh_embedded_map_drafts)
+        self.route_field.textChanged.connect(self._refresh_embedded_map_drafts)
+        self.staging_area_field.textChanged.connect(self._refresh_embedded_map_drafts)
+        self.demob_point_field.textChanged.connect(self._refresh_embedded_map_drafts)
+        for field in self._key_location_fields.values():
+            field.textChanged.connect(self._refresh_embedded_map_drafts)
+
+    def _refresh_embedded_map_drafts(self) -> None:
+        target_widget = self._map_target[1] if self._map_target is not None else None
+        if (
+            target_widget is not None
+            and self.sender() is target_widget
+            and not self._updating_map_field
+        ):
+            self._reload_active_map_selection_from_field()
+            return
+        self.map_picker.set_draft_overlays(
+            self._draft_overlays(exclude_widget=target_widget),
+            refit=False,
+        )
+
+    def _reload_active_map_selection_from_field(self) -> None:
+        if self._map_target is None:
+            return
+        kind, widget, title = self._map_target
+        if kind == "path":
+            editor = typing.cast(QtWidgets.QPlainTextEdit, widget)
+            if editor is self.ao_field:
+                mode: typing.Literal["polygon", "route"] = "polygon"
+                minimum_points = 3
+            else:
+                mode = "route"
+                minimum_points = 1
+            points = self._parse_existing_points(editor, title, minimum_points)
+            if points is None:
+                return
+            self.map_picker.configure_selection(
+                title=title,
+                mode=mode,
+                initial_points=points,
+                draft_overlays=self._draft_overlays(exclude_widget=widget),
+                minimum_points=minimum_points,
+                refit=False,
+            )
+        else:
+            field = typing.cast(QtWidgets.QLineEdit, widget)
+            points: list[tuple[float, float]] = []
+            text = field.text().strip()
+            if text:
+                try:
+                    points = parse_coordinate_lines(
+                        text,
+                        label=title,
+                        minimum_points=1,
+                        empty_ok=False,
+                    )[:1]
+                except ValueError as exc:
+                    self.status_label.setText(str(exc))
+                    return
+            self.map_picker.configure_selection(
+                title=title,
+                mode="point",
+                initial_points=points,
+                draft_overlays=self._draft_overlays(exclude_widget=widget),
+                minimum_points=1,
+                refit=False,
+            )
+        self.map_picker.use_button.setText("Use Selected")
+        self._sync_map_apply_state()
 
     def _parse_existing_points(
         self,
