@@ -63,6 +63,13 @@ class SitrepTemplate:
     body: str
 
 
+@dataclasses.dataclass(frozen=True)
+class AvailableOperatorItem:
+    id: int
+    callsign: str
+    skills: tuple[str, ...]
+
+
 DEFAULT_TEMPLATE_KEY = "free_text"
 SITREP_TEMPLATES = (
     SitrepTemplate(
@@ -343,6 +350,57 @@ def severity_counts(items: typing.Iterable[SitrepFeedItem]) -> dict[str, int]:
     for item in items:
         counts[item.level] = counts.get(item.level, 0) + 1
     return counts
+
+
+def available_operator_items(
+    operators: typing.Iterable[object],
+    *,
+    assignments: typing.Iterable[object] = (),
+    sitreps: typing.Iterable[object] = (),
+    current_sitrep_id: int | None = None,
+) -> list[AvailableOperatorItem]:
+    """Return operators not already committed to active work."""
+    assigned_operator_ids: set[int] = set()
+    for assignment in assignments:
+        status = str(_field(assignment, "status", default="") or "")
+        if status in {"completed", "aborted"}:
+            continue
+        for operator_id in _field(assignment, "assigned_operator_ids", default=[]) or []:
+            assigned_operator_ids.add(int(operator_id))
+
+    busy_callsigns: set[str] = set()
+    for entry in sitreps:
+        sitrep = entry[0] if isinstance(entry, tuple) else entry
+        sitrep_id = _optional_int(_field(sitrep, "id", default=None))
+        if current_sitrep_id is not None and sitrep_id == int(current_sitrep_id):
+            continue
+        status = str(_field(sitrep, "status", default="open") or "open")
+        if status in {"resolved", "closed"}:
+            continue
+        assigned_to = str(_field(sitrep, "assigned_to", default="") or "").strip()
+        if assigned_to:
+            busy_callsigns.add(assigned_to.casefold())
+
+    available: list[AvailableOperatorItem] = []
+    for operator in operators:
+        operator_id = _optional_int(_field(operator, "id", default=None))
+        if operator_id is None or operator_id == 1:
+            continue
+        if bool(_field(operator, "revoked", default=False)):
+            continue
+        callsign = str(_field(operator, "callsign", default="") or f"#{operator_id}").strip()
+        if operator_id in assigned_operator_ids or callsign.casefold() in busy_callsigns:
+            continue
+        raw_skills = _field(operator, "skills", default=[]) or []
+        skills = tuple(str(skill) for skill in raw_skills if str(skill).strip())
+        available.append(
+            AvailableOperatorItem(
+                id=operator_id,
+                callsign=callsign,
+                skills=skills,
+            )
+        )
+    return available
 
 
 def should_play_audio(level: str, audio_enabled: bool) -> bool:

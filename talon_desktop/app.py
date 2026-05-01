@@ -1086,9 +1086,6 @@ class MainWindow(QtWidgets.QMainWindow):
             assignment_page = self._pages.get("assignments")
             if isinstance(assignment_page, AssignmentPage):
                 assignment_page.handle_record_mutation(action, table, record_id)
-            page = self._pages.get("sitreps")
-            if isinstance(page, SitrepPage):
-                page.handle_record_mutation(action, table, record_id)
         elif table in {"missions", "zones", "waypoints", "sitreps"}:
             page = self._pages.get("map")
             if isinstance(page, MapPage):
@@ -1135,7 +1132,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "sitrep_documents": ("sitreps", "documents", "map", "dashboard"),
             "assignments": ("assignments", "map", "missions", "dashboard"),
             "checkins": ("assignments", "map", "dashboard"),
-            "incidents": ("incidents", "assignments", "sitreps", "map", "dashboard"),
+            "incidents": ("incidents", "assignments", "map", "dashboard"),
             "channels": ("chat",),
             "messages": ("chat", "dashboard"),
             "documents": ("documents",),

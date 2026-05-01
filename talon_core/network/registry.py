@@ -175,7 +175,7 @@ TABLES: dict[str, SyncedTable] = {
         offline_creatable=True,
         tombstone_order=7,
         ownership_fields=("created_by",),
-        ui_refresh_targets=_fields("incidents", "assignments", "sitrep", "main"),
+        ui_refresh_targets=_fields("incidents", "assignments", "main"),
     ),
     "sitrep_followups": SyncedTable(
         name="sitrep_followups",

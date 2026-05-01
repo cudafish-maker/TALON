@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TALON Minimal SITREP Wireframe</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1214;
+      --shell: #080d0f;
+      --panel: #101719;
+      --panel-2: #141f22;
+      --panel-3: #1a2529;
+      --line: #253238;
+      --line-strong: #35484f;
+      --text: #d8dee9;
+      --text-strong: #f6fbfb;
+      --muted: #93a1a8;
+      --teal: #8fbcbb;
+      --yellow: #d6b85a;
+      --orange: #f28c28;
+      --red: #ff5555;
+      --rose: #ff7a94;
+      --blue: #6aa3d8;
+      --shadow: rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, "Noto Sans", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .page {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 28px;
+    }
+
+    .brief h1 {
+      margin: 0 0 8px;
+      color: var(--text-strong);
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .brief p {
+      margin: 0;
+      max-width: 88ch;
+      color: var(--muted);
+    }
+
+    .approval {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 16px 38px var(--shadow);
+    }
+
+    .approval h2 {
+      margin: 0 0 8px;
+      color: var(--text-strong);
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    .approval ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .approval li + li {
+      margin-top: 4px;
+    }
+
+    .screen-title {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin: 0 0 10px;
+    }
+
+    .screen-title h2 {
+      margin: 0;
+      color: var(--text-strong);
+      font-size: 20px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .screen-title span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .desktop-frame {
+      overflow: hidden;
+      min-height: 760px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 22px 58px var(--shadow);
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) 34px;
+    }
+
+    .nav {
+      grid-row: 1 / span 2;
+      background: var(--shell);
+      border-right: 1px solid var(--line);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .brand {
+      padding: 8px 10px 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+    }
+
+    .brand .name {
+      color: var(--text-strong);
+      font-size: 18px;
+      font-weight: 850;
+    }
+
+    .brand .mode {
+      margin-top: 2px;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .nav-item {
+      min-height: 34px;
+      padding: 8px 10px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 750;
+    }
+
+    .nav-item.active {
+      color: var(--text-strong);
+      background: #1f2f35;
+      border-color: #31434a;
+    }
+
+    .nav-item .badge {
+      min-width: 22px;
+      height: 20px;
+      border-radius: 4px;
+      background: var(--orange);
+      color: #16120b;
+      display: inline-grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .content {
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .statusbar {
+      grid-column: 2;
+      background: var(--shell);
+      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .statusbar span:last-child {
+      margin-left: auto;
+    }
+
+    .topbar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar h3 {
+      margin: 0;
+      color: var(--text-strong);
+      font-size: 24px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .topbar .actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .button {
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: var(--panel-2);
+      color: var(--text);
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      background: #26373d;
+      border-color: #4a636d;
+      color: var(--text-strong);
+    }
+
+    .button.danger {
+      background: #2a1418;
+      border-color: #87404b;
+      color: #ffdce2;
+    }
+
+    .level-strip {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .level-chip {
+      min-height: 42px;
+      padding: 8px 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .level-chip strong {
+      color: var(--text-strong);
+      font-size: 18px;
+    }
+
+    .level-chip.priority {
+      border-color: #63542b;
+    }
+
+    .level-chip.immediate {
+      border-color: #75491d;
+    }
+
+    .level-chip.flash {
+      border-color: #74323a;
+    }
+
+    .filter-row {
+      min-height: 42px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+    }
+
+    .select-wire,
+    .check-wire {
+      min-height: 28px;
+      padding: 4px 9px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: #0b1012;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .check-box {
+      width: 14px;
+      height: 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 3px;
+      background: var(--panel-2);
+    }
+
+    .main-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(300px, 0.44fr) minmax(420px, 0.56fr);
+      gap: 12px;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      min-height: 42px;
+      padding: 9px 11px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text-strong);
+      font-weight: 850;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .panel-header span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .feed {
+      min-height: 0;
+      padding: 10px;
+      overflow: hidden;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+
+    .feed-row {
+      min-height: 82px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      gap: 5px 9px;
+    }
+
+    .feed-row.selected {
+      background: #17262a;
+      border-color: #4b6870;
+    }
+
+    .severity {
+      grid-row: 1 / span 2;
+      min-width: 88px;
+      height: 26px;
+      padding: 4px 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      display: inline-grid;
+      place-items: center;
+      color: var(--text-strong);
+      font-size: 11px;
+      font-weight: 900;
+      align-self: start;
+    }
+
+    .severity.routine {
+      background: #172126;
+    }
+
+    .severity.priority {
+      background: #2a2414;
+      border-color: #705f2e;
+      color: #f6e8b2;
+    }
+
+    .severity.immediate {
+      background: #2a1c11;
+      border-color: #87511f;
+      color: #ffd9b4;
+    }
+
+    .severity.flash {
+      background: #2a1418;
+      border-color: #87404b;
+      color: #ffdce2;
+    }
+
+    .feed-meta {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .feed-summary {
+      min-width: 0;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .detail-body {
+      min-height: 0;
+      padding: 12px;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto auto minmax(118px, 0.8fr) auto minmax(122px, 1fr) auto;
+      gap: 10px;
+    }
+
+    .selected-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .selected-title h4 {
+      margin: 0;
+      color: var(--text-strong);
+      font-size: 18px;
+      font-weight: 850;
+    }
+
+    .context-line {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .text-area {
+      min-height: 108px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    .section-label {
+      color: var(--text-strong);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .history {
+      min-height: 0;
+      display: grid;
+      align-content: start;
+      gap: 7px;
+      overflow: hidden;
+    }
+
+    .history-row {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+    }
+
+    .history-row strong {
+      color: var(--text-strong);
+    }
+
+    .history-row span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .append-box {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .append-input {
+      min-height: 78px;
+      padding: 10px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 6px;
+      background: #0b1012;
+      color: var(--muted);
+    }
+
+    .server-only {
+      margin-top: 2px;
+      padding-top: 10px;
+      border-top: 1px solid #4a2a30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dialog-layer {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 0.85fr) minmax(340px, 420px) minmax(360px, 460px);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .dialog-note {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--muted);
+    }
+
+    .dialog-note strong {
+      color: var(--text-strong);
+    }
+
+    .modal-wire {
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 18px 46px var(--shadow);
+      overflow: hidden;
+    }
+
+    .modal-head {
+      min-height: 42px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text-strong);
+      font-weight: 850;
+    }
+
+    .modal-body {
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .input-wire {
+      min-height: 34px;
+      padding: 8px 9px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: #0b1012;
+      color: var(--text);
+    }
+
+    .input-wire.large {
+      min-height: 148px;
+      color: var(--muted);
+    }
+
+    .collapsed {
+      min-height: 36px;
+      padding: 8px 10px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 5px;
+      background: #0b1012;
+      color: var(--muted);
+      font-weight: 750;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 4px;
+    }
+
+    .operator-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .operator-row {
+      min-height: 54px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0b1012;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .operator-row.selected {
+      background: #17262a;
+      border-color: #4b6870;
+    }
+
+    .operator-name {
+      color: var(--text-strong);
+      font-weight: 850;
+    }
+
+    .operator-meta {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .available-pill {
+      padding: 3px 7px;
+      border: 1px solid #4f7452;
+      border-radius: 4px;
+      background: #132116;
+      color: #b8e6bb;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 1060px) {
+      .brief,
+      .dialog-layer {
+        grid-template-columns: 1fr;
+      }
+
+      .desktop-frame {
+        grid-template-columns: 72px minmax(0, 1fr);
+      }
+
+      .nav-item span.label,
+      .brand .mode {
+        display: none;
+      }
+
+      .level-strip {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brief">
+      <div>
+        <h1>Minimal SITREP Wireframe</h1>
+        <p>
+          From-scratch SITREP page focused on create, read, append, severity
+          awareness, and server-only deletion. This wireframe intentionally
+          removes incident handoff, document linking, templates, acknowledge,
+          and close controls from the main SITREP surface. Assignment is a
+          single focused popup that only lists currently available operators.
+        </p>
+      </div>
+      <aside class="approval">
+        <h2>Approval Target</h2>
+        <ul>
+          <li>Operators create SITREPs and append more information.</li>
+          <li>Operators can assign an available, unassigned operator.</li>
+          <li>Levels and notification counts stay visible.</li>
+          <li>Deletion remains separated and server-only.</li>
+          <li>Create dialog keeps context collapsed and secondary.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section>
+      <div class="screen-title">
+        <h2>Desktop Page</h2>
+        <span>static HTML wireframe for approval</span>
+      </div>
+
+      <div class="desktop-frame">
+        <nav class="nav" aria-label="Application navigation">
+          <div class="brand">
+            <div class="name">TALON</div>
+            <div class="mode">SERVER MODE</div>
+          </div>
+          <div class="nav-item"><span class="label">Dashboard</span></div>
+          <div class="nav-item active">
+            <span class="label">SITREPs</span>
+            <span class="badge">4</span>
+          </div>
+          <div class="nav-item"><span class="label">Map</span></div>
+          <div class="nav-item"><span class="label">Assets</span></div>
+          <div class="nav-item"><span class="label">Missions</span></div>
+          <div class="nav-item"><span class="label">Assignments</span></div>
+          <div class="nav-item"><span class="label">Chat</span></div>
+          <div class="nav-item"><span class="label">Documents</span></div>
+        </nav>
+
+        <div class="content">
+          <header class="topbar">
+            <h3>SITREPs</h3>
+            <div class="actions">
+              <div class="button primary">New SITREP</div>
+              <div class="button">Audio</div>
+              <div class="button">Refresh</div>
+            </div>
+          </header>
+
+          <section class="level-strip" aria-label="SITREP levels">
+            <div class="level-chip"><span>ROUTINE</span><strong>12</strong></div>
+            <div class="level-chip priority"><span>PRIORITY</span><strong>3</strong></div>
+            <div class="level-chip immediate"><span>IMMEDIATE</span><strong>1</strong></div>
+            <div class="level-chip flash"><span>FLASH</span><strong>0</strong></div>
+            <div class="level-chip flash"><span>FLASH OVERRIDE</span><strong>0</strong></div>
+            <div class="level-chip"><span>PENDING</span><strong>0</strong></div>
+          </section>
+
+          <section class="filter-row" aria-label="SITREP filters">
+            <span>Level</span>
+            <span class="select-wire">All</span>
+            <span class="check-wire"><span class="check-box"></span> Show closed</span>
+          </section>
+
+          <section class="main-grid">
+            <article class="panel">
+              <div class="panel-header">
+                <div>SITREP List</div>
+                <span>Newest first</span>
+              </div>
+              <div class="feed">
+                <div class="feed-row selected">
+                  <div class="severity priority">PRIORITY</div>
+                  <div class="feed-meta">10:42 - ALPHA</div>
+                  <div class="feed-summary">Welfare team needs water at North Gate.</div>
+                </div>
+                <div class="feed-row">
+                  <div class="severity routine">ROUTINE</div>
+                  <div class="feed-meta">10:30 - BRAVO</div>
+                  <div class="feed-summary">Patrol complete, no support needed.</div>
+                </div>
+                <div class="feed-row">
+                  <div class="severity flash">FLASH</div>
+                  <div class="feed-meta">10:12 - CHARLIE</div>
+                  <div class="feed-summary">Need immediate backup near clinic entrance.</div>
+                </div>
+                <div class="feed-row">
+                  <div class="severity immediate">IMMEDIATE</div>
+                  <div class="feed-meta">09:58 - DELTA</div>
+                  <div class="feed-summary">Unsafe debris blocking east service route.</div>
+                </div>
+                <div class="feed-row">
+                  <div class="severity routine">ROUTINE</div>
+                  <div class="feed-meta">09:44 - ECHO</div>
+                  <div class="feed-summary">Cache inventory checked and restocked.</div>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <div>Selected SITREP</div>
+                <span>Append-only</span>
+              </div>
+              <div class="detail-body">
+                <div class="selected-title">
+                  <h4>PRIORITY SITREP</h4>
+                  <span class="severity priority">PRIORITY</span>
+                </div>
+                <div class="context-line">ALPHA - 10:42 - North Gate - Open - Unassigned</div>
+                <div class="text-area">
+                  Welfare team needs water at North Gate. Two operators are
+                  remaining on site with the group. No medical issue reported.
+                </div>
+
+                <div class="section-label">Append History</div>
+                <div class="history">
+                  <div class="history-row">
+                    <strong>BRAVO</strong> <span>10:45</span><br>
+                    Water delivered to North Gate.
+                  </div>
+                  <div class="history-row">
+                    <strong>ALPHA</strong> <span>10:49</span><br>
+                    Team clear. Keeping this open until the group relocates.
+                  </div>
+                </div>
+
+                <div class="append-box">
+                  <div class="append-input">Add information...</div>
+                  <div class="button">Assign</div>
+                  <div class="button primary">Append</div>
+                </div>
+
+                <div class="server-only">
+                  <span>Server-only destructive control</span>
+                  <div class="button danger">Delete SITREP</div>
+                </div>
+              </div>
+            </article>
+          </section>
+        </div>
+
+        <footer class="statusbar">
+          <span>RNS: configured</span>
+          <span>Sync: connected</span>
+          <span>Operator: SERVER</span>
+        </footer>
+      </div>
+    </section>
+
+    <section class="dialog-layer">
+      <div class="dialog-note">
+        <strong>New SITREP dialog:</strong> the primary workflow stays level
+        plus body. Mission, asset, assignment, and location context remains
+        available, but starts collapsed so it does not dominate urgent entry.
+        <br><br>
+        <strong>Assign popup:</strong> opened from the selected SITREP. It only
+        lists operators who are not currently assigned to another active task.
+      </div>
+
+      <aside class="modal-wire" aria-label="Assign operator dialog wireframe">
+        <div class="modal-head">Assign Operator</div>
+        <div class="modal-body">
+          <div class="field">
+            <label>Available operators</label>
+            <div class="operator-list">
+              <div class="operator-row selected">
+                <div>
+                  <div class="operator-name">FOXTROT</div>
+                  <div class="operator-meta">Medic, de-escalation - last seen 10:41</div>
+                </div>
+                <div class="available-pill">AVAILABLE</div>
+              </div>
+              <div class="operator-row">
+                <div>
+                  <div class="operator-name">HOTEL</div>
+                  <div class="operator-meta">Comms, logistics - last seen 10:39</div>
+                </div>
+                <div class="available-pill">AVAILABLE</div>
+              </div>
+              <div class="operator-row">
+                <div>
+                  <div class="operator-name">INDIA</div>
+                  <div class="operator-meta">Navigator - last seen 10:35</div>
+                </div>
+                <div class="available-pill">AVAILABLE</div>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Assignment note</label>
+            <div class="input-wire">Optional short note...</div>
+          </div>
+          <div class="modal-actions">
+            <div class="button">Cancel</div>
+            <div class="button primary">Assign Selected</div>
+          </div>
+        </div>
+      </aside>
+
+      <aside class="modal-wire" aria-label="New SITREP dialog wireframe">
+        <div class="modal-head">New SITREP</div>
+        <div class="modal-body">
+          <div class="field">
+            <label>Level</label>
+            <div class="input-wire">ROUTINE</div>
+          </div>
+          <div class="field">
+            <label>Body</label>
+            <div class="input-wire large">Describe the situation...</div>
+          </div>
+          <div class="collapsed">Optional context collapsed</div>
+          <div class="modal-actions">
+            <div class="button">Cancel</div>
+            <div class="button primary">Send</div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

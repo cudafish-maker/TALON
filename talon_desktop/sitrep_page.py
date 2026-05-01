@@ -7,12 +7,10 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from talon_core import TalonCoreSession
 from talon_core.constants import SITREP_LEVELS
-from talon_core.sitrep import SITREP_STATUSES
 from talon_core.utils.logging import get_logger
 from talon_desktop.sitreps import (
-    DEFAULT_TEMPLATE_KEY,
-    SITREP_TEMPLATES,
     SitrepFeedItem,
+    available_operator_items,
     build_create_payload,
     build_filter_payload,
     feed_item_from_entry,
@@ -20,9 +18,7 @@ from talon_desktop.sitreps import (
     format_created_at,
     severity_counts,
     should_play_audio,
-    sitrep_template_for_key,
 )
-from talon_desktop.map_picker import format_coordinate, pick_point_on_map
 
 _log = get_logger("desktop.sitreps")
 
@@ -32,14 +28,6 @@ _LEVEL_COLORS = {
     "IMMEDIATE": "#f28c28",
     "FLASH": "#ff5555",
     "FLASH_OVERRIDE": "#ff2d75",
-}
-
-_STATUS_COLORS = {
-    "open": "#ff5555",
-    "acknowledged": "#6aa3d8",
-    "assigned": "#d6b85a",
-    "resolved": "#7fb069",
-    "closed": "#7fb069",
 }
 
 
@@ -54,46 +42,53 @@ class SitrepPage(QtWidgets.QWidget):
 
         self.heading = QtWidgets.QLabel("SITREPs")
         self.heading.setObjectName("pageHeading")
-        self.summary = QtWidgets.QLabel("")
-        self.summary.setWordWrap(True)
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setObjectName("sitrepMutedLabel")
         self.status_label.setWordWrap(True)
 
         self.level_filter = QtWidgets.QComboBox()
-        self.level_filter.addItem("All severities", "")
+        self.level_filter.addItem("All levels", "")
         for level in SITREP_LEVELS:
             self.level_filter.addItem(level, level)
         self.level_filter.currentIndexChanged.connect(lambda _index: self.refresh())
-        self.status_filter = QtWidgets.QComboBox()
-        self.status_filter.addItem("All statuses", "")
-        for status in SITREP_STATUSES:
-            self.status_filter.addItem(status.replace("_", " ").title(), status)
-        self.status_filter.currentIndexChanged.connect(lambda _index: self.refresh())
-        self.unresolved_filter = QtWidgets.QCheckBox("Unresolved")
-        self.unresolved_filter.toggled.connect(lambda _checked: self.refresh())
-        self.location_filter = QtWidgets.QCheckBox("Located")
-        self.location_filter.toggled.connect(lambda _checked: self.refresh())
-        self.pending_filter = QtWidgets.QCheckBox("Pending")
-        self.pending_filter.toggled.connect(lambda _checked: self.refresh())
+        self.show_closed_filter = QtWidgets.QCheckBox("Show closed")
+        self.show_closed_filter.toggled.connect(lambda _checked: self.refresh())
 
-        self.refresh_button = QtWidgets.QPushButton("Refresh")
-        self.refresh_button.clicked.connect(self.refresh)
-        self.audio_toggle = QtWidgets.QCheckBox("Audio")
-        self.audio_toggle.toggled.connect(self._on_audio_toggled)
         self.new_button = QtWidgets.QPushButton("New SITREP")
         self.new_button.clicked.connect(self._open_create_dialog)
+        self.audio_toggle = QtWidgets.QCheckBox("Audio")
+        self.audio_toggle.toggled.connect(self._on_audio_toggled)
+        self.refresh_button = QtWidgets.QPushButton("Refresh")
+        self.refresh_button.clicked.connect(self.refresh)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
         top_row.addStretch(1)
-        top_row.addWidget(self.refresh_button)
-        top_row.addWidget(self.audio_toggle)
         top_row.addWidget(self.new_button)
+        top_row.addWidget(self.audio_toggle)
+        top_row.addWidget(self.refresh_button)
+
+        self.level_counts: dict[str, _SitrepMetricBox] = {}
+        count_row = QtWidgets.QHBoxLayout()
+        for level in SITREP_LEVELS:
+            metric = _SitrepMetricBox(level.replace("_", " "), "0", "")
+            if level in {"FLASH", "FLASH_OVERRIDE"}:
+                metric.setProperty("tone", "alert")
+            elif level == "IMMEDIATE":
+                metric.setProperty("tone", "warn")
+            self.level_counts[level] = metric
+            count_row.addWidget(metric)
+        self.pending_metric = _SitrepMetricBox("Pending", "0", "")
+        count_row.addWidget(self.pending_metric)
+
+        filter_row = QtWidgets.QHBoxLayout()
+        filter_row.addWidget(_field_widget("Level", self.level_filter), stretch=1)
+        filter_row.addWidget(self.show_closed_filter)
+        filter_row.addStretch(3)
 
         self.feed = QtWidgets.QListWidget()
         self.feed.setObjectName("sitrepFeedList")
-        self.feed.setSpacing(8)
+        self.feed.setSpacing(6)
         self.feed.setUniformItemSizes(False)
         self.feed.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.feed.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -103,20 +98,19 @@ class SitrepPage(QtWidgets.QWidget):
         self.delete_button = QtWidgets.QPushButton("Delete")
         self.delete_button.clicked.connect(self._delete_selected)
         self.delete_button.setVisible(self._core.mode == "server")
-        self.ack_button = QtWidgets.QPushButton("Acknowledge")
-        self.ack_button.clicked.connect(self._acknowledge_selected)
+        self.delete_button.setEnabled(False)
         self.assign_button = QtWidgets.QPushButton("Assign")
         self.assign_button.clicked.connect(self._assign_selected)
-        self.close_button = QtWidgets.QPushButton("Close")
-        self.close_button.clicked.connect(self._close_selected)
-        self.incident_button = QtWidgets.QPushButton("Create Follow-up Incident")
-        self.incident_button.clicked.connect(self._create_incident_from_selected)
-        self.document_combo = QtWidgets.QComboBox()
-        self.link_document_button = QtWidgets.QPushButton("Link Document")
-        self.link_document_button.clicked.connect(self._link_document_selected)
+        self.assign_button.setEnabled(False)
+        self.append_button = QtWidgets.QPushButton("Append")
+        self.append_button.clicked.connect(self._append_selected)
+        self.append_button.setEnabled(False)
         self.detail_title_label = QtWidgets.QLabel("Select a SITREP")
         self.detail_title_label.setObjectName("sitrepDetailTitle")
         self.detail_status_tag = _tag_label("Open")
+        self.detail_context_label = QtWidgets.QLabel("")
+        self.detail_context_label.setObjectName("sitrepMutedLabel")
+        self.detail_context_label.setWordWrap(True)
         self.detail_body_field = QtWidgets.QTextEdit()
         self.detail_body_field.setObjectName("sitrepDetailBody")
         self.detail_body_field.setReadOnly(True)
@@ -130,83 +124,51 @@ class SitrepPage(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Expanding,
             QtWidgets.QSizePolicy.Fixed,
         )
-        self.detail_age_metric = _MiniMetaBox("Age", "-")
-        self.detail_ack_metric = _MiniMetaBox("Ack", "-")
-        self.detail_handler_metric = _MiniMetaBox("Handler", "-")
         self.activity_list = QtWidgets.QListWidget()
         self.activity_list.setObjectName("sitrepActivityList")
         self.activity_list.setSpacing(8)
         self.activity_list.setUniformItemSizes(False)
         self.activity_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.activity_list.setMinimumHeight(188)
+        self.activity_list.setMinimumHeight(160)
+        self.append_field = QtWidgets.QTextEdit()
+        self.append_field.setAcceptRichText(False)
+        self.append_field.setPlaceholderText("Add information")
+        self.append_field.setMinimumHeight(78)
+        self.append_field.setMaximumHeight(110)
 
-        metric_row = QtWidgets.QHBoxLayout()
-        self.metric_total = _SitrepMetricBox("Total", "0", "Current feed")
-        self.metric_unresolved = _SitrepMetricBox("Unresolved", "0", "Needs action", "warn")
-        self.metric_emergency = _SitrepMetricBox("Emergency", "0", "Flash active", "alert")
-        self.metric_located = _SitrepMetricBox("With Location", "0", "Native or linked")
-        self.metric_pending = _SitrepMetricBox("Pending Sync", "0", "Queued over RNS")
-        self.metric_attachments = _SitrepMetricBox("Attachments", "0", "Linked docs")
-        for metric in (
-            self.metric_total,
-            self.metric_unresolved,
-            self.metric_emergency,
-            self.metric_located,
-            self.metric_pending,
-            self.metric_attachments,
-        ):
-            metric_row.addWidget(metric)
-
-        filter_widget = QtWidgets.QWidget()
-        filter_layout = QtWidgets.QGridLayout(filter_widget)
-        filter_layout.setContentsMargins(0, 0, 0, 0)
-        filter_layout.setHorizontalSpacing(6)
-        filter_layout.setVerticalSpacing(6)
-        filter_layout.addWidget(self.level_filter, 0, 0)
-        filter_layout.addWidget(self.status_filter, 0, 1)
-        filter_layout.addWidget(self.unresolved_filter, 1, 0)
-        filter_layout.addWidget(self.location_filter, 1, 1)
-        filter_layout.addWidget(self.pending_filter, 1, 2)
-        filter_layout.setColumnStretch(0, 1)
-        filter_layout.setColumnStretch(1, 1)
-        filter_layout.setColumnStretch(2, 1)
         feed_body = QtWidgets.QWidget()
         feed_layout = QtWidgets.QVBoxLayout(feed_body)
         feed_layout.setContentsMargins(0, 0, 0, 0)
         feed_layout.setSpacing(10)
-        feed_layout.addWidget(filter_widget)
         feed_layout.addWidget(self.feed, stretch=1)
-        feed_panel = _panel("Operational Feed", feed_body, ("FLASH", "IMMEDIATE"))
+        feed_panel = _panel("SITREP List", feed_body)
         feed_panel.setMinimumWidth(260)
 
         detail_card = QtWidgets.QFrame()
         detail_card.setObjectName("sitrepDetailCard")
         detail_card_layout = QtWidgets.QVBoxLayout(detail_card)
         detail_card_layout.addWidget(self.detail_title_label)
+        detail_card_layout.addWidget(self.detail_context_label)
         detail_card_layout.addWidget(self.detail_body_field)
-        detail_meta_row = QtWidgets.QHBoxLayout()
-        for metric in (self.detail_age_metric, self.detail_ack_metric, self.detail_handler_metric):
-            detail_meta_row.addWidget(metric)
-        detail_card_layout.addLayout(detail_meta_row)
-        followup_grid = QtWidgets.QGridLayout()
-        followup_grid.setContentsMargins(0, 0, 0, 0)
-        followup_grid.addWidget(self.ack_button, 0, 0)
-        followup_grid.addWidget(self.assign_button, 0, 1)
-        followup_grid.addWidget(self.close_button, 1, 0)
-        followup_grid.addWidget(self.incident_button, 1, 1)
+        append_row = QtWidgets.QHBoxLayout()
+        append_row.addWidget(self.append_field, stretch=1)
+        append_row.addWidget(self.assign_button)
+        append_row.addWidget(self.append_button)
+        detail_card_layout.addLayout(append_row)
         if self._core.mode == "server":
-            followup_grid.addWidget(self.delete_button, 2, 0, 1, 2)
-        detail_card_layout.addLayout(followup_grid)
-        document_row = QtWidgets.QHBoxLayout()
-        document_row.addWidget(self.document_combo, stretch=1)
-        document_row.addWidget(self.link_document_button)
+            delete_row = QtWidgets.QHBoxLayout()
+            delete_label = QtWidgets.QLabel("Server-only destructive control")
+            delete_label.setObjectName("sitrepMutedLabel")
+            delete_row.addWidget(delete_label, stretch=1)
+            delete_row.addWidget(self.delete_button)
+            detail_card_layout.addLayout(delete_row)
+
         detail = QtWidgets.QWidget()
         detail_layout = QtWidgets.QVBoxLayout(detail)
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(10)
         detail_layout.addWidget(detail_card)
         detail_layout.addWidget(self.activity_list, stretch=1)
-        detail_layout.addLayout(document_row)
         detail_panel = _panel(
             "Selected Detail",
             detail,
@@ -223,77 +185,10 @@ class SitrepPage(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top_row)
-        layout.addWidget(self.summary)
-        layout.addLayout(metric_row)
+        layout.addLayout(count_row)
+        layout.addLayout(filter_row)
         layout.addWidget(self.status_label)
         layout.addWidget(splitter, stretch=1)
-
-    def refresh(self) -> None:
-        try:
-            self._sync_audio_toggle()
-            self._refresh_link_selectors()
-            entries = self._core.read_model("sitreps.list", self._filter_payload())
-            self._items = feed_items_from_entries(entries)
-        except Exception as exc:
-            _log.warning("Could not refresh SITREPs: %s", exc)
-            self.status_label.setText(f"Unable to refresh SITREPs: {exc}")
-            return
-
-        self.feed.clear()
-        self._feed_cards.clear()
-        counts = severity_counts(self._items)
-        self.summary.setText(
-            f"{len(self._items)} total | "
-            f"Priority {counts.get('PRIORITY', 0)} | "
-            f"Immediate {counts.get('IMMEDIATE', 0)} | "
-            f"Flash {counts.get('FLASH', 0) + counts.get('FLASH_OVERRIDE', 0)}"
-        )
-        self._update_metrics(counts)
-        if not self._items:
-            self.feed.addItem("No SITREPs logged.")
-            self._selection_changed()
-            return
-        for item in self._items:
-            widget_item = self._list_item(item)
-            self.feed.addItem(widget_item)
-            card = _SitrepFeedCard(item)
-            self.feed.setItemWidget(widget_item, card)
-            widget_item.setSizeHint(card.sizeHint())
-            self._feed_cards[item.id] = card
-        self.feed.setCurrentRow(0)
-        self._selection_changed()
-
-    def _update_metrics(self, counts: dict[str, int]) -> None:
-        unresolved = sum(1 for item in self._items if item.unresolved)
-        emergency = counts.get("FLASH", 0) + counts.get("FLASH_OVERRIDE", 0)
-        located = sum(1 for item in self._items if item.has_location)
-        pending = 0
-        attachments = 0
-        try:
-            dashboard = self._core.read_model("dashboard.summary")
-            dashboard_counts = getattr(dashboard, "counts", {}) or {}
-            sync = getattr(dashboard, "sync", None)
-            pending_by_table = getattr(sync, "pending_outbox_by_table", {}) or {}
-            pending = sum(
-                int(pending_by_table.get(table, 0) or 0)
-                for table in ("sitreps", "sitrep_followups", "sitrep_documents")
-            )
-            attachments = int(dashboard_counts.get("sitrep_documents", 0) or 0)
-        except Exception:
-            pass
-        self.metric_total.set_metric(str(len(self._items)), "Current feed")
-        self.metric_unresolved.set_metric(str(unresolved), "Needs action")
-        self.metric_emergency.set_metric(str(emergency), "Flash active")
-        self.metric_located.set_metric(str(located), "Native or linked")
-        self.metric_pending.set_metric(str(pending), "Queued over RNS")
-        self.metric_attachments.set_metric(str(attachments), "Linked docs")
-
-    def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
-        if table not in {"sitreps", "sitrep_followups", "sitrep_documents", "incidents"}:
-            return
-        if action != "changed":
-            return
-        self.refresh()
 
     def _delete_selected(self) -> None:
         if self._core.mode != "server":
@@ -323,28 +218,6 @@ class SitrepPage(QtWidgets.QWidget):
         self.status_label.setText("SITREP deleted.")
         self.refresh()
 
-    def _filter_payload(self) -> dict[str, object]:
-        return build_filter_payload(
-            level_filter=str(self.level_filter.currentData() or ""),
-            status_filter=str(self.status_filter.currentData() or ""),
-            unresolved_only=self.unresolved_filter.isChecked(),
-            has_location=self.location_filter.isChecked(),
-            pending_sync_only=self.pending_filter.isChecked(),
-        )
-
-    def _open_create_dialog(self) -> None:
-        dialog = SitrepCreateDialog(self._core, parent=self)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
-            return
-        try:
-            self._core.command("sitreps.create", dialog.payload())
-        except Exception as exc:
-            _log.warning("Could not create SITREP: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "SITREP", f"SITREP not sent: {exc}")
-            return
-        self.status_label.setText("SITREP sent.")
-        self.refresh()
-
     def _sync_audio_toggle(self) -> None:
         enabled = bool(self._core.read_model("settings.audio_enabled"))
         self._syncing_audio = True
@@ -363,105 +236,10 @@ class SitrepPage(QtWidgets.QWidget):
             self.status_label.setText(f"Audio setting not saved: {exc}")
             self._sync_audio_toggle()
 
-    def _refresh_link_selectors(self) -> None:
-        current_document = self._combo_int(self.document_combo)
-
-        self.document_combo.blockSignals(True)
-        try:
-            self.document_combo.clear()
-            self.document_combo.addItem("None", None)
-            for item in self._core.read_model("documents.list", {"limit": 100}):
-                doc = getattr(item, "document", item)
-                self.document_combo.addItem(str(getattr(doc, "filename", "Document")), int(doc.id))
-            self._restore_combo_value(self.document_combo, current_document)
-        finally:
-            self.document_combo.blockSignals(False)
-
     def _list_item(self, item: SitrepFeedItem) -> QtWidgets.QListWidgetItem:
         widget_item = QtWidgets.QListWidgetItem()
         widget_item.setData(QtCore.Qt.UserRole, item.id)
         return widget_item
-
-    def _selection_changed(self) -> None:
-        sitrep_id = self._selected_sitrep_id()
-        has_selection = sitrep_id is not None
-        self._sync_feed_card_selection(sitrep_id)
-        for button in (
-            self.ack_button,
-            self.assign_button,
-            self.close_button,
-            self.incident_button,
-            self.link_document_button,
-        ):
-            button.setEnabled(has_selection)
-        if sitrep_id is None:
-            self._clear_detail_panel()
-            return
-        try:
-            detail = self._core.read_model("sitreps.detail", {"sitrep_id": sitrep_id})
-        except Exception as exc:
-            self.detail_title_label.setText("Unable to load SITREP detail")
-            self.detail_body_field.setPlainText(str(exc))
-            self.activity_list.clear()
-            return
-        sitrep = detail["sitrep"]
-        documents = detail.get("documents", [])
-        followups = detail.get("followups", [])
-        incidents = detail.get("incidents", [])
-        title = f"{sitrep.level} #{sitrep.id} / {sitrep.status.replace('_', ' ').title()}"
-        self.detail_title_label.setText(title)
-        self.detail_status_tag.setText(_status_label(sitrep.status))
-        self.detail_status_tag.setProperty("tone", _tone_for_text(sitrep.status))
-        self.detail_status_tag.style().unpolish(self.detail_status_tag)
-        self.detail_status_tag.style().polish(self.detail_status_tag)
-        location = sitrep.location_label or "No label"
-        if sitrep.lat is not None and sitrep.lon is not None:
-            location += f" | {sitrep.lat:.6f}, {sitrep.lon:.6f}"
-        body_lines = [
-            _as_text(sitrep.body) or "No body.",
-            "",
-            f"Reporter: {detail.get('callsign', '') or 'UNKNOWN'}",
-            f"Mission: {detail.get('mission_title', '') or sitrep.mission_id or 'None'}",
-            f"Assignment: {detail.get('assignment_title', '') or sitrep.assignment_id or 'None'}",
-            f"Asset: {detail.get('asset_label', '') or sitrep.asset_id or 'None'}",
-            f"Location: {location}",
-            f"Documents: {len(documents)} | Linked incidents: {len(incidents)}",
-        ]
-        if sitrep.disposition:
-            body_lines.append(f"Disposition: {sitrep.disposition}")
-        self.detail_body_field.setPlainText("\n".join(body_lines))
-        self.detail_age_metric.set_value(format_created_at(sitrep.created_at))
-        acknowledged = any(item.action == "acknowledged" for item in followups)
-        self.detail_ack_metric.set_value("Command" if acknowledged else "Open")
-        self.detail_handler_metric.set_value(sitrep.assigned_to or "Unassigned")
-
-        self.activity_list.clear()
-        for item in followups[-8:]:
-            note = item.note or item.assigned_to or item.status or item.action
-            self._add_activity_card(
-                f"{format_created_at(item.created_at)} {item.action.replace('_', ' ').title()}",
-                note,
-            )
-        for entry in documents[:4]:
-            document = entry.get("document")
-            filename = getattr(document, "filename", "Missing document")
-            self._add_activity_card("Document linked", str(filename))
-        if incidents:
-            self._add_activity_card("Linked incidents", str(len(incidents)))
-        if self.activity_list.count() == 0:
-            self._add_activity_card("No follow-ups yet.", "Append-only activity will appear here.")
-
-    def _clear_detail_panel(self) -> None:
-        self.detail_title_label.setText("Select a SITREP")
-        self.detail_status_tag.setText("Open")
-        self.detail_status_tag.setProperty("tone", "red")
-        self.detail_status_tag.style().unpolish(self.detail_status_tag)
-        self.detail_status_tag.style().polish(self.detail_status_tag)
-        self.detail_body_field.clear()
-        self.detail_age_metric.set_value("-")
-        self.detail_ack_metric.set_value("-")
-        self.detail_handler_metric.set_value("-")
-        self.activity_list.clear()
 
     def _add_activity_card(self, title: str, note: str) -> None:
         item = QtWidgets.QListWidgetItem()
@@ -483,380 +261,204 @@ class SitrepPage(QtWidgets.QWidget):
             return None
         return int(value)
 
-    def _acknowledge_selected(self) -> None:
+    def refresh(self) -> None:
+        selected_id = self._selected_sitrep_id()
+        try:
+            self._sync_audio_toggle()
+            base_filters = build_filter_payload(
+                unresolved_only=not self.show_closed_filter.isChecked(),
+            )
+            all_entries = self._core.read_model("sitreps.list", base_filters)
+            all_items = feed_items_from_entries(all_entries)
+        except Exception as exc:
+            _log.warning("Could not refresh SITREPs: %s", exc)
+            self.status_label.setText(f"Unable to refresh SITREPs: {exc}")
+            return
+
+        level_filter = str(self.level_filter.currentData() or "")
+        self._items = [
+            item for item in all_items if not level_filter or item.level == level_filter
+        ]
+        self._update_level_strip(all_items)
+        self.feed.clear()
+        self._feed_cards.clear()
+        if not self._items:
+            self.feed.addItem("No SITREPs logged.")
+            self._selection_changed()
+            return
+        restore_row = 0
+        for index, item in enumerate(self._items):
+            widget_item = self._list_item(item)
+            self.feed.addItem(widget_item)
+            card = _SitrepFeedCard(item)
+            self.feed.setItemWidget(widget_item, card)
+            widget_item.setSizeHint(card.sizeHint())
+            self._feed_cards[item.id] = card
+            if item.id == selected_id:
+                restore_row = index
+        self.feed.setCurrentRow(restore_row)
+        self._selection_changed()
+
+    def _update_level_strip(self, items: list[SitrepFeedItem]) -> None:
+        counts = severity_counts(items)
+        for level, metric in self.level_counts.items():
+            metric.set_metric(str(counts.get(level, 0)), "")
+        pending = 0
+        try:
+            dashboard = self._core.read_model("dashboard.summary")
+            sync = getattr(dashboard, "sync", None)
+            pending_by_table = getattr(sync, "pending_outbox_by_table", {}) or {}
+            pending = sum(
+                int(pending_by_table.get(table, 0) or 0)
+                for table in ("sitreps", "sitrep_followups")
+            )
+        except Exception:
+            pending = 0
+        self.pending_metric.set_metric(str(pending), "")
+
+    def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
+        if action != "changed":
+            return
+        if table in {"sitreps", "sitrep_followups", "assignments", "operators"}:
+            self.refresh()
+
+    def _selection_changed(self) -> None:
+        sitrep_id = self._selected_sitrep_id()
+        has_selection = sitrep_id is not None
+        self._sync_feed_card_selection(sitrep_id)
+        self.append_button.setEnabled(has_selection)
+        self.assign_button.setEnabled(has_selection)
+        if self._core.mode == "server":
+            self.delete_button.setEnabled(has_selection)
+        if sitrep_id is None:
+            self._clear_detail_panel()
+            return
+        try:
+            detail = self._core.read_model("sitreps.detail", {"sitrep_id": sitrep_id})
+        except Exception as exc:
+            self.detail_title_label.setText("Unable to load SITREP detail")
+            self.detail_context_label.clear()
+            self.detail_body_field.setPlainText(str(exc))
+            self.activity_list.clear()
+            return
+        sitrep = detail["sitrep"]
+        title = f"{sitrep.level} SITREP #{sitrep.id}"
+        if sitrep.assigned_to:
+            title += f" / {sitrep.assigned_to}"
+        self.detail_title_label.setText(title)
+        self.detail_status_tag.setText(_status_label(sitrep.status))
+        self.detail_status_tag.setProperty("tone", _tone_for_text(sitrep.status))
+        self.detail_status_tag.style().unpolish(self.detail_status_tag)
+        self.detail_status_tag.style().polish(self.detail_status_tag)
+        self.detail_context_label.setText(self._detail_context_text(detail))
+        self.detail_body_field.setPlainText(_as_text(sitrep.body) or "No body.")
+
+        self.activity_list.clear()
+        followups = list(detail.get("followups", []))
+        for item in followups[-10:]:
+            self._add_activity_card(
+                f"{format_created_at(item.created_at)} {item.action.replace('_', ' ').title()}",
+                self._followup_note(item),
+            )
+        if self.activity_list.count() == 0:
+            self._add_activity_card("No appended information yet.", "Append updates will appear here.")
+
+    def _detail_context_text(self, detail: dict[str, typing.Any]) -> str:
+        sitrep = detail["sitrep"]
+        parts = [
+            str(detail.get("callsign", "") or "UNKNOWN"),
+            format_created_at(sitrep.created_at),
+            _status_label(sitrep.status),
+        ]
+        if sitrep.location_label:
+            parts.append(sitrep.location_label)
+        if sitrep.assigned_to:
+            parts.append(f"Assigned: {sitrep.assigned_to}")
+        else:
+            parts.append("Unassigned")
+        links: list[str] = []
+        if detail.get("mission_title") or sitrep.mission_id:
+            links.append(f"Mission: {detail.get('mission_title') or sitrep.mission_id}")
+        if detail.get("assignment_title") or sitrep.assignment_id:
+            links.append(f"Assignment: {detail.get('assignment_title') or sitrep.assignment_id}")
+        if detail.get("asset_label") or sitrep.asset_id:
+            links.append(f"Asset: {detail.get('asset_label') or sitrep.asset_id}")
+        return " | ".join([*parts, *links])
+
+    def _followup_note(self, item: object) -> str:
+        action = str(getattr(item, "action", "") or "")
+        note = str(getattr(item, "note", "") or "")
+        assigned_to = str(getattr(item, "assigned_to", "") or "")
+        status = str(getattr(item, "status", "") or "")
+        if action == "assigned":
+            label = f"Assigned to {assigned_to or note or 'operator'}"
+            return f"{label}. {note}" if note and note != assigned_to else label
+        if action in {"status", "resolved"}:
+            return note or status or "Status updated."
+        return note or assigned_to or status or "Information appended."
+
+    def _clear_detail_panel(self) -> None:
+        self.detail_title_label.setText("Select a SITREP")
+        self.detail_status_tag.setText("Open")
+        self.detail_status_tag.setProperty("tone", "red")
+        self.detail_status_tag.style().unpolish(self.detail_status_tag)
+        self.detail_status_tag.style().polish(self.detail_status_tag)
+        self.detail_context_label.clear()
+        self.detail_body_field.clear()
+        self.append_field.clear()
+        self.activity_list.clear()
+
+    def _append_selected(self) -> None:
         sitrep_id = self._selected_sitrep_id()
         if sitrep_id is None:
             return
+        note = self.append_field.toPlainText().strip()
+        if not note:
+            self.status_label.setText("Append text is required.")
+            return
         try:
-            self._core.command("sitreps.acknowledge", {"sitrep_id": sitrep_id})
-            self.refresh()
+            self._core.command(
+                "sitreps.append_note",
+                {"sitrep_id": sitrep_id, "note": note},
+            )
         except Exception as exc:
-            _log.warning("SITREP acknowledge failed: %s", exc)
+            _log.warning("SITREP append failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "SITREP", str(exc))
+            return
+        self.append_field.clear()
+        self.status_label.setText("Information appended.")
+        self.refresh()
 
     def _assign_selected(self) -> None:
         sitrep_id = self._selected_sitrep_id()
         if sitrep_id is None:
             return
-        assignee, accepted = QtWidgets.QInputDialog.getText(
-            self,
-            "Assign SITREP",
-            "Handler or team",
-        )
-        if not accepted:
+        dialog = SitrepAssignDialog(self._core, sitrep_id=sitrep_id, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         try:
-            self._core.command(
-                "sitreps.assign_followup",
-                {"sitrep_id": sitrep_id, "assigned_to": assignee.strip()},
-            )
-            self.refresh()
+            payload = dialog.payload()
+            payload["sitrep_id"] = sitrep_id
+            self._core.command("sitreps.assign_followup", payload)
         except Exception as exc:
             _log.warning("SITREP assign failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "SITREP", str(exc))
-
-    def _close_selected(self) -> None:
-        sitrep_id = self._selected_sitrep_id()
-        if sitrep_id is None:
             return
-        disposition, accepted = QtWidgets.QInputDialog.getMultiLineText(
-            self,
-            "Close SITREP",
-            "Disposition",
-            "",
-        )
-        if not accepted:
+        self.status_label.setText("SITREP assigned.")
+        self.refresh()
+
+    def _open_create_dialog(self) -> None:
+        dialog = SitrepCreateDialog(self._core, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         try:
-            self._core.command(
-                "sitreps.update_status",
-                {
-                    "sitrep_id": sitrep_id,
-                    "status": "closed",
-                    "note": disposition.strip(),
-                },
-            )
-            self.refresh()
+            self._core.command("sitreps.create", dialog.payload())
         except Exception as exc:
-            _log.warning("SITREP close failed: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "SITREP", str(exc))
-
-    def _create_incident_from_selected(self) -> None:
-        sitrep_id = self._selected_sitrep_id()
-        if sitrep_id is None:
+            _log.warning("Could not create SITREP: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "SITREP", f"SITREP not sent: {exc}")
             return
-        try:
-            detail = self._core.read_model("sitreps.detail", {"sitrep_id": sitrep_id})
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "SITREP", str(exc))
-            return
-        sitrep = detail["sitrep"]
-        try:
-            from talon_desktop.community_safety_page import IncidentCreateDialog
-
-            dialog = IncidentCreateDialog(
-                self._core,
-                parent=self,
-                linked_assignment_id=sitrep.assignment_id,
-                linked_sitrep_id=sitrep.id,
-                linked_mission_id=sitrep.mission_id,
-                linked_asset_id=sitrep.asset_id,
-                default_title=f"{sitrep.level} SITREP #{sitrep.id}",
-                default_location=sitrep.location_label,
-                default_narrative=_as_text(sitrep.body),
-                default_severity=sitrep.level,
-            )
-            if dialog.exec() != QtWidgets.QDialog.Accepted:
-                return
-            self._core.command("incidents.create", dialog.payload())
-            self.refresh()
-        except Exception as exc:
-            _log.warning("Incident create from SITREP failed: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
-
-    def _link_document_selected(self) -> None:
-        sitrep_id = self._selected_sitrep_id()
-        document_id = self._combo_int(self.document_combo)
-        if sitrep_id is None or document_id is None:
-            return
-        try:
-            self._core.command(
-                "sitreps.link_document",
-                {"sitrep_id": sitrep_id, "document_id": document_id},
-            )
-            self.refresh()
-        except Exception as exc:
-            _log.warning("SITREP document link failed: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "SITREP", str(exc))
-
-    @staticmethod
-    def _combo_int(combo: QtWidgets.QComboBox) -> int | None:
-        value = combo.currentData()
-        if value in (None, ""):
-            return None
-        return int(typing.cast(int, value))
-
-    @staticmethod
-    def _restore_combo_value(combo: QtWidgets.QComboBox, value: int | None) -> None:
-        if value is None:
-            combo.setCurrentIndex(0)
-            return
-        index = combo.findData(value)
-        combo.setCurrentIndex(index if index >= 0 else 0)
-
-
-class SitrepCreateDialog(QtWidgets.QDialog):
-    """Modal SITREP composer launched from the feed page."""
-
-    def __init__(self, core: TalonCoreSession, parent=None) -> None:
-        super().__init__(parent)
-        self._core = core
-        self.setWindowTitle("New SITREP")
-        self.resize(760, 620)
-
-        self.level_combo = QtWidgets.QComboBox()
-        for level in SITREP_LEVELS:
-            self.level_combo.addItem(level, level)
-        self.create_status_combo = QtWidgets.QComboBox()
-        for status in SITREP_STATUSES:
-            self.create_status_combo.addItem(status.replace("_", " ").title(), status)
-        self.asset_combo = QtWidgets.QComboBox()
-        self.mission_combo = QtWidgets.QComboBox()
-        self.assignment_combo = QtWidgets.QComboBox()
-        self.template_combo = QtWidgets.QComboBox()
-        for template in SITREP_TEMPLATES:
-            self.template_combo.addItem(template.label, template.key)
-        self.apply_template_button = QtWidgets.QPushButton("Apply")
-        self.apply_template_button.clicked.connect(self._apply_template)
-        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
-        self.location_label_field = QtWidgets.QLineEdit()
-        self.location_label_field.setPlaceholderText("Location label")
-        self.lat_field = QtWidgets.QLineEdit()
-        self.lat_field.setPlaceholderText("Latitude")
-        self.lon_field = QtWidgets.QLineEdit()
-        self.lon_field.setPlaceholderText("Longitude")
-        self.pick_location_button = QtWidgets.QPushButton("Map")
-        self.pick_location_button.setToolTip("Pick on Map")
-        self.pick_location_button.clicked.connect(self._pick_location)
-        self.location_precision_combo = QtWidgets.QComboBox()
-        for label in ("", "general", "approximate", "exact"):
-            self.location_precision_combo.addItem(label or "None", label)
-        self.location_source_combo = QtWidgets.QComboBox()
-        for label in ("", "manual", "device", "map", "asset", "assignment"):
-            self.location_source_combo.addItem(label or "None", label)
-        self.body_field = QtWidgets.QTextEdit()
-        self.body_field.setPlaceholderText("Compose situation report")
-        self.body_field.setMinimumHeight(150)
-        self.sensitivity_combo = QtWidgets.QComboBox()
-        for sensitivity in ("team", "mission", "command", "protected"):
-            self.sensitivity_combo.addItem(sensitivity.replace("_", " ").title(), sensitivity)
-        self.status_label = QtWidgets.QLabel("")
-        self.status_label.setWordWrap(True)
-
-        form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(9)
-        form.addWidget(_field_widget("Severity", self.level_combo), 0, 0)
-        form.addWidget(_field_widget("Status", self.create_status_combo), 0, 1)
-        form.addWidget(_field_widget("Mission", self.mission_combo), 1, 0)
-        form.addWidget(_field_widget("Assignment", self.assignment_combo), 1, 1)
-        form.addWidget(_field_widget("Asset", self.asset_combo), 2, 0)
-        form.addWidget(_field_widget("Privacy", self.sensitivity_combo), 2, 1)
-        form.addWidget(_field_widget("Location", self.location_label_field), 3, 0, 1, 2)
-
-        coord_row = QtWidgets.QWidget()
-        coord_layout = QtWidgets.QHBoxLayout(coord_row)
-        coord_layout.setContentsMargins(0, 0, 0, 0)
-        coord_layout.setSpacing(8)
-        coord_layout.addWidget(self.lat_field)
-        coord_layout.addWidget(self.lon_field)
-        coord_layout.addWidget(self.pick_location_button)
-        form.addWidget(_field_widget("Lat / Lon", coord_row), 4, 0, 1, 2)
-
-        location_meta_row = QtWidgets.QWidget()
-        location_meta_layout = QtWidgets.QHBoxLayout(location_meta_row)
-        location_meta_layout.setContentsMargins(0, 0, 0, 0)
-        location_meta_layout.setSpacing(8)
-        location_meta_layout.addWidget(self.location_precision_combo)
-        location_meta_layout.addWidget(self.location_source_combo)
-        form.addWidget(_field_widget("Location Meta", location_meta_row), 5, 0, 1, 2)
-        form.addWidget(_field_widget("Template", self._template_row()), 6, 0, 1, 2)
-        form.addWidget(_field_widget("Body", self.body_field), 7, 0, 1, 2)
-        form.addWidget(self.status_label, 8, 0, 1, 2)
-
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
-        )
-        buttons.button(QtWidgets.QDialogButtonBox.Ok).setText("Send")
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        clear_button = buttons.addButton("Clear", QtWidgets.QDialogButtonBox.ResetRole)
-        clear_button.clicked.connect(self._clear)
-
-        scroll_body = QtWidgets.QWidget()
-        scroll_body.setLayout(form)
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(scroll_body)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(scroll, stretch=1)
-        layout.addWidget(buttons)
-
-        self._refresh_link_selectors()
-
-    def payload(self) -> dict[str, object]:
-        return build_create_payload(
-            level=str(self.level_combo.currentData()),
-            body=self.body_field.toPlainText(),
-            template=self._selected_template_key(),
-            asset_id=self._combo_int(self.asset_combo),
-            mission_id=self._combo_int(self.mission_combo),
-            assignment_id=self._combo_int(self.assignment_combo),
-            location_label=self.location_label_field.text(),
-            lat_text=self.lat_field.text(),
-            lon_text=self.lon_field.text(),
-            location_precision=str(self.location_precision_combo.currentData() or ""),
-            location_source=str(self.location_source_combo.currentData() or ""),
-            status=str(self.create_status_combo.currentData() or "open"),
-            sensitivity=str(self.sensitivity_combo.currentData() or "team"),
-        )
-
-    def accept(self) -> None:
-        try:
-            self.payload()
-        except Exception as exc:
-            self.status_label.setText(str(exc))
-            return
-        super().accept()
-
-    def _refresh_link_selectors(self) -> None:
-        self.asset_combo.clear()
-        self.asset_combo.addItem("None", None)
-        self.mission_combo.clear()
-        self.mission_combo.addItem("None", None)
-        self.assignment_combo.clear()
-        self.assignment_combo.addItem("None", None)
-        try:
-            for asset in self._core.read_model("assets.list"):
-                self.asset_combo.addItem(str(getattr(asset, "label", asset.id)), int(asset.id))
-            for mission in self._core.read_model("missions.list", {"status_filter": None}):
-                if getattr(mission, "status", "") not in ("pending_approval", "active"):
-                    continue
-                label = f"{mission.title} [{mission.status}]"
-                self.mission_combo.addItem(label, int(mission.id))
-            for assignment in self._core.read_model("assignments.list", {"active_only": True}):
-                label = f"{getattr(assignment, 'title', 'Assignment')} [{getattr(assignment, 'status', '')}]"
-                self.assignment_combo.addItem(label, int(assignment.id))
-        except Exception as exc:
-            _log.warning("Could not load SITREP composer selectors: %s", exc)
-            self.status_label.setText(f"Unable to load link selectors: {exc}")
-
-    def _pick_location(self) -> None:
-        try:
-            initial_lat = _optional_coordinate(
-                self.lat_field.text(),
-                "SITREP latitude",
-                -90.0,
-                90.0,
-            )
-            initial_lon = _optional_coordinate(
-                self.lon_field.text(),
-                "SITREP longitude",
-                -180.0,
-                180.0,
-            )
-        except ValueError as exc:
-            self.status_label.setText(str(exc))
-            return
-        if (initial_lat is None) != (initial_lon is None):
-            self.status_label.setText(
-                "Both latitude and longitude are required for an existing map point."
-            )
-            return
-        selected = pick_point_on_map(
-            core=self._core,
-            title=self.location_label_field.text().strip() or "SITREP Location",
-            initial_lat=initial_lat,
-            initial_lon=initial_lon,
-            parent=self,
-        )
-        if selected is None:
-            return
-        formatted = format_coordinate(*selected).split(", ")
-        self.lat_field.setText(formatted[0])
-        self.lon_field.setText(formatted[1])
-        self._set_combo_value(self.location_precision_combo, "exact")
-        self._set_combo_value(self.location_source_combo, "map")
-        self.status_label.clear()
-
-    def _template_row(self) -> QtWidgets.QWidget:
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        layout.addWidget(self.template_combo, stretch=1)
-        layout.addWidget(self.apply_template_button)
-        return widget
-
-    def _apply_template(self) -> None:
-        key = self._selected_template_id()
-        if key == DEFAULT_TEMPLATE_KEY:
-            self.status_label.setText("Free text template selected.")
-            return
-        try:
-            template = sitrep_template_for_key(key)
-        except KeyError as exc:
-            self.status_label.setText(str(exc))
-            return
-        level_index = self.level_combo.findData(template.level)
-        if level_index >= 0:
-            self.level_combo.setCurrentIndex(level_index)
-        current_body = self.body_field.toPlainText().strip()
-        if current_body:
-            self.body_field.append("\n" + template.body)
-        else:
-            self.body_field.setPlainText(template.body)
-        self.status_label.setText(f"Applied template: {template.label}.")
-
-    def _clear(self) -> None:
-        self.body_field.clear()
-        self.asset_combo.setCurrentIndex(0)
-        self.mission_combo.setCurrentIndex(0)
-        self.assignment_combo.setCurrentIndex(0)
-        self.create_status_combo.setCurrentIndex(0)
-        self._set_template_selection(DEFAULT_TEMPLATE_KEY)
-        self.location_label_field.clear()
-        self.lat_field.clear()
-        self.lon_field.clear()
-        self.location_precision_combo.setCurrentIndex(0)
-        self.location_source_combo.setCurrentIndex(0)
-        self.sensitivity_combo.setCurrentIndex(0)
-        self.status_label.clear()
-
-    def _selected_template_key(self) -> str:
-        key = self._selected_template_id()
-        return "" if key == DEFAULT_TEMPLATE_KEY else key
-
-    def _selected_template_id(self) -> str:
-        return str(self.template_combo.currentData() or DEFAULT_TEMPLATE_KEY)
-
-    def _set_template_selection(self, key: str) -> None:
-        index = self.template_combo.findData(key)
-        self.template_combo.setCurrentIndex(index if index >= 0 else 0)
-
-    @staticmethod
-    def _combo_int(combo: QtWidgets.QComboBox) -> int | None:
-        value = combo.currentData()
-        if value in (None, ""):
-            return None
-        return int(typing.cast(int, value))
-
-    @staticmethod
-    def _set_combo_value(combo: QtWidgets.QComboBox, value: str) -> None:
-        index = combo.findData(value)
-        if index >= 0:
-            combo.setCurrentIndex(index)
+        self.status_label.setText("SITREP sent.")
+        self.refresh()
 
 
 def _panel(
@@ -947,24 +549,6 @@ class _SitrepMetricBox(QtWidgets.QFrame):
     def set_metric(self, value: str, subtitle: str) -> None:
         self.value.setText(value)
         self.subtitle.setText(subtitle)
-
-
-class _MiniMetaBox(QtWidgets.QFrame):
-    def __init__(self, title: str, value: str) -> None:
-        super().__init__()
-        self.setObjectName("sitrepMiniMeta")
-        self.title = QtWidgets.QLabel(title)
-        self.title.setObjectName("sitrepMiniMetaTitle")
-        self.value = QtWidgets.QLabel(value)
-        self.value.setObjectName("sitrepMiniMetaValue")
-        self.value.setWordWrap(True)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.addWidget(self.title)
-        layout.addWidget(self.value)
-
-    def set_value(self, value: str) -> None:
-        self.value.setText(value)
 
 
 class _SitrepFeedCard(QtWidgets.QFrame):
@@ -1065,16 +649,243 @@ class _SitrepCommandSplitter(QtWidgets.QSplitter):
 
     def ensure_command_sizes(self) -> None:
         sizes = self.sizes()
-        if self.count() == 2:
-            if len(sizes) != 2 or sizes[1] < 240 or min(sizes) <= 0:
-                width = max(780, sum(sizes) or self.width())
-                self.setSizes([int(width * 0.63), int(width * 0.37)])
+        if self.count() != 2:
             return
-        if self.count() != 3:
-            return
-        if len(sizes) != 3 or sizes[2] < 240 or min(sizes) <= 0:
+        if len(sizes) != 2 or sizes[1] < 240 or min(sizes) <= 0:
             width = max(780, sum(sizes) or self.width())
-            self.setSizes([int(width * 0.42), int(width * 0.31), int(width * 0.27)])
+            self.setSizes([int(width * 0.63), int(width * 0.37)])
+
+
+class SitrepCreateDialog(QtWidgets.QDialog):
+    """Minimal SITREP composer with optional collapsed context."""
+
+    def __init__(self, core: TalonCoreSession, parent=None) -> None:
+        super().__init__(parent)
+        self._core = core
+        self.setWindowTitle("New SITREP")
+        self.resize(520, 430)
+
+        self.level_combo = QtWidgets.QComboBox()
+        for level in SITREP_LEVELS:
+            self.level_combo.addItem(level, level)
+        self.body_field = QtWidgets.QTextEdit()
+        self.body_field.setAcceptRichText(False)
+        self.body_field.setPlaceholderText("Describe the situation")
+        self.body_field.setMinimumHeight(160)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setObjectName("sitrepMutedLabel")
+        self.status_label.setWordWrap(True)
+
+        self.context_group = QtWidgets.QGroupBox("Optional context")
+        self.context_group.setCheckable(True)
+        self.context_group.setChecked(False)
+        self.context_group.toggled.connect(self._sync_context_visibility)
+        self.asset_combo = QtWidgets.QComboBox()
+        self.mission_combo = QtWidgets.QComboBox()
+        self.assignment_combo = QtWidgets.QComboBox()
+        self.location_label_field = QtWidgets.QLineEdit()
+        self.location_label_field.setPlaceholderText("Location label")
+        self.lat_field = QtWidgets.QLineEdit()
+        self.lat_field.setPlaceholderText("Latitude")
+        self.lon_field = QtWidgets.QLineEdit()
+        self.lon_field.setPlaceholderText("Longitude")
+
+        context_form = QtWidgets.QFormLayout(self.context_group)
+        context_form.addRow("Mission", self.mission_combo)
+        context_form.addRow("Assignment", self.assignment_combo)
+        context_form.addRow("Asset", self.asset_combo)
+        context_form.addRow("Location", self.location_label_field)
+        coord_row = QtWidgets.QWidget()
+        coord_layout = QtWidgets.QHBoxLayout(coord_row)
+        coord_layout.setContentsMargins(0, 0, 0, 0)
+        coord_layout.addWidget(self.lat_field)
+        coord_layout.addWidget(self.lon_field)
+        context_form.addRow("Lat / Lon", coord_row)
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("Level", self.level_combo)
+        form.addRow("Body", self.body_field)
+        form.addRow("", self.context_group)
+        form.addRow("", self.status_label)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.button(QtWidgets.QDialogButtonBox.Ok).setText("Send")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+        self._refresh_link_selectors()
+        self._sync_context_visibility(False)
+
+    def payload(self) -> dict[str, object]:
+        use_context = self.context_group.isChecked()
+        payload = build_create_payload(
+            level=str(self.level_combo.currentData()),
+            body=self.body_field.toPlainText(),
+            asset_id=self._combo_int(self.asset_combo) if use_context else None,
+            mission_id=self._combo_int(self.mission_combo) if use_context else None,
+            assignment_id=self._combo_int(self.assignment_combo) if use_context else None,
+            location_label=self.location_label_field.text() if use_context else "",
+            lat_text=self.lat_field.text() if use_context else "",
+            lon_text=self.lon_field.text() if use_context else "",
+            location_source="manual"
+            if use_context
+            and (
+                self.location_label_field.text().strip()
+                or self.lat_field.text().strip()
+                or self.lon_field.text().strip()
+            )
+            else "",
+        )
+        return {key: value for key, value in payload.items() if value is not None}
+
+    def accept(self) -> None:
+        try:
+            self.payload()
+        except Exception as exc:
+            self.status_label.setText(str(exc))
+            return
+        super().accept()
+
+    def _refresh_link_selectors(self) -> None:
+        self.asset_combo.clear()
+        self.asset_combo.addItem("None", None)
+        self.mission_combo.clear()
+        self.mission_combo.addItem("None", None)
+        self.assignment_combo.clear()
+        self.assignment_combo.addItem("None", None)
+        try:
+            for asset in self._core.read_model("assets.list"):
+                self.asset_combo.addItem(str(getattr(asset, "label", asset.id)), int(asset.id))
+            for mission in self._core.read_model("missions.list", {"status_filter": None}):
+                if getattr(mission, "status", "") not in ("pending_approval", "active"):
+                    continue
+                self.mission_combo.addItem(str(getattr(mission, "title", "Mission")), int(mission.id))
+            for assignment in self._core.read_model("assignments.list", {"active_only": True}):
+                self.assignment_combo.addItem(
+                    str(getattr(assignment, "title", "Assignment")),
+                    int(assignment.id),
+                )
+        except Exception as exc:
+            _log.warning("Could not load SITREP context selectors: %s", exc)
+            self.status_label.setText(f"Unable to load optional context: {exc}")
+
+    def _sync_context_visibility(self, checked: bool) -> None:
+        for widget in (
+            self.asset_combo,
+            self.mission_combo,
+            self.assignment_combo,
+            self.location_label_field,
+            self.lat_field,
+            self.lon_field,
+        ):
+            widget.setVisible(checked)
+        form = self.context_group.layout()
+        if form is not None:
+            for index in range(form.count()):
+                item = form.itemAt(index)
+                if item is not None and item.widget() is not None:
+                    item.widget().setVisible(checked)
+
+    @staticmethod
+    def _combo_int(combo: QtWidgets.QComboBox) -> int | None:
+        value = combo.currentData()
+        if value in (None, ""):
+            return None
+        return int(typing.cast(int, value))
+
+
+class SitrepAssignDialog(QtWidgets.QDialog):
+    """Assign a SITREP to an operator who is not committed elsewhere."""
+
+    def __init__(self, core: TalonCoreSession, *, sitrep_id: int, parent=None) -> None:
+        super().__init__(parent)
+        self._core = core
+        self._sitrep_id = int(sitrep_id)
+        self.setWindowTitle("Assign Operator")
+        self.resize(460, 420)
+
+        self.operator_list = QtWidgets.QListWidget()
+        self.operator_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.operator_list.setMinimumHeight(220)
+        self.note_field = QtWidgets.QLineEdit()
+        self.note_field.setPlaceholderText("Optional short note")
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setObjectName("sitrepMutedLabel")
+        self.status_label.setWordWrap(True)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        self.assign_button = buttons.button(QtWidgets.QDialogButtonBox.Ok)
+        self.assign_button.setText("Assign Selected")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(_field_widget("Available operators", self.operator_list))
+        layout.addWidget(_field_widget("Assignment note", self.note_field))
+        layout.addWidget(self.status_label)
+        layout.addWidget(buttons)
+        self._load_available_operators()
+
+    def payload(self) -> dict[str, object]:
+        selected = self.operator_list.currentItem()
+        if selected is None:
+            raise ValueError("Select an available operator.")
+        callsign = str(selected.data(QtCore.Qt.UserRole + 1) or selected.text()).strip()
+        note = self.note_field.text().strip()
+        return {
+            "assigned_to": callsign,
+            "note": note,
+        }
+
+    def accept(self) -> None:
+        try:
+            self.payload()
+        except Exception as exc:
+            self.status_label.setText(str(exc))
+            return
+        super().accept()
+
+    def _load_available_operators(self) -> None:
+        try:
+            operators = self._core.read_model("operators.list")
+            assignments = self._core.read_model("assignments.list", {"active_only": True})
+            sitreps = self._core.read_model(
+                "sitreps.list",
+                {"unresolved_only": True, "limit": 500},
+            )
+            items = available_operator_items(
+                operators,
+                assignments=assignments,
+                sitreps=sitreps,
+                current_sitrep_id=self._sitrep_id,
+            )
+        except Exception as exc:
+            _log.warning("Could not load available operators: %s", exc)
+            self.status_label.setText(f"Unable to load available operators: {exc}")
+            items = []
+
+        self.operator_list.clear()
+        for item in items:
+            skill_text = ", ".join(item.skills[:3]) if item.skills else "No skills listed"
+            row = QtWidgets.QListWidgetItem(f"{item.callsign}\n{skill_text}")
+            row.setData(QtCore.Qt.UserRole, item.id)
+            row.setData(QtCore.Qt.UserRole + 1, item.callsign)
+            self.operator_list.addItem(row)
+        if self.operator_list.count():
+            self.operator_list.setCurrentRow(0)
+            self.status_label.setText(
+                "Only operators without active assignments or unresolved SITREP assignments are shown."
+            )
+        else:
+            self.status_label.setText("No available unassigned operators.")
+        self.assign_button.setEnabled(self.operator_list.count() > 0)
 
 
 class SitrepAlertOverlay(QtWidgets.QFrame):
@@ -1173,21 +984,3 @@ def _as_text(value: object) -> str:
     if value is None:
         return ""
     return str(value)
-
-
-def _optional_coordinate(
-    value: str,
-    label: str,
-    minimum: float,
-    maximum: float,
-) -> float | None:
-    raw = value.strip()
-    if not raw:
-        return None
-    try:
-        parsed = float(raw)
-    except ValueError as exc:
-        raise ValueError(f"{label} must be a number.") from exc
-    if parsed < minimum or parsed > maximum:
-        raise ValueError(f"{label} must be between {minimum:g} and {maximum:g}.")
-    return parsed

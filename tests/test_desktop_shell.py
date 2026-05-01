@@ -82,6 +82,7 @@ from talon_desktop.operators import (
 from talon_desktop.sitreps import (
     DEFAULT_TEMPLATE_KEY,
     SITREP_TEMPLATES,
+    available_operator_items,
     build_create_payload,
     build_filter_payload,
     feed_item_from_entry,
@@ -999,21 +1000,18 @@ try:
     )
     assert "Detail line 39" in sitrep_page.detail_body_field.toPlainText()
     assert sitrep_page.detail_body_field.verticalScrollBar().maximum() > 0
-    assert sitrep_page.ack_button.isVisibleTo(sitrep_page)
+    assert sitrep_page.append_button.isVisibleTo(sitrep_page)
+    assert sitrep_page.assign_button.isVisibleTo(sitrep_page)
+    assert not hasattr(sitrep_page, "ack_button")
 
     dialog = SitrepCreateDialog(core, parent=sitrep_page)
     dialog.show()
     app.processEvents()
-    assert dialog.template_combo.isVisibleTo(dialog)
-    assert dialog.apply_template_button.text() == "Apply"
-    assert dialog.pick_location_button.text() == "Map"
-    assert dialog.pick_location_button.toolTip() == "Pick on Map"
-
-    index = dialog.template_combo.findData("need_support")
-    assert index >= 0
-    dialog.template_combo.setCurrentIndex(index)
-    dialog.apply_template_button.click()
-    assert "Acknowledgement needed:" in dialog.body_field.toPlainText()
+    assert not hasattr(dialog, "template_combo")
+    assert dialog.context_group.isCheckable()
+    assert dialog.context_group.isChecked() is False
+    dialog.body_field.setPlainText("Minimal report")
+    assert dialog.payload() == {"level": "ROUTINE", "body": "Minimal report"}
     dialog.close()
 
     window.nav.setCurrentRow(map_row)
@@ -1892,7 +1890,7 @@ def test_desktop_event_mapping_refreshes_sitrep_workflow_surfaces() -> None:
         {"dashboard", "documents", "map", "sitreps"}
     )
     assert incident_update.refresh_sections == frozenset(
-        {"assignments", "dashboard", "incidents", "map", "sitreps"}
+        {"assignments", "dashboard", "incidents", "map"}
     )
 
 
@@ -2217,7 +2215,7 @@ def test_qt_main_window_stays_within_available_screen(
     assert "window-boundary-ok" in result.stdout
 
 
-def test_qt_sitrep_composer_template_row_and_page_switch_repaint(
+def test_qt_sitrep_minimal_composer_and_page_switch_repaint(
     tmp_path: pathlib.Path,
 ) -> None:
     result = _run_qt_subprocess(
@@ -2734,6 +2732,52 @@ def test_sitrep_feed_item_normalizes_core_tuple() -> None:
         created_at=123457,
     )
     assert feed_item_from_entry((routine, "ALPHA", None)).needs_attention is False
+
+
+def test_sitrep_available_operator_items_excludes_assigned_work() -> None:
+    operators = [
+        types.SimpleNamespace(id=1, callsign="SERVER", revoked=False, skills=[]),
+        types.SimpleNamespace(id=2, callsign="ALPHA", revoked=False, skills=["medic"]),
+        types.SimpleNamespace(id=3, callsign="BRAVO", revoked=False, skills=["comms"]),
+        types.SimpleNamespace(id=4, callsign="CHARLIE", revoked=True, skills=[]),
+        types.SimpleNamespace(id=5, callsign="DELTA", revoked=False, skills=[]),
+    ]
+    assignments = [
+        types.SimpleNamespace(
+            status="active",
+            assigned_operator_ids=[2],
+        )
+    ]
+    sitreps = [
+        (
+            types.SimpleNamespace(
+                id=10,
+                status="assigned",
+                assigned_to="BRAVO",
+            ),
+            "ALPHA",
+            None,
+        ),
+        (
+            types.SimpleNamespace(
+                id=11,
+                status="assigned",
+                assigned_to="DELTA",
+            ),
+            "ALPHA",
+            None,
+        ),
+    ]
+
+    available = available_operator_items(
+        operators,
+        assignments=assignments,
+        sitreps=sitreps,
+        current_sitrep_id=11,
+    )
+
+    assert [item.callsign for item in available] == ["DELTA"]
+    assert available[0].skills == ()
 
 
 def test_asset_create_payload_validates_and_normalizes_fields() -> None:

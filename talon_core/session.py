@@ -1227,6 +1227,9 @@ class TalonCoreSession:
             return self._sitreps_create(**payload)
         if name == "sitreps.delete":
             return self._sitreps_delete(**payload)
+        if name == "sitreps.append_note":
+            payload.setdefault("author_id", self.require_local_operator_id())
+            return self._sitreps_followup(action="note", **payload)
         if name == "sitreps.acknowledge":
             payload.setdefault("author_id", self.require_local_operator_id())
             return self._sitreps_followup(action="acknowledged", **payload)

@@ -623,6 +623,10 @@ def test_core_session_sitrep_followups_locations_and_documents(
     assert listed[0][0].location_label == "North Gate"
     assert listed[0][0].status == "open"
 
+    session.command(
+        "sitreps.append_note",
+        {"sitrep_id": sitrep_id, "note": "Water cache is 10 minutes out."},
+    )
     session.command("sitreps.acknowledge", {"sitrep_id": sitrep_id})
     session.command(
         "sitreps.assign_followup",
@@ -651,6 +655,7 @@ def test_core_session_sitrep_followups_locations_and_documents(
     assert detail["sitrep"].assigned_to == "Team Bravo"
     assert detail["sitrep"].disposition == "Resolved with escort handoff."
     assert [item.action for item in detail["followups"]] == [
+        "note",
         "acknowledged",
         "assigned",
         "document_linked",
@@ -663,7 +668,7 @@ def test_core_session_sitrep_followups_locations_and_documents(
     dashboard = session.read_model("dashboard.summary")
     assert dashboard.counts["located_sitreps"] == 1
     assert dashboard.counts["unresolved_sitreps"] == 0
-    assert dashboard.counts["sitrep_followups"] == 4
+    assert dashboard.counts["sitrep_followups"] == 5
     assert dashboard.counts["sitrep_documents"] == 1
 
     incident_result = session.command(
