@@ -4,7 +4,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 MISSION_LOCATION_ICON_KEYS: tuple[str, ...] = (
-    "incident_command_post",
+    "command_post",
     "staging_area",
     "demob_point",
     "medical",
@@ -13,7 +13,7 @@ MISSION_LOCATION_ICON_KEYS: tuple[str, ...] = (
 )
 
 MISSION_LOCATION_ICON_LABELS: dict[str, str] = {
-    "incident_command_post": "Incident Command Post",
+    "command_post": "Command Post",
     "staging_area": "Staging Area",
     "demob_point": "Demob Point",
     "medical": "Medical",
@@ -22,9 +22,9 @@ MISSION_LOCATION_ICON_LABELS: dict[str, str] = {
 }
 
 _ALIASES = {
-    "icp": "incident_command_post",
-    "incident command": "incident_command_post",
-    "incident command post": "incident_command_post",
+    "command": "command_post",
+    "command post": "command_post",
+    "cp": "command_post",
     "staging": "staging_area",
     "staging area": "staging_area",
     "demob": "demob_point",
@@ -55,7 +55,7 @@ def draw_mission_location_icon(
     size: float = 12.0,
 ) -> QtWidgets.QGraphicsItem:
     """Draw a mission location icon and return its primary graphics item."""
-    key = mission_location_icon_key(icon_key) or "incident_command_post"
+    key = mission_location_icon_key(icon_key) or "command_post"
     pen = QtGui.QPen(QtGui.QColor("#edf3f5"), 2)
     x = float(x)
     y = float(y)

@@ -9,9 +9,6 @@ from talon_core.community_safety import (
     ASSIGNMENT_STATUSES,
     ASSIGNMENT_TYPES,
     CHECKIN_STATES,
-    INCIDENT_CATEGORIES,
-    INCIDENT_FOLLOW_UP_TYPES,
-    INCIDENT_FOLLOW_UP_URGENCIES,
 )
 from talon_core.constants import SITREP_LEVELS
 from talon_core.utils.formatting import format_ts
@@ -47,37 +44,6 @@ CHECKIN_STATE_LABELS: dict[str, str] = {
     "emergency": "Emergency",
 }
 
-INCIDENT_CATEGORY_LABELS: dict[str, str] = {
-    "welfare_concern": "Welfare concern",
-    "harassment_or_intimidation": "Harassment or intimidation",
-    "theft_or_property_damage": "Theft or property damage",
-    "unsafe_area": "Unsafe area",
-    "overdose_or_medical_emergency": "Overdose or medical emergency",
-    "domestic_violence_concern": "Domestic violence concern",
-    "missing_person_concern": "Missing person concern",
-    "fire_flood_weather_infrastructure": "Fire, flood, weather, infrastructure",
-    "community_conflict": "Community conflict",
-    "other": "Other",
-}
-
-INCIDENT_FOLLOW_UP_TYPE_LABELS: dict[str, str] = {
-    "welfare_check": "Welfare check",
-    "transport": "Transport",
-    "medical_support": "Medical support",
-    "notify_party": "Notify party",
-    "outside_service": "Outside service",
-    "documentation": "Documentation",
-    "revisit_location": "Revisit location",
-    "closeout_review": "Closeout review",
-    "other": "Other",
-}
-
-INCIDENT_FOLLOW_UP_URGENCY_LABELS: dict[str, str] = {
-    "routine": "Routine",
-    "priority": "Priority",
-    "immediate": "Immediate",
-}
-
 ACTIVE_ASSIGNMENT_STATUSES = frozenset({"planned", "active", "paused", "needs_support"})
 SUPPORT_STATES = frozenset({"need_backup", "medical_support", "unsafe_deescalating", "emergency"})
 
@@ -110,22 +76,6 @@ class DesktopOperatorStatusItem:
     assignment_title: str
     skills_label: str
     sort_key: tuple[int, str]
-
-
-@dataclasses.dataclass(frozen=True)
-class DesktopIncidentItem:
-    id: int
-    category: str
-    category_label: str
-    severity: str
-    title: str
-    occurred_label: str
-    location_label: str
-    follow_up_needed: bool
-    follow_up_due: str
-    follow_up_responsible: str
-    follow_up_action: str
-    summary: str
 
 
 def assignment_items_from_board(
@@ -239,34 +189,6 @@ def operator_status_items_from_board(
     return sorted(items, key=lambda item: item.sort_key)
 
 
-def incident_item_from_incident(incident: object) -> DesktopIncidentItem:
-    title = str(getattr(incident, "title", "")) or f"Incident #{getattr(incident, 'id')}"
-    narrative = str(getattr(incident, "narrative", "") or "")
-    summary = narrative if len(narrative) <= 120 else narrative[:117] + "..."
-    category = str(getattr(incident, "category", ""))
-    return DesktopIncidentItem(
-        id=int(getattr(incident, "id")),
-        category=category,
-        category_label=INCIDENT_CATEGORY_LABELS.get(
-            category,
-            category.replace("_", " ").title(),
-        ),
-        severity=str(getattr(incident, "severity", "ROUTINE")),
-        title=title,
-        occurred_label=format_ts(int(getattr(incident, "occurred_at", 0) or 0)),
-        location_label=str(getattr(incident, "location_label", "")),
-        follow_up_needed=bool(getattr(incident, "follow_up_needed", False)),
-        follow_up_due=str(getattr(incident, "follow_up_due", "") or ""),
-        follow_up_responsible=str(getattr(incident, "follow_up_responsible", "") or ""),
-        follow_up_action=str(getattr(incident, "follow_up_action", "") or ""),
-        summary=summary,
-    )
-
-
-def incident_items_from_entries(entries: typing.Iterable[object]) -> list[DesktopIncidentItem]:
-    return [incident_item_from_incident(entry) for entry in entries]
-
-
 def build_assignment_payload(
     *,
     assignment_type: str,
@@ -344,75 +266,6 @@ def build_checkin_payload(
         "assignment_id": int(assignment_id),
         "state": state,
         "note": note.strip(),
-    }
-
-
-def build_incident_payload(
-    *,
-    category: str,
-    severity: str,
-    title: str = "",
-    location_label: str = "",
-    narrative: str = "",
-    actions_taken: str = "",
-    outcome: str = "",
-    follow_up_needed: bool = False,
-    follow_up_type: str = "",
-    follow_up_action: str = "",
-    follow_up_responsible: str = "",
-    follow_up_due: str = "",
-    follow_up_urgency: str = "",
-    create_follow_up_assignment: bool = False,
-    notified_services: str = "",
-    linked_assignment_id: int | None = None,
-    linked_mission_id: int | None = None,
-    linked_asset_id: int | None = None,
-    linked_sitrep_id: int | None = None,
-) -> dict[str, object]:
-    if category not in INCIDENT_CATEGORIES:
-        raise ValueError("Select a valid incident category.")
-    if severity not in SITREP_LEVELS:
-        raise ValueError("Select a valid severity.")
-    if not narrative.strip():
-        raise ValueError("Incident narrative is required.")
-    if follow_up_needed:
-        if follow_up_type not in INCIDENT_FOLLOW_UP_TYPES:
-            raise ValueError("Select a valid follow-up type.")
-        if follow_up_urgency not in INCIDENT_FOLLOW_UP_URGENCIES:
-            raise ValueError("Select a valid follow-up urgency.")
-        if not follow_up_action.strip():
-            raise ValueError("Follow-up next action is required.")
-        if not follow_up_responsible.strip():
-            raise ValueError("Follow-up responsible party is required.")
-        if not follow_up_due.strip():
-            raise ValueError("Follow-up due time is required.")
-    else:
-        follow_up_type = ""
-        follow_up_action = ""
-        follow_up_responsible = ""
-        follow_up_due = ""
-        follow_up_urgency = ""
-        create_follow_up_assignment = False
-    return {
-        "category": category,
-        "severity": severity,
-        "title": title.strip(),
-        "location_label": location_label.strip(),
-        "narrative": narrative.strip(),
-        "actions_taken": actions_taken.strip(),
-        "outcome": outcome.strip(),
-        "follow_up_needed": bool(follow_up_needed),
-        "follow_up_type": follow_up_type,
-        "follow_up_action": follow_up_action.strip(),
-        "follow_up_responsible": follow_up_responsible.strip(),
-        "follow_up_due": follow_up_due.strip(),
-        "follow_up_urgency": follow_up_urgency,
-        "create_follow_up_assignment": bool(create_follow_up_assignment),
-        "notified_services": notified_services.strip(),
-        "linked_assignment_id": linked_assignment_id,
-        "linked_mission_id": linked_mission_id,
-        "linked_asset_id": linked_asset_id,
-        "linked_sitrep_id": linked_sitrep_id,
     }
 
 

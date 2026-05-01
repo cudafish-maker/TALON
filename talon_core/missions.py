@@ -298,11 +298,6 @@ def delete_mission(conn: Connection, mission_id: int) -> None:
             "WHERE mission_id = ?",
             (mission_id,),
         )
-        conn.execute(
-            "UPDATE incidents SET linked_mission_id = NULL, version = version + 1 "
-            "WHERE linked_mission_id = ?",
-            (mission_id,),
-        )
         conn.execute("DELETE FROM zones     WHERE mission_id = ?",                 (mission_id,))
         conn.execute("DELETE FROM waypoints WHERE mission_id = ?",                 (mission_id,))
         conn.execute(

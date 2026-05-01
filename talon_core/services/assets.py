@@ -95,12 +95,10 @@ def hard_delete_asset_command(
     asset_id: int,
 ) -> AssetCommandResult:
     sitrep_ids = _sitrep_ids_for_asset(conn, asset_id)
-    incident_ids = _incident_ids_for_asset(conn, asset_id)
     delete_asset(conn, asset_id)
     event = linked_records_changed(
         record_deleted("assets", asset_id),
         *(record_changed("sitreps", sid) for sid in sitrep_ids),
-        *(record_changed("incidents", iid) for iid in incident_ids),
     )
     return AssetCommandResult(asset_id, (event,))
 
@@ -112,10 +110,3 @@ def _sitrep_ids_for_asset(conn: Connection, asset_id: int) -> list[int]:
     ).fetchall()
     return [r[0] for r in rows]
 
-
-def _incident_ids_for_asset(conn: Connection, asset_id: int) -> list[int]:
-    rows = conn.execute(
-        "SELECT id FROM incidents WHERE linked_asset_id = ? ORDER BY id ASC",
-        (asset_id,),
-    ).fetchall()
-    return [r[0] for r in rows]

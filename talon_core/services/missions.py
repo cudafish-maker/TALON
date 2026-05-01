@@ -182,7 +182,6 @@ def delete_mission_command(conn: Connection, mission_id: int) -> MissionCommandR
         *(record_changed("sitreps", sid) for sid in linked["sitreps"]),
         *(record_changed("assets", aid) for aid in linked["assets"]),
         *(record_changed("assignments", aid) for aid in linked["assignments"]),
-        *(record_changed("incidents", iid) for iid in linked["incidents"]),
     )
     return MissionCommandResult(mission_id, (event,))
 
@@ -214,7 +213,6 @@ def _linked_ids_for_mission_delete(
         "sitreps": _ids(conn, "SELECT id FROM sitreps WHERE mission_id = ? ORDER BY id ASC", mission_id),
         "assets": _ids(conn, "SELECT id FROM assets WHERE mission_id = ? ORDER BY id ASC", mission_id),
         "assignments": _ids(conn, "SELECT id FROM assignments WHERE mission_id = ? ORDER BY id ASC", mission_id),
-        "incidents": _ids(conn, "SELECT id FROM incidents WHERE linked_mission_id = ? ORDER BY id ASC", mission_id),
         "messages": [],
     }
     if linked["channels"]:

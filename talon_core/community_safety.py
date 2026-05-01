@@ -1,4 +1,4 @@
-"""Community safety assignment, check-in, and incident data access."""
+"""Community safety assignment and check-in data access."""
 from __future__ import annotations
 
 import json
@@ -11,7 +11,6 @@ from talon_core.db.connection import Connection
 from talon_core.db.models import (
     AssignmentCheckIn,
     CommunityAssignment,
-    CommunityIncident,
 )
 
 ASSIGNMENT_TYPES: tuple[str, ...] = (
@@ -49,37 +48,6 @@ SUPPORT_CHECKIN_STATES: frozenset[str] = frozenset(
     {"need_backup", "medical_support", "unsafe_deescalating", "emergency"}
 )
 
-INCIDENT_CATEGORIES: tuple[str, ...] = (
-    "welfare_concern",
-    "harassment_or_intimidation",
-    "theft_or_property_damage",
-    "unsafe_area",
-    "overdose_or_medical_emergency",
-    "domestic_violence_concern",
-    "missing_person_concern",
-    "fire_flood_weather_infrastructure",
-    "community_conflict",
-    "other",
-)
-
-INCIDENT_FOLLOW_UP_TYPES: tuple[str, ...] = (
-    "welfare_check",
-    "transport",
-    "medical_support",
-    "notify_party",
-    "outside_service",
-    "documentation",
-    "revisit_location",
-    "closeout_review",
-    "other",
-)
-
-INCIDENT_FOLLOW_UP_URGENCIES: tuple[str, ...] = (
-    "routine",
-    "priority",
-    "immediate",
-)
-
 TERMINAL_ASSIGNMENT_STATUSES: frozenset[str] = frozenset({"completed", "aborted"})
 
 _ASSIGNMENT_COLS = (
@@ -96,17 +64,6 @@ _CHECKIN_COLS = (
     "id, assignment_id, state, note, operator_id, lat, lon,"
     " acknowledged_by, acknowledged_at, created_at, version"
 )
-
-_INCIDENT_COLS = (
-    "id, category, severity, title, occurred_at, location_label, lat, lon,"
-    " narrative, actions_taken, outcome, follow_up_needed,"
-    " follow_up_type, follow_up_action, follow_up_responsible,"
-    " follow_up_due, follow_up_urgency, follow_up_assignment_id,"
-    " notified_services,"
-    " linked_mission_id, linked_assignment_id, linked_asset_id, linked_sitrep_id,"
-    " created_by, created_at, version"
-)
-
 
 def create_assignment(
     conn: Connection,
@@ -312,136 +269,6 @@ def apply_checkin_effect(conn: Connection, checkin_id: int) -> int:
     return checkin.assignment_id
 
 
-def create_incident(
-    conn: Connection,
-    *,
-    category: str,
-    severity: str,
-    created_by: int,
-    title: str = "",
-    occurred_at: typing.Optional[int] = None,
-    location_label: str = "",
-    lat: typing.Optional[float] = None,
-    lon: typing.Optional[float] = None,
-    narrative: str = "",
-    actions_taken: str = "",
-    outcome: str = "",
-    follow_up_needed: bool = False,
-    follow_up_type: str = "",
-    follow_up_action: str = "",
-    follow_up_responsible: str = "",
-    follow_up_due: str = "",
-    follow_up_urgency: str = "",
-    follow_up_assignment_id: typing.Optional[int] = None,
-    notified_services: str = "",
-    linked_mission_id: typing.Optional[int] = None,
-    linked_assignment_id: typing.Optional[int] = None,
-    linked_asset_id: typing.Optional[int] = None,
-    linked_sitrep_id: typing.Optional[int] = None,
-    sync_status: str = "synced",
-) -> CommunityIncident:
-    category = _clean_choice(category, INCIDENT_CATEGORIES, "incident category")
-    severity = _clean_choice(severity or "ROUTINE", SITREP_LEVELS, "severity")
-    _require_fk(conn, "operators", int(created_by))
-    _require_fk(conn, "missions", linked_mission_id)
-    _require_fk(conn, "assignments", linked_assignment_id)
-    _require_fk(conn, "assignments", follow_up_assignment_id)
-    _require_fk(conn, "assets", linked_asset_id)
-    _require_fk(conn, "sitreps", linked_sitrep_id)
-    (
-        follow_up_type,
-        follow_up_action,
-        follow_up_responsible,
-        follow_up_due,
-        follow_up_urgency,
-    ) = _normalise_follow_up_fields(
-        follow_up_needed=follow_up_needed,
-        follow_up_type=follow_up_type,
-        follow_up_action=follow_up_action,
-        follow_up_responsible=follow_up_responsible,
-        follow_up_due=follow_up_due,
-        follow_up_urgency=follow_up_urgency,
-    )
-    lat = _optional_float(lat, "lat", -90.0, 90.0)
-    lon = _optional_float(lon, "lon", -180.0, 180.0)
-    now = int(time.time())
-    occurred = int(occurred_at or now)
-    cursor = conn.execute(
-        "INSERT INTO incidents ("
-        " category, severity, title, occurred_at, location_label, lat, lon,"
-        " narrative, actions_taken, outcome, follow_up_needed,"
-        " follow_up_type, follow_up_action, follow_up_responsible,"
-        " follow_up_due, follow_up_urgency, follow_up_assignment_id,"
-        " notified_services,"
-        " linked_mission_id, linked_assignment_id, linked_asset_id, linked_sitrep_id,"
-        " created_by, created_at, uuid, sync_status"
-        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (
-            category,
-            severity,
-            title.strip(),
-            occurred,
-            location_label.strip(),
-            lat,
-            lon,
-            narrative.strip(),
-            actions_taken.strip(),
-            outcome.strip(),
-            1 if follow_up_needed else 0,
-            follow_up_type,
-            follow_up_action,
-            follow_up_responsible,
-            follow_up_due,
-            follow_up_urgency,
-            follow_up_assignment_id,
-            notified_services.strip(),
-            linked_mission_id,
-            linked_assignment_id,
-            linked_asset_id,
-            linked_sitrep_id,
-            int(created_by),
-            now,
-            _uuid_mod.uuid4().hex,
-            sync_status,
-        ),
-    )
-    conn.commit()
-    return typing.cast(CommunityIncident, get_incident(conn, int(cursor.lastrowid)))
-
-
-def clear_incident_follow_up(
-    conn: Connection,
-    incident_id: int,
-    *,
-    outcome_note: str,
-) -> CommunityIncident:
-    incident = get_incident(conn, int(incident_id))
-    if incident is None:
-        raise ValueError(f"Incident {incident_id} not found.")
-    note = outcome_note.strip()
-    if not note:
-        raise ValueError("Follow-up closeout note is required.")
-    outcome = incident.outcome.strip()
-    outcome = f"{outcome}\n\nFollow-up closeout: {note}" if outcome else note
-    conn.execute(
-        "UPDATE incidents SET follow_up_needed = 0, outcome = ?, version = version + 1 "
-        "WHERE id = ?",
-        (outcome, int(incident_id)),
-    )
-    conn.commit()
-    updated = get_incident(conn, int(incident_id))
-    assert updated is not None
-    return updated
-
-
-def delete_incident(conn: Connection, incident_id: int) -> None:
-    row = conn.execute("SELECT id FROM incidents WHERE id = ?", (int(incident_id),)).fetchone()
-    if row is None:
-        raise ValueError(f"Incident {incident_id} not found.")
-    conn.execute("DELETE FROM incidents WHERE id = ?", (int(incident_id),))
-    conn.commit()
-
-
 def list_assignments(
     conn: Connection,
     *,
@@ -505,42 +332,6 @@ def get_checkin(conn: Connection, checkin_id: int) -> typing.Optional[Assignment
     return _row_to_checkin(row) if row else None
 
 
-def list_incidents(
-    conn: Connection,
-    *,
-    category_filter: typing.Optional[str] = None,
-    severity_filter: typing.Optional[str] = None,
-    follow_up_only: bool = False,
-    limit: int = 200,
-) -> list[CommunityIncident]:
-    clauses: list[str] = []
-    params: list[object] = []
-    if category_filter:
-        clauses.append("category = ?")
-        params.append(category_filter)
-    if severity_filter:
-        clauses.append("severity = ?")
-        params.append(severity_filter)
-    if follow_up_only:
-        clauses.append("follow_up_needed != 0")
-    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    params.append(int(limit))
-    rows = conn.execute(
-        f"SELECT {_INCIDENT_COLS} FROM incidents {where} "
-        "ORDER BY occurred_at DESC, id DESC LIMIT ?",
-        params,
-    ).fetchall()
-    return [_row_to_incident(row) for row in rows]
-
-
-def get_incident(conn: Connection, incident_id: int) -> typing.Optional[CommunityIncident]:
-    row = conn.execute(
-        f"SELECT {_INCIDENT_COLS} FROM incidents WHERE id = ?",
-        (int(incident_id),),
-    ).fetchone()
-    return _row_to_incident(row) if row else None
-
-
 def _status_for_checkin(current_status: str, state: str) -> str:
     if current_status in TERMINAL_ASSIGNMENT_STATUSES:
         return current_status
@@ -602,75 +393,11 @@ def _row_to_checkin(row: tuple) -> AssignmentCheckIn:
     )
 
 
-def _row_to_incident(row: tuple) -> CommunityIncident:
-    return CommunityIncident(
-        id=int(row[0]),
-        category=str(row[1] or ""),
-        severity=str(row[2] or "ROUTINE"),
-        title=str(row[3] or ""),
-        occurred_at=int(row[4]),
-        location_label=str(row[5] or ""),
-        lat=_maybe_float(row[6]),
-        lon=_maybe_float(row[7]),
-        narrative=str(row[8] or ""),
-        actions_taken=str(row[9] or ""),
-        outcome=str(row[10] or ""),
-        follow_up_needed=bool(row[11]),
-        follow_up_type=str(row[12] or ""),
-        follow_up_action=str(row[13] or ""),
-        follow_up_responsible=str(row[14] or ""),
-        follow_up_due=str(row[15] or ""),
-        follow_up_urgency=str(row[16] or ""),
-        follow_up_assignment_id=_maybe_int(row[17]),
-        notified_services=str(row[18] or ""),
-        linked_mission_id=_maybe_int(row[19]),
-        linked_assignment_id=_maybe_int(row[20]),
-        linked_asset_id=_maybe_int(row[21]),
-        linked_sitrep_id=_maybe_int(row[22]),
-        created_by=int(row[23]),
-        created_at=int(row[24]),
-        version=int(row[25]),
-    )
-
-
 def _clean_choice(value: str, choices: tuple[str, ...], label: str) -> str:
     cleaned = str(value or "").strip()
     if cleaned not in choices:
         raise ValueError(f"Unknown {label}: {cleaned!r}.")
     return cleaned
-
-
-def _normalise_follow_up_fields(
-    *,
-    follow_up_needed: bool,
-    follow_up_type: str,
-    follow_up_action: str,
-    follow_up_responsible: str,
-    follow_up_due: str,
-    follow_up_urgency: str,
-) -> tuple[str, str, str, str, str]:
-    if not follow_up_needed:
-        return "", "", "", "", ""
-    follow_type = _clean_choice(
-        follow_up_type or "other",
-        INCIDENT_FOLLOW_UP_TYPES,
-        "follow-up type",
-    )
-    urgency = _clean_choice(
-        follow_up_urgency or "routine",
-        INCIDENT_FOLLOW_UP_URGENCIES,
-        "follow-up urgency",
-    )
-    action = follow_up_action.strip()
-    responsible = follow_up_responsible.strip()
-    due = follow_up_due.strip()
-    if not action:
-        raise ValueError("Follow-up next action is required.")
-    if not responsible:
-        raise ValueError("Follow-up responsible party is required.")
-    if not due:
-        raise ValueError("Follow-up due time is required.")
-    return follow_type, action, responsible, due, urgency
 
 
 def _require_fk(

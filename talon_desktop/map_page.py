@@ -13,7 +13,6 @@ from talon_desktop.map_data import (
     SCENE_WIDTH,
     AssetOverlay,
     AssignmentOverlay,
-    IncidentOverlay,
     MapBounds,
     MapOverlayBundle,
     MissionLocationOverlay,
@@ -339,7 +338,6 @@ class MapPage(QtWidgets.QWidget):
             f"{len(self._bundle.routes)} routes, "
             f"{len(self._bundle.waypoints)} waypoints, "
             f"{len(self._bundle.assignments)} assignments, "
-            f"{len(self._bundle.incidents)} incidents, "
             f"{len(self._bundle.mission_locations)} mission locations, "
             f"{len(self._bundle.sitreps)} mapped SITREPs."
         )
@@ -783,7 +781,6 @@ class MapPage(QtWidgets.QWidget):
             "missions",
             "sitrep_followups",
             "sitreps",
-            "incidents",
             "waypoints",
             "zones",
         }:
@@ -823,8 +820,6 @@ class MapPage(QtWidgets.QWidget):
             self._draw_mission_location(location)
         for assignment in bundle.assignments:
             self._draw_assignment(assignment)
-        for incident in bundle.incidents:
-            self._draw_incident(incident)
         for sitrep in bundle.sitreps:
             if (
                 self._visible_asset_ids is not None
@@ -1004,45 +999,6 @@ class MapPage(QtWidgets.QWidget):
                 f"{location.label}\n"
                 f"Mission #{location.mission_id}: {location.mission_label}\n"
                 f"Lat/Lon: {location.point.lat:.6f}, {location.point.lon:.6f}"
-            ),
-        )
-
-    def _draw_incident(self, incident: IncidentOverlay) -> None:
-        severity = incident.severity.lower()
-        color = QtGui.QColor("#e74c3c") if severity in {"critical", "urgent"} else QtGui.QColor("#f1c40f")
-        if not incident.follow_up_needed:
-            color = QtGui.QColor("#8fbcbb")
-        size = 18
-        x = incident.point.x
-        y = incident.point.y + 18
-        polygon = QtGui.QPolygonF(
-            [
-                QtCore.QPointF(x, y - size / 2),
-                QtCore.QPointF(x + size / 2, y + size / 2),
-                QtCore.QPointF(x - size / 2, y + size / 2),
-            ]
-        )
-        item = self._scene.addPolygon(
-            polygon,
-            QtGui.QPen(QtGui.QColor("#0a0f11"), 2),
-            QtGui.QBrush(color),
-        )
-        self._register_item(
-            item,
-            key=f"incident:{incident.id}",
-            label=f"Incident #{incident.id}: {incident.title}",
-            detail=(
-                f"Incident #{incident.id}\n"
-                f"Title: {incident.title}\n"
-                f"Category: {incident.category}\n"
-                f"Severity: {incident.severity}\n"
-                f"Follow-up: {'Required' if incident.follow_up_needed else 'No'}\n"
-                f"Mission: {incident.linked_mission_id or ''}\n"
-                f"Assignment: {incident.linked_assignment_id or ''}\n"
-                f"Asset: {incident.linked_asset_id or ''}\n"
-                f"SITREP: {incident.linked_sitrep_id or ''}\n\n"
-                f"Location: {incident.location_label or 'map point'}\n"
-                f"Lat/Lon: {incident.point.lat:.6f}, {incident.point.lon:.6f}"
             ),
         )
 

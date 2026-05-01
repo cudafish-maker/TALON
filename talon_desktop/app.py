@@ -12,7 +12,7 @@ from talon_core.utils.logging import get_logger
 
 from talon_desktop.asset_page import AssetPage
 from talon_desktop.chat_page import ChatPage
-from talon_desktop.community_safety_page import AssignmentPage, IncidentPage
+from talon_desktop.community_safety_page import AssignmentPage
 from talon_desktop.document_page import DocumentPage
 from talon_desktop.log_view import LogDialog
 from talon_desktop.logs import (
@@ -645,8 +645,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 page = MissionPage(core)
             elif section.key == "assignments":
                 page = AssignmentPage(core)
-            elif section.key == "incidents":
-                page = IncidentPage(core)
             elif section.key == "chat":
                 page = ChatPage(core)
             elif section.key == "documents":
@@ -1076,16 +1074,6 @@ class MainWindow(QtWidgets.QMainWindow):
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
-        elif table == "incidents":
-            incident_page = self._pages.get("incidents")
-            if isinstance(incident_page, IncidentPage):
-                incident_page.handle_record_mutation(action, table, record_id)
-            map_page = self._pages.get("map")
-            if isinstance(map_page, MapPage):
-                map_page.handle_record_mutation(action, table, record_id)
-            assignment_page = self._pages.get("assignments")
-            if isinstance(assignment_page, AssignmentPage):
-                assignment_page.handle_record_mutation(action, table, record_id)
         elif table in {"missions", "zones", "waypoints", "sitreps"}:
             page = self._pages.get("map")
             if isinstance(page, MapPage):
@@ -1116,7 +1104,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if isinstance(chat_page, ChatPage):
                 chat_page.handle_record_mutation(action, table, record_id)
 
-        if table in {"assets", "sitreps", "assignments", "checkins", "incidents"}:
+        if table in {"assets", "sitreps", "assignments", "checkins"}:
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
@@ -1132,7 +1120,6 @@ class MainWindow(QtWidgets.QMainWindow):
             "sitrep_documents": ("sitreps", "documents", "map", "dashboard"),
             "assignments": ("assignments", "map", "missions", "dashboard"),
             "checkins": ("assignments", "map", "dashboard"),
-            "incidents": ("incidents", "assignments", "map", "dashboard"),
             "channels": ("chat",),
             "messages": ("chat", "dashboard"),
             "documents": ("documents",),

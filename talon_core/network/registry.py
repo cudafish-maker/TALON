@@ -9,9 +9,6 @@ from talon_core.community_safety import (
     ASSIGNMENT_STATUSES,
     ASSIGNMENT_TYPES,
     CHECKIN_STATES,
-    INCIDENT_CATEGORIES,
-    INCIDENT_FOLLOW_UP_TYPES,
-    INCIDENT_FOLLOW_UP_URGENCIES,
 )
 from talon_core.crypto.fields import decrypt_field, encrypt_field
 from talon_core.sitrep import (
@@ -63,7 +60,6 @@ TABLES: dict[str, SyncedTable] = {
         ui_refresh_targets=_fields("assets", "main"),
         predelete_sql=(
             "UPDATE sitreps SET asset_id = NULL WHERE asset_id = ?",
-            "UPDATE incidents SET linked_asset_id = NULL WHERE linked_asset_id = ?",
             "UPDATE assets SET mission_id = NULL WHERE id = ?",
         ),
     ),
@@ -77,7 +73,6 @@ TABLES: dict[str, SyncedTable] = {
         ownership_fields=("author_id",),
         ui_refresh_targets=_fields("sitrep", "map", "main"),
         predelete_sql=(
-            "UPDATE incidents SET linked_sitrep_id = NULL WHERE linked_sitrep_id = ?",
             "DELETE FROM sitrep_documents WHERE sitrep_id = ?",
             "DELETE FROM sitrep_followups WHERE sitrep_id = ?",
         ),
@@ -93,7 +88,6 @@ TABLES: dict[str, SyncedTable] = {
         predelete_sql=(
             "UPDATE sitreps SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE assignments SET mission_id = NULL WHERE mission_id = ?",
-            "UPDATE incidents SET linked_mission_id = NULL WHERE linked_mission_id = ?",
             "UPDATE zones SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE channels SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE assets SET mission_id = NULL WHERE mission_id = ?",
@@ -153,8 +147,6 @@ TABLES: dict[str, SyncedTable] = {
         ownership_fields=("created_by",),
         ui_refresh_targets=_fields("assignments", "mission", "map", "main"),
         predelete_sql=(
-            "UPDATE incidents SET linked_assignment_id = NULL WHERE linked_assignment_id = ?",
-            "UPDATE incidents SET follow_up_assignment_id = NULL WHERE follow_up_assignment_id = ?",
             "UPDATE sitreps SET assignment_id = NULL WHERE assignment_id = ?",
             "DELETE FROM checkins WHERE assignment_id = ?",
         ),
@@ -167,15 +159,6 @@ TABLES: dict[str, SyncedTable] = {
         tombstone_order=4,
         ownership_fields=("operator_id",),
         ui_refresh_targets=_fields("assignments", "map", "main"),
-    ),
-    "incidents": SyncedTable(
-        name="incidents",
-        sync_order=13,
-        client_pushable=True,
-        offline_creatable=True,
-        tombstone_order=7,
-        ownership_fields=("created_by",),
-        ui_refresh_targets=_fields("incidents", "assignments", "main"),
     ),
     "sitrep_followups": SyncedTable(
         name="sitrep_followups",
@@ -651,76 +634,6 @@ def _client_push_dto(
             "lon": _optional_float(record.get("lon"), "lon", -180.0, 180.0),
             "acknowledged_by": None,
             "acknowledged_at": None,
-            "created_at": now,
-        }
-
-    if table_name == "incidents":
-        category = _str_field(record, "category")
-        if category not in INCIDENT_CATEGORIES:
-            raise ValueError(f"unknown incident category: {category!r}")
-        severity = str(record.get("severity") or "ROUTINE")
-        if severity not in SITREP_LEVELS:
-            raise ValueError(f"unknown incident severity: {severity!r}")
-        mission_id = _optional_int(record.get("linked_mission_id"), "linked_mission_id")
-        assignment_id = _optional_int(record.get("linked_assignment_id"), "linked_assignment_id")
-        follow_up_assignment_id = _optional_int(
-            record.get("follow_up_assignment_id"),
-            "follow_up_assignment_id",
-        )
-        asset_id = _optional_int(record.get("linked_asset_id"), "linked_asset_id")
-        sitrep_id = _optional_int(record.get("linked_sitrep_id"), "linked_sitrep_id")
-        _require_fk(conn, "missions", mission_id)
-        _require_fk(conn, "assignments", assignment_id)
-        _require_fk(conn, "assignments", follow_up_assignment_id)
-        _require_fk(conn, "assets", asset_id)
-        _require_fk(conn, "sitreps", sitrep_id)
-        follow_up_needed = bool(record.get("follow_up_needed"))
-        if follow_up_needed:
-            follow_up_type = str(record.get("follow_up_type") or "other").strip()
-            follow_up_urgency = str(record.get("follow_up_urgency") or "routine").strip()
-            follow_up_action = str(record.get("follow_up_action") or "").strip()
-            follow_up_responsible = str(record.get("follow_up_responsible") or "").strip()
-            follow_up_due = str(record.get("follow_up_due") or "").strip()
-            if follow_up_type not in INCIDENT_FOLLOW_UP_TYPES:
-                raise ValueError(f"unknown incident follow-up type: {follow_up_type!r}")
-            if follow_up_urgency not in INCIDENT_FOLLOW_UP_URGENCIES:
-                raise ValueError(f"unknown incident follow-up urgency: {follow_up_urgency!r}")
-            if not follow_up_action:
-                raise ValueError("incident follow-up action is required")
-            if not follow_up_responsible:
-                raise ValueError("incident follow-up responsible party is required")
-            if not follow_up_due:
-                raise ValueError("incident follow-up due time is required")
-        else:
-            follow_up_type = ""
-            follow_up_action = ""
-            follow_up_responsible = ""
-            follow_up_due = ""
-            follow_up_urgency = ""
-            follow_up_assignment_id = None
-        return {
-            "category": category,
-            "severity": severity,
-            "title": str(record.get("title") or "").strip(),
-            "occurred_at": int(record.get("occurred_at") or now),
-            "location_label": str(record.get("location_label") or "").strip(),
-            "lat": _optional_float(record.get("lat"), "lat", -90.0, 90.0),
-            "lon": _optional_float(record.get("lon"), "lon", -180.0, 180.0),
-            "narrative": str(record.get("narrative") or "").strip(),
-            "actions_taken": str(record.get("actions_taken") or "").strip(),
-            "outcome": str(record.get("outcome") or "").strip(),
-            "follow_up_needed": 1 if follow_up_needed else 0,
-            "follow_up_type": follow_up_type,
-            "follow_up_action": follow_up_action,
-            "follow_up_responsible": follow_up_responsible,
-            "follow_up_due": follow_up_due,
-            "follow_up_urgency": follow_up_urgency,
-            "follow_up_assignment_id": follow_up_assignment_id,
-            "notified_services": str(record.get("notified_services") or "").strip(),
-            "linked_mission_id": mission_id,
-            "linked_assignment_id": assignment_id,
-            "linked_asset_id": asset_id,
-            "linked_sitrep_id": sitrep_id,
             "created_at": now,
         }
 

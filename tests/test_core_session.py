@@ -477,41 +477,12 @@ def test_core_session_community_safety_commands_and_read_models(
             "note": "De-escalation support requested.",
         },
     )
-    incident_result = session.command(
-        "incidents.create",
-        {
-            "category": "community_conflict",
-            "severity": "IMMEDIATE",
-            "title": "Shelter support follow-up",
-            "location_label": "North Shelter",
-            "narrative": "Team documented a conflict and requested follow-up.",
-            "actions_taken": "De-escalation support notified.",
-            "follow_up_needed": True,
-            "follow_up_type": "revisit_location",
-            "follow_up_action": "Revisit North Shelter and confirm the conflict is resolved.",
-            "follow_up_responsible": "Aster",
-            "follow_up_due": "Tonight 21:00",
-            "follow_up_urgency": "priority",
-            "create_follow_up_assignment": True,
-            "linked_assignment_id": assignment_result.assignment_id,
-        },
-    )
-    assert incident_result.assignment_id is not None
-    assert incident_result.assignment is not None
-    assert incident_result.incident.follow_up_assignment_id == incident_result.assignment_id
-    assert incident_result.incident.linked_mission_id == mission_result.mission.id
-    assert incident_result.assignment.mission_id == mission_result.mission.id
 
     board = session.read_model("assignments.board")
     assignments_by_id = {assignment.id: assignment for assignment in board["assignments"]}
     assert assignments_by_id[assignment_result.assignment_id].title == "North Shelter evening support"
     assert assignments_by_id[assignment_result.assignment_id].status == "needs_support"
-    assert assignments_by_id[incident_result.assignment_id].title == (
-        "Revisit North Shelter and confirm the conflict is resolved."
-    )
-    assert assignments_by_id[incident_result.assignment_id].status == "active"
     assert board["recent_checkins"][0].id == checkin_result.checkin_id
-    assert board["open_incidents"][0].id == incident_result.incident_id
 
     detail = session.read_model(
         "assignments.detail",
@@ -519,57 +490,13 @@ def test_core_session_community_safety_commands_and_read_models(
     )
     assert detail["assignment"].last_checkin_state == "need_backup"
     assert detail["checkins"][0].note == "De-escalation support requested."
-    assert detail["incidents"][0].title == "Shelter support follow-up"
-
-    incident_detail = session.read_model(
-        "incidents.detail",
-        {"incident_id": incident_result.incident_id},
-    )
-    assert incident_detail["assignment_title"] == "North Shelter evening support"
-    assert incident_detail["mission_title"] == "Lost Dog"
-    assert incident_detail["follow_up_assignment_title"] == (
-        "Revisit North Shelter and confirm the conflict is resolved."
-    )
-    assert incident_detail["incident"].follow_up_action == (
-        "Revisit North Shelter and confirm the conflict is resolved."
-    )
 
     dashboard = session.read_model("dashboard.summary")
-    assert dashboard.counts["assignments"] == 2
+    assert dashboard.counts["assignments"] == 1
     assert dashboard.counts["assignments_needing_support"] == 1
-    assert dashboard.counts["incident_follow_ups"] == 1
-
-    clear_result = session.command(
-        "incidents.clear_followup",
-        {
-            "incident_id": incident_result.incident_id,
-            "outcome_note": "Follow-up completed by Aster.",
-        },
-    )
-    assert clear_result.incident.follow_up_needed is False
-    assert clear_result.assignment is not None
-    assert clear_result.assignment.status == "completed"
-    dashboard = session.read_model("dashboard.summary")
-    assert dashboard.counts["incident_follow_ups"] == 0
-
-    session._mode = "client"
-    with pytest.raises(CoreSessionError, match="server mode"):
-        session.command("incidents.delete", {"incident_id": incident_result.incident_id})
-    session._mode = "server"
-
-    delete_result = session.command(
-        "incidents.delete",
-        {"incident_id": incident_result.incident_id},
-    )
-    assert delete_result.incident_id == incident_result.incident_id
-    with pytest.raises(ValueError, match="not found"):
-        session.read_model(
-            "incidents.detail",
-            {"incident_id": incident_result.incident_id},
-        )
 
     tables = {mutation.table for event in received for mutation in event.iter_records()}
-    assert {"assignments", "checkins", "incidents"}.issubset(tables)
+    assert {"assignments", "checkins"}.issubset(tables)
 
     session.close()
 
@@ -671,32 +598,12 @@ def test_core_session_sitrep_followups_locations_and_documents(
     assert dashboard.counts["sitrep_followups"] == 5
     assert dashboard.counts["sitrep_documents"] == 1
 
-    incident_result = session.command(
-        "incidents.create",
-        {
-            "category": "unsafe_area",
-            "severity": "PRIORITY",
-            "title": "North Gate follow-up",
-            "location_label": "North Gate",
-            "narrative": "Linked to the SITREP for command review.",
-            "linked_sitrep_id": sitrep_id,
-        },
-    )
-    assert session.read_model(
-        "incidents.detail",
-        {"incident_id": incident_result.incident_id},
-    )["incident"].linked_sitrep_id == sitrep_id
-
     deleted = session.command("documents.delete", document_id=upload.document_id)
     assert deleted.document_id == upload.document_id
     assert session.read_model("sitreps.detail", {"sitrep_id": sitrep_id})["documents"] == []
 
     deleted_sitrep = session.command("sitreps.delete", sitrep_id=sitrep_id)
     assert deleted_sitrep.record_id == sitrep_id
-    assert session.read_model(
-        "incidents.detail",
-        {"incident_id": incident_result.incident_id},
-    )["incident"].linked_sitrep_id is None
 
     tables = {mutation.table for event in received for mutation in event.iter_records()}
     assert {
@@ -704,7 +611,6 @@ def test_core_session_sitrep_followups_locations_and_documents(
         "sitrep_followups",
         "sitrep_documents",
         "documents",
-        "incidents",
     }.issubset(tables)
 
     session.close()

@@ -34,8 +34,6 @@ from talon_desktop.community_safety import (
     assignment_item_from_assignment,
     build_assignment_payload,
     build_checkin_payload,
-    build_incident_payload,
-    incident_item_from_incident,
 )
 from talon_desktop.documents import (
     build_upload_payload as build_document_upload_payload,
@@ -1109,7 +1107,6 @@ class FakeCore:
                 waypoints=[],
                 missions=[],
                 assignments=[],
-                incidents=[],
             )
         if name == "sitreps.list":
             return []
@@ -1576,7 +1573,6 @@ class FakeCore:
             return {
                 "assignment": self.assignments[0],
                 "checkins": [],
-                "incidents": [],
                 "mission_title": "",
             }
         if name == "operators.list":
@@ -1632,112 +1628,6 @@ finally:
     app.processEvents()
 """
 
-_QT_INCIDENT_DELETE_SCRIPT = r"""
-import os
-import pathlib
-import sys
-import types
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-from PySide6 import QtWidgets
-
-from talon_desktop.community_safety_page import IncidentPage
-
-app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-class FakeCore:
-    mode = "server"
-
-    def __init__(self) -> None:
-        self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
-        self.commands = []
-        self.incidents = [
-            types.SimpleNamespace(
-                id=77,
-                category="community_conflict",
-                severity="PRIORITY",
-                title="Shelter support follow-up",
-                occurred_at=1_700_000_000,
-                location_label="North Shelter",
-                lat=None,
-                lon=None,
-                narrative="Team documented a conflict.",
-                actions_taken="De-escalation support notified.",
-                outcome="",
-                follow_up_needed=True,
-                follow_up_type="revisit_location",
-                follow_up_action="Revisit and confirm resolved.",
-                follow_up_responsible="Aster",
-                follow_up_due="Tonight",
-                follow_up_urgency="priority",
-                follow_up_assignment_id=None,
-                notified_services="None",
-                linked_mission_id=None,
-                linked_assignment_id=None,
-                linked_asset_id=None,
-                linked_sitrep_id=None,
-                created_by=1,
-                created_at=1_700_000_000,
-                version=1,
-            )
-        ]
-
-    def read_model(self, name, filters=None):
-        filters = filters or {}
-        if name == "incidents.list":
-            return list(self.incidents)
-        if name == "incidents.detail":
-            incident_id = int(filters["incident_id"])
-            for incident in self.incidents:
-                if incident.id == incident_id:
-                    return {
-                        "incident": incident,
-                        "creator_callsign": "SERVER",
-                        "assignment_title": "",
-                        "mission_title": "",
-                        "asset_label": "",
-                        "sitrep_label": "",
-                        "follow_up_assignment_title": "",
-                    }
-            raise ValueError("Incident not found.")
-        raise KeyError(name)
-
-    def command(self, name, payload=None, **kwargs):
-        data = dict(payload or {})
-        data.update(kwargs)
-        self.commands.append((name, data))
-        if name == "incidents.delete":
-            incident_id = int(data["incident_id"])
-            self.incidents = [
-                incident for incident in self.incidents if incident.id != incident_id
-            ]
-            return types.SimpleNamespace(incident_id=incident_id)
-        raise KeyError(name)
-
-
-core = FakeCore()
-page = IncidentPage(core)
-try:
-    page.refresh()
-    assert not page.delete_button.isHidden()
-    assert page.delete_button.isEnabled()
-
-    QtWidgets.QMessageBox.question = staticmethod(
-        lambda *args, **kwargs: QtWidgets.QMessageBox.Yes
-    )
-    page._delete_incident()
-    assert core.commands[-1] == ("incidents.delete", {"incident_id": 77})
-    assert page.table.rowCount() == 0
-    assert "0 incident" in page.summary.text()
-
-    print("incident-delete-actions-ok")
-finally:
-    page.close()
-    app.processEvents()
-"""
-
 _QT_ICON_RENDER_SCRIPT = r"""
 import os
 
@@ -1779,7 +1669,6 @@ def test_desktop_navigation_includes_documents_for_client_and_server() -> None:
         "chat",
         "missions",
         "sitreps",
-        "incidents",
         "assets",
         "assignments",
         "documents",
@@ -1795,7 +1684,6 @@ def test_desktop_navigation_includes_documents_for_client_and_server() -> None:
         "chat",
         "missions",
         "sitreps",
-        "incidents",
         "assets",
         "assignments",
         "documents",
@@ -1881,16 +1769,12 @@ def test_desktop_event_mapping_refreshes_documents_section() -> None:
 def test_desktop_event_mapping_refreshes_sitrep_workflow_surfaces() -> None:
     followup_update = desktop_update_from_event(record_changed("sitrep_followups", 42))
     document_update = desktop_update_from_event(record_changed("sitrep_documents", 43))
-    incident_update = desktop_update_from_event(record_changed("incidents", 44))
 
     assert followup_update.refresh_sections == frozenset(
         {"dashboard", "map", "sitreps"}
     )
     assert document_update.refresh_sections == frozenset(
         {"dashboard", "documents", "map", "sitreps"}
-    )
-    assert incident_update.refresh_sections == frozenset(
-        {"assignments", "dashboard", "incidents", "map"}
     )
 
 
@@ -1947,61 +1831,6 @@ def test_desktop_community_safety_helpers() -> None:
         "state": "ok",
         "note": "All clear",
     }
-
-    incident_payload = build_incident_payload(
-        category="welfare_concern",
-        severity="PRIORITY",
-        narrative="Follow-up needed.",
-        linked_assignment_id=7,
-    )
-    assert incident_payload["follow_up_needed"] is False
-    assert incident_payload["linked_assignment_id"] == 7
-
-    follow_up_payload = build_incident_payload(
-        category="welfare_concern",
-        severity="PRIORITY",
-        narrative="Dog located with a broken leg.",
-        follow_up_needed=True,
-        follow_up_type="medical_support",
-        follow_up_action="Transport the dog to the emergency vet.",
-        follow_up_responsible="Aster",
-        follow_up_due="Immediate",
-        follow_up_urgency="immediate",
-        create_follow_up_assignment=True,
-    )
-    assert follow_up_payload["follow_up_needed"] is True
-    assert follow_up_payload["follow_up_type"] == "medical_support"
-    assert follow_up_payload["create_follow_up_assignment"] is True
-    with pytest.raises(ValueError, match="Follow-up next action"):
-        build_incident_payload(
-            category="welfare_concern",
-            severity="PRIORITY",
-            narrative="Dog located with a broken leg.",
-            follow_up_needed=True,
-            follow_up_type="medical_support",
-            follow_up_responsible="Aster",
-            follow_up_due="Immediate",
-            follow_up_urgency="immediate",
-        )
-
-    incident = types.SimpleNamespace(
-        id=9,
-        category="welfare_concern",
-        severity="PRIORITY",
-        title="Welfare follow-up",
-        occurred_at=1_700_000_900,
-        location_label="Oak Loop",
-        follow_up_needed=True,
-        follow_up_due="Immediate",
-        follow_up_responsible="Aster",
-        follow_up_action="Transport to emergency vet.",
-        narrative="Follow-up needed.",
-    )
-    incident_item = incident_item_from_incident(incident)
-    assert incident_item.category_label == "Welfare concern"
-    assert incident_item.follow_up_needed is True
-    assert incident_item.follow_up_responsible == "Aster"
-
 
 def test_desktop_event_mapping_refreshes_asset_surfaces() -> None:
     update = desktop_update_from_event(record_changed("assets", 42))
@@ -2309,20 +2138,6 @@ def test_qt_assignment_closeout_and_server_checkin_actions(
     )
 
     assert "assignment-closeout-actions-ok" in result.stdout
-
-
-def test_qt_incident_delete_action_is_server_only(
-    tmp_path: pathlib.Path,
-) -> None:
-    result = _run_qt_subprocess(
-        _QT_INCIDENT_DELETE_SCRIPT,
-        tmp_path,
-        mode="server",
-        extra_arg="incident-delete",
-        timeout=30,
-    )
-
-    assert "incident-delete-actions-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))
@@ -2932,27 +2747,12 @@ def test_map_overlays_project_assets_zones_routes_and_sitreps() -> None:
         lat=40.02,
         lon=-75.03,
     )
-    incident = types.SimpleNamespace(
-        id=7,
-        title="Injured dog located",
-        category="medical",
-        severity="urgent",
-        follow_up_needed=True,
-        linked_mission_id=9,
-        linked_assignment_id=6,
-        linked_asset_id=None,
-        linked_sitrep_id=None,
-        location_label="North Gate",
-        lat=40.02,
-        lon=-75.03,
-    )
     context = types.SimpleNamespace(
         assets=[asset],
         zones=[zone],
         waypoints=waypoints,
         missions=[mission],
         assignments=[assignment],
-        incidents=[incident],
     )
 
     overlays = build_map_overlays(context, sitrep_entries=[sitrep, native_sitrep])
@@ -2961,8 +2761,6 @@ def test_map_overlays_project_assets_zones_routes_and_sitreps() -> None:
     assert overlays.assignments[0].title == "North Gate watch"
     assert overlays.zones[0].label == "AO"
     assert overlays.routes[0].mission_label == "Route Mission"
-    assert overlays.incidents[0].title == "Injured dog located"
-    assert overlays.incidents[0].linked_assignment_id == 6
     assert [item.key for item in overlays.mission_locations] == ["staging_area", "medical"]
     assert [point.id for point in overlays.waypoints] == [3, 4]
     assert overlays.sitreps[0].body == "At cache"
@@ -3031,7 +2829,6 @@ def test_map_auto_bounds_match_scene_aspect() -> None:
         waypoints=[],
         missions=[],
         assignments=[],
-        incidents=[],
     )
     overlays = build_map_overlays(
         context,
@@ -3173,7 +2970,7 @@ def test_mission_create_payload_parses_assets_ao_and_route() -> None:
         support_equipment="Generator",
         custom_resources=[{"label": "Water", "details": "20 gal"}],
         objectives=[{"label": "Primary", "criteria": "Cache verified"}],
-        key_locations={"icp": "40.000000, -75.000000", "empty": ""},
+        key_locations={"command_post": "40.000000, -75.000000", "empty": ""},
     )
 
     assert payload["title"] == "Cache Sweep"
@@ -3189,7 +2986,7 @@ def test_mission_create_payload_parses_assets_ao_and_route() -> None:
     assert payload["constraints"] == ["Two-person teams"]
     assert payload["custom_resources"] == [{"label": "Water", "details": "20 gal"}]
     assert payload["objectives"] == [{"label": "Primary", "criteria": "Cache verified"}]
-    assert payload["key_locations"] == {"icp": "40.000000, -75.000000"}
+    assert payload["key_locations"] == {"command_post": "40.000000, -75.000000"}
 
 
 def test_mission_payload_rejects_invalid_title_priority_and_geometry() -> None:

@@ -168,36 +168,6 @@ class AssignmentCheckIn:
 
 
 @dataclasses.dataclass
-class CommunityIncident:
-    id: int
-    category: str
-    severity: str
-    title: str
-    occurred_at: int
-    location_label: str
-    lat: typing.Optional[float]
-    lon: typing.Optional[float]
-    narrative: str
-    actions_taken: str
-    outcome: str
-    follow_up_needed: bool
-    follow_up_type: str
-    follow_up_action: str
-    follow_up_responsible: str
-    follow_up_due: str
-    follow_up_urgency: str
-    follow_up_assignment_id: typing.Optional[int]
-    notified_services: str
-    linked_mission_id: typing.Optional[int]
-    linked_assignment_id: typing.Optional[int]
-    linked_asset_id: typing.Optional[int]
-    linked_sitrep_id: typing.Optional[int]
-    created_by: int
-    created_at: int
-    version: int
-
-
-@dataclasses.dataclass
 class Waypoint:
     id: int
     mission_id: int

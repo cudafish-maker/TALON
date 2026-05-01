@@ -82,21 +82,6 @@ class AssignmentOverlay:
 
 
 @dataclasses.dataclass(frozen=True)
-class IncidentOverlay:
-    id: int
-    title: str
-    category: str
-    severity: str
-    follow_up_needed: bool
-    linked_mission_id: int | None
-    linked_assignment_id: int | None
-    linked_asset_id: int | None
-    linked_sitrep_id: int | None
-    location_label: str
-    point: ProjectedPoint
-
-
-@dataclasses.dataclass(frozen=True)
 class MissionLocationOverlay:
     mission_id: int
     mission_label: str
@@ -114,7 +99,6 @@ class MapOverlayBundle:
     routes: tuple[RouteOverlay, ...]
     sitreps: tuple[SitrepOverlay, ...]
     assignments: tuple[AssignmentOverlay, ...]
-    incidents: tuple[IncidentOverlay, ...]
     mission_locations: tuple[MissionLocationOverlay, ...]
 
 
@@ -143,7 +127,6 @@ def build_map_overlays(
     waypoints = list(_field(context, "waypoints", default=[]) or [])
     missions = list(_field(context, "missions", default=[]) or [])
     assignments = list(_field(context, "assignments", default=[]) or [])
-    incidents = list(_field(context, "incidents", default=[]) or [])
     selected_mission_id = _optional_int(_field(context, "selected_mission_id", default=None))
     overlay_missions = [
         mission
@@ -157,7 +140,6 @@ def build_map_overlays(
             zones=zones,
             waypoints=waypoints,
             assignments=assignments,
-            incidents=incidents,
             missions=overlay_missions,
             sitrep_entries=sitrep_entries,
         )
@@ -280,21 +262,6 @@ def build_map_overlays(
         )
         if overlay is not None:
             sitrep_items.append(overlay)
-    sitreps_by_id = {item.id: item for item in sitrep_items}
-    incident_items = []
-    for incident in incidents:
-        overlay = _incident_overlay(
-            incident,
-            asset_by_id,
-            assignment_by_id,
-            sitreps_by_id,
-            bounds=bounds,
-            scene_width=scene_width,
-            scene_height=scene_height,
-            scene_margin=scene_margin,
-        )
-        if overlay is not None:
-            incident_items.append(overlay)
     mission_location_items = _mission_location_overlays(
         overlay_missions,
         bounds=bounds,
@@ -311,7 +278,6 @@ def build_map_overlays(
         routes=routes,
         sitreps=tuple(sitrep_items),
         assignments=assignment_overlays,
-        incidents=tuple(incident_items),
         mission_locations=mission_location_items,
     )
 
@@ -322,7 +288,6 @@ def bounds_for_context(
     zones: typing.Iterable[object],
     waypoints: typing.Iterable[object],
     assignments: typing.Iterable[object] = (),
-    incidents: typing.Iterable[object] = (),
     missions: typing.Iterable[object] = (),
     sitrep_entries: typing.Iterable[object] = (),
 ) -> MapBounds:
@@ -338,9 +303,6 @@ def bounds_for_context(
     for assignment in assignments:
         if _has_coordinates(assignment):
             coords.append((float(_field(assignment, "lat")), float(_field(assignment, "lon"))))
-    for incident in incidents:
-        if _has_coordinates(incident):
-            coords.append((float(_field(incident, "lat")), float(_field(incident, "lon"))))
     for mission in missions:
         coords.extend(_mission_location_points(mission))
     for entry in sitrep_entries:
@@ -478,54 +440,6 @@ def _mission_location_overlays(
     return tuple(items)
 
 
-def _incident_overlay(
-    incident: object,
-    assets_by_id: dict[int, AssetOverlay],
-    assignments_by_id: dict[int, AssignmentOverlay],
-    sitreps_by_id: dict[int, SitrepOverlay],
-    *,
-    bounds: MapBounds,
-    scene_width: float,
-    scene_height: float,
-    scene_margin: float,
-) -> IncidentOverlay | None:
-    asset_id = _optional_int(_field(incident, "linked_asset_id", default=None))
-    assignment_id = _optional_int(_field(incident, "linked_assignment_id", default=None))
-    sitrep_id = _optional_int(_field(incident, "linked_sitrep_id", default=None))
-    lat = _optional_float(_field(incident, "lat", default=None))
-    lon = _optional_float(_field(incident, "lon", default=None))
-    if lat is not None and lon is not None:
-        point = project_lat_lon(
-            bounds,
-            lat,
-            lon,
-            scene_width=scene_width,
-            scene_height=scene_height,
-            scene_margin=scene_margin,
-        )
-    elif asset_id is not None and asset_id in assets_by_id:
-        point = assets_by_id[asset_id].point
-    elif assignment_id is not None and assignment_id in assignments_by_id:
-        point = assignments_by_id[assignment_id].point
-    elif sitrep_id is not None and sitrep_id in sitreps_by_id:
-        point = sitreps_by_id[sitrep_id].point
-    else:
-        return None
-    return IncidentOverlay(
-        id=int(_field(incident, "id")),
-        title=str(_field(incident, "title", default="Incident")),
-        category=str(_field(incident, "category", default="other")),
-        severity=str(_field(incident, "severity", default="routine")),
-        follow_up_needed=bool(_field(incident, "follow_up_needed", default=False)),
-        linked_mission_id=_optional_int(_field(incident, "linked_mission_id", default=None)),
-        linked_assignment_id=assignment_id,
-        linked_asset_id=asset_id,
-        linked_sitrep_id=sitrep_id,
-        location_label=str(_field(incident, "location_label", default="") or ""),
-        point=point,
-    )
-
-
 def _sitrep_overlay(
     entry: object,
     assets_by_id: dict[int, AssetOverlay],
@@ -628,7 +542,7 @@ def _mission_location_entries(
     locations = _field(mission, "key_locations", default={}) or {}
     if isinstance(locations, dict):
         for key, label in (
-            ("incident_command_post", "Incident Command Post"),
+            ("command_post", "Command Post"),
             ("staging_area", "Staging Area"),
             ("medical", "Medical"),
             ("evacuation", "Evacuation"),

@@ -83,12 +83,12 @@ th { background: #edf3f8; text-align: left; }
       <li>Creates the first local encrypted client database.</li>
       <li>Configures Reticulum to reach the server.</li>
       <li>Enrolls with a full <code>TOKEN:SERVER_HASH</code> value.</li>
-      <li>Exercises field workflows: map, SITREPs, assets, missions, assignments, incidents, chat, documents, and operator profile.</li>
+      <li>Exercises field workflows: map, SITREPs, assets, missions, assignments, chat, documents, and operator profile.</li>
     </ul>
   </div>
 </div>
 
-<div class="warning"><strong>Use test data only.</strong> Do not use live incident information, production RNS identities, real private documents, or a passphrase reused anywhere else.</div>
+<div class="warning"><strong>Use test data only.</strong> Do not use live operational information, production RNS identities, real private documents, or a passphrase reused anywhere else.</div>
 
 <h2 id="test-bed">Test Bed</h2>
 <h3>Recommended Layout</h3>
@@ -248,13 +248,13 @@ bash ./install.sh --yes --smoke-test</pre></td>
   </tr>
   <tr>
     <td class="id">E4</td><td class="role">Server</td>
-    <td>Refresh <strong>SITREPs</strong>, select the client SITREP, then test <strong>Acknowledge</strong>, <strong>Assign</strong>, <strong>Close</strong>, and <strong>Create Incident</strong>.</td>
-    <td>Follow-ups appear in detail. Status and assignment fields update. Linked incident opens in the Incidents page.</td>
-    <td>Server SITREP detail and linked Incident screenshots.</td>
+    <td>Refresh <strong>SITREPs</strong>, select the client SITREP, then test <strong>Acknowledge</strong>, <strong>Assign</strong>, and <strong>Close</strong>.</td>
+    <td>Follow-ups appear in detail. Status and assignment fields update.</td>
+    <td>Server SITREP detail screenshot.</td>
   </tr>
 </table>
 
-<h3>F. Mission, Assignment, Incident, And Chat Workflows</h3>
+<h3>F. Mission, Assignment, And Chat Workflows</h3>
 <table>
   <tr><th class="id">ID</th><th class="role">Role</th><th>Action</th><th>Expected Result</th><th>Evidence</th></tr>
   <tr>
@@ -277,12 +277,6 @@ bash ./install.sh --yes --smoke-test</pre></td>
   </tr>
   <tr>
     <td class="id">F4</td><td class="role">Either</td>
-    <td>Open <strong>Incidents</strong>, create a report linked to the assignment, asset, mission, or SITREP, and mark follow-up needed.</td>
-    <td>Incident appears with category, severity, title, location, narrative, actions, outcome, and follow-up filters.</td>
-    <td>Incident list/detail screenshot.</td>
-  </tr>
-  <tr>
-    <td class="id">F5</td><td class="role">Either</td>
     <td>Open <strong>Chat</strong>, create a custom channel, send a normal message, send an urgent message, attach a grid reference, and open a direct-message channel with another operator if available.</td>
     <td>Messages sync both ways. Urgent messages appear in alert surfaces. Grid references are built from known map positions such as assets, zones, waypoints, and located SITREPs. DM channels are server-readable in the current core.</td>
     <td>Chat screenshots from both roles.</td>
@@ -292,7 +286,7 @@ bash ./install.sh --yes --smoke-test</pre></td>
 <h2 id="permissions" class="page-break">Permission And Negative Tests</h2>
 <table>
   <tr><th class="id">ID</th><th>Test</th><th>Expected Result</th><th>Evidence</th></tr>
-  <tr><td class="id">P1</td><td>Client navigation after enrollment.</td><td>Client has Dashboard, Map, SITREPs, Assets, Missions, Assignments, Incidents, Chat, Documents, and Operators. Client does not show Enrollment, Clients, Audit, or Keys.</td><td>Client nav screenshot.</td></tr>
+  <tr><td class="id">P1</td><td>Client navigation after enrollment.</td><td>Client has Dashboard, Map, SITREPs, Assets, Missions, Assignments, Chat, Documents, and Operators. Client does not show Enrollment, Clients, Audit, or Keys.</td><td>Client nav screenshot.</td></tr>
   <tr><td class="id">P2</td><td>Server navigation after unlock.</td><td>Server has all client pages plus Enrollment, Clients, Audit, and Keys.</td><td>Server nav screenshot.</td></tr>
   <tr><td class="id">P3</td><td>Client tries to upload or delete a document.</td><td>Upload is unavailable or reports <code>Upload is available in server mode only.</code> Delete is unavailable in client mode.</td><td>Client Documents screenshot.</td></tr>
   <tr><td class="id">P4</td><td>Client tries to delete a chat channel/message.</td><td>Delete controls are unavailable or disabled. Server can delete eligible non-default channels/messages.</td><td>Client and server Chat screenshots.</td></tr>
@@ -346,7 +340,7 @@ bash ./install.sh --yes --smoke-test</pre></td>
   <tr><td>Install</td><td>Role-specific launchers and desktop entries are correct. No destructive role switch is needed for the normal two-role test bed.</td></tr>
   <tr><td>Unlock and network</td><td>Strong passphrases work, weak passphrases fail, Reticulum config validates, and TCP warnings appear when TCP is active.</td></tr>
   <tr><td>Enrollment</td><td>One-time token is generated, consumed, and removed from pending tokens. Client receives an operator identity and reaches the main window.</td></tr>
-  <tr><td>Sync</td><td>Assets, SITREPs, missions, assignments, incidents, chat, and document metadata behave according to role and sync expectations.</td></tr>
+  <tr><td>Sync</td><td>Assets, SITREPs, missions, assignments, chat, and document metadata behave according to role and sync expectations.</td></tr>
   <tr><td>Permissions</td><td>Client cannot access server-only admin pages or server-only upload/delete/lifecycle controls.</td></tr>
   <tr><td>Recovery</td><td>Reopening apps preserves data and enrollment. Temporary network loss does not corrupt records.</td></tr>
 </table>
@@ -369,7 +363,7 @@ bash ./install.sh --yes --smoke-test</pre></td>
   <tr><td>Installer</td><td><code>build/install-talon-desktop.sh</code>, <code>tests/test_linux_installer.py</code></td><td>Role marker handling, launchers, default paths, RNS config defaults, role-switch confirmation, uninstall safeguards.</td></tr>
   <tr><td>Unlock, network, enrollment, sync</td><td><code>talon_desktop/app.py</code>, <code>talon_core/session.py</code>, <code>talon_core/network/rns_config.py</code></td><td>Login behavior, Network Setup gating, Reticulum validation/acceptance, client enrollment, sync status, lease lock behavior.</td></tr>
   <tr><td>Navigation</td><td><code>talon_desktop/navigation.py</code></td><td>Common pages and server-only pages.</td></tr>
-  <tr><td>Operational workflows</td><td><code>talon_desktop/*_page.py</code>, <code>talon_core/services/*</code>, <code>tests/test_desktop_shell.py</code>, <code>tests/test_services.py</code></td><td>Assets, SITREPs, map overlays, missions, assignments, incidents, chat, documents, operators, audit, and keys.</td></tr>
+  <tr><td>Operational workflows</td><td><code>talon_desktop/*_page.py</code>, <code>talon_core/services/*</code>, <code>tests/test_desktop_shell.py</code>, <code>tests/test_services.py</code></td><td>Assets, SITREPs, map overlays, missions, assignments, chat, documents, operators, audit, and keys.</td></tr>
   <tr><td>Document safety</td><td><code>talon_core/documents.py</code>, <code>talon_core/constants.py</code>, <code>talon_desktop/documents.py</code>, <code>tests/test_documents.py</code></td><td>50 MB cap, allowed upload extensions, blocked executable/script extensions, hash verification, server-only upload/delete.</td></tr>
   <tr><td>Security and auth edges</td><td><code>talon_core/crypto/passphrase.py</code>, <code>tests/test_core_session.py</code>, <code>tests/test_revocation.py</code></td><td>Passphrase policy, unlock delay, revocation, lease renewal, identity lock expectations.</td></tr>
 </table>

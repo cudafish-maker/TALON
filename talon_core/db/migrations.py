@@ -400,13 +400,13 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_messages_sync_status ON messages(sync_status);
     """,
 
-    # 0016 — Community safety assignments, check-ins, and incidents
+    # 0016 — Community safety assignments and check-ins
     #
     # These tables provide the first field-oriented community safety workflow:
     # patrol/protective-detail assignment tracking, scheduled or ad hoc
-    # check-ins, duress states, and event-scoped incident records. They avoid
-    # person-of-interest or suspect records and keep sensitive protected-person
-    # data as short operational labels until core-level privacy/ACLs exist.
+    # check-ins, and duress states. They avoid person-of-interest or suspect
+    # records and keep sensitive protected-person data as short operational
+    # labels until core-level privacy/ACLs exist.
     """
     CREATE TABLE IF NOT EXISTS assignments (
         id                       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -459,31 +459,6 @@ MIGRATIONS: list[str] = [
         version         INTEGER NOT NULL DEFAULT 1
     );
 
-    CREATE TABLE IF NOT EXISTS incidents (
-        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-        category             TEXT    NOT NULL,
-        severity             TEXT    NOT NULL,
-        title                TEXT    NOT NULL DEFAULT '',
-        occurred_at          INTEGER NOT NULL,
-        location_label       TEXT    NOT NULL DEFAULT '',
-        lat                  REAL,
-        lon                  REAL,
-        narrative            TEXT    NOT NULL DEFAULT '',
-        actions_taken        TEXT    NOT NULL DEFAULT '',
-        outcome              TEXT    NOT NULL DEFAULT '',
-        follow_up_needed     INTEGER NOT NULL DEFAULT 0,
-        notified_services    TEXT    NOT NULL DEFAULT '',
-        linked_mission_id    INTEGER REFERENCES missions(id),
-        linked_assignment_id INTEGER REFERENCES assignments(id),
-        linked_asset_id      INTEGER REFERENCES assets(id),
-        linked_sitrep_id     INTEGER REFERENCES sitreps(id),
-        created_by           INTEGER NOT NULL REFERENCES operators(id),
-        created_at           INTEGER NOT NULL,
-        uuid                 TEXT    NOT NULL UNIQUE,
-        sync_status          TEXT    NOT NULL DEFAULT 'synced',
-        version              INTEGER NOT NULL DEFAULT 1
-    );
-
     CREATE INDEX idx_assignments_status ON assignments(status);
     CREATE INDEX idx_assignments_type ON assignments(assignment_type);
     CREATE INDEX idx_assignments_mission ON assignments(mission_id);
@@ -491,10 +466,6 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_checkins_assignment ON checkins(assignment_id, created_at);
     CREATE INDEX idx_checkins_state ON checkins(state);
     CREATE INDEX idx_checkins_sync_status ON checkins(sync_status);
-    CREATE INDEX idx_incidents_category ON incidents(category);
-    CREATE INDEX idx_incidents_severity ON incidents(severity);
-    CREATE INDEX idx_incidents_occurred ON incidents(occurred_at);
-    CREATE INDEX idx_incidents_sync_status ON incidents(sync_status);
     """,
 
     # 0017 — Location-native SITREPs, append-only follow-ups, and document links
@@ -569,21 +540,9 @@ MIGRATIONS: list[str] = [
         token_preview = 'legacy-expired',
         token = 'legacy:' || lower(hex(randomblob(32)));
     """,
-    # 0019 — Accountable incident follow-up workflow.
-    #
-    # follow_up_needed used to be only a filter flag. These fields preserve the
-    # actionable next step that made the flag meaningful and optionally link the
-    # incident to the assignment created for that follow-up work.
+    # 0019 — Retired community safety reporting workflow.
     """
-    ALTER TABLE incidents ADD COLUMN follow_up_type TEXT NOT NULL DEFAULT '';
-    ALTER TABLE incidents ADD COLUMN follow_up_action TEXT NOT NULL DEFAULT '';
-    ALTER TABLE incidents ADD COLUMN follow_up_responsible TEXT NOT NULL DEFAULT '';
-    ALTER TABLE incidents ADD COLUMN follow_up_due TEXT NOT NULL DEFAULT '';
-    ALTER TABLE incidents ADD COLUMN follow_up_urgency TEXT NOT NULL DEFAULT '';
-    ALTER TABLE incidents ADD COLUMN follow_up_assignment_id INTEGER REFERENCES assignments(id);
-
-    CREATE INDEX idx_incidents_follow_up ON incidents(follow_up_needed, follow_up_due);
-    CREATE INDEX idx_incidents_follow_up_assignment ON incidents(follow_up_assignment_id);
+    SELECT 1;
     """,
     # 0020 — Document explorer folders.
     #
@@ -592,6 +551,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE documents ADD COLUMN folder_path TEXT NOT NULL DEFAULT '';
     CREATE INDEX idx_documents_folder_path ON documents(folder_path, uploaded_at);
+    """,
+    # 0021 — Drop retired community safety reporting table from upgraded DBs.
+    """
+    DROP TABLE IF EXISTS incidents;
     """,
 ]
 

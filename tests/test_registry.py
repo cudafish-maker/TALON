@@ -39,7 +39,6 @@ def test_registry_exposes_current_sync_sets():
         "sitrep_followups",
         "sitrep_documents",
         "checkins",
-        "incidents",
     )
     assert registry.CLIENT_PUSH_TABLES == {
         "assets",
@@ -49,7 +48,6 @@ def test_registry_exposes_current_sync_sets():
         "zones",
         "assignments",
         "checkins",
-        "incidents",
         "sitrep_followups",
         "sitrep_documents",
     }
@@ -63,7 +61,6 @@ def test_registry_exposes_current_sync_sets():
         "sitrep_followups",
         "sitrep_documents",
         "checkins",
-        "incidents",
     )
     assert registry.TOMBSTONE_APPLY_ORDER == (
         "messages",
@@ -73,7 +70,6 @@ def test_registry_exposes_current_sync_sets():
         "checkins",
         "sitrep_documents",
         "sitrep_followups",
-        "incidents",
         "sitreps",
         "assets",
         "documents",
@@ -90,7 +86,6 @@ def test_registry_captures_table_metadata():
     assets = registry.get_table("assets")
     assignments = registry.get_table("assignments")
     checkins = registry.get_table("checkins")
-    incidents = registry.get_table("incidents")
     sitrep_followups = registry.get_table("sitrep_followups")
     sitrep_documents = registry.get_table("sitrep_documents")
 
@@ -101,7 +96,6 @@ def test_registry_captures_table_metadata():
     assert assets.ownership_fields == ("created_by",)
     assert assignments.ownership_fields == ("created_by",)
     assert checkins.ownership_fields == ("operator_id",)
-    assert incidents.ownership_fields == ("created_by",)
     assert sitrep_followups.ownership_fields == ("author_id",)
     assert sitrep_documents.ownership_fields == ("created_by",)
     assert assets.client_push_forced_fields == {"verified": 0, "confirmed_by": None}
@@ -111,11 +105,6 @@ def test_registry_captures_table_metadata():
         "assignments",
         "mission",
         "map",
-        "main",
-    }
-    assert registry.ui_refresh_targets("incidents") == {
-        "incidents",
-        "assignments",
         "main",
     }
     assert registry.ui_refresh_targets("sitrep_followups") == {"sitrep", "map", "main"}

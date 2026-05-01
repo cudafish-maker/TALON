@@ -11,7 +11,6 @@ NAV_ICON_KEYS = frozenset(
         "assets",
         "missions",
         "assignments",
-        "incidents",
         "chat",
         "documents",
         "operators",
@@ -145,8 +144,6 @@ def asset_marker_pixmap(
 
 
 def _nav_icon_colors(key: str) -> tuple[str, str, str, str]:
-    if key == "incidents":
-        return ("#ff5555", "#ff7777", "#ff7777", "#526068")
     return ("#aebbc2", "#d8dee9", "#8fbcbb", "#526068")
 
 
@@ -240,14 +237,6 @@ def _draw_nav_glyph(painter: QtGui.QPainter, key: str) -> None:
         path.lineTo(14, 8)
         painter.drawPath(path)
         _line(painter, 9, 16, 15, 16)
-    elif key == "incidents":
-        path = QtGui.QPainterPath(QtCore.QPointF(12, 4))
-        path.lineTo(21, 20)
-        path.lineTo(3, 20)
-        path.closeSubpath()
-        painter.drawPath(path)
-        _line(painter, 12, 9, 12, 14)
-        _line(painter, 12, 17.5, 12.01, 17.5)
     elif key == "chat":
         path = QtGui.QPainterPath(QtCore.QPointF(4, 5))
         path.lineTo(16, 5)

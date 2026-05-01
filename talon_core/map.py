@@ -8,7 +8,6 @@ from talon_core.db.connection import Connection
 from talon_core.db.models import (
     Asset,
     CommunityAssignment,
-    CommunityIncident,
     Mission,
     Waypoint,
     Zone,
@@ -24,7 +23,6 @@ class MapContext:
     waypoints: list[Waypoint] = dataclasses.field(default_factory=list)
     missions: list[Mission] = dataclasses.field(default_factory=list)
     assignments: list[CommunityAssignment] = dataclasses.field(default_factory=list)
-    incidents: list[CommunityIncident] = dataclasses.field(default_factory=list)
     selected_mission_id: typing.Optional[int] = None
 
     @property
@@ -72,11 +70,6 @@ class MapContext:
             self,
             zones=selected_zones,
             waypoints=selected_waypoints,
-            incidents=[
-                incident
-                for incident in self.incidents
-                if mission_id is None or incident.linked_mission_id == mission_id
-            ],
         )
 
 
@@ -88,13 +81,12 @@ def load_map_context(
 ) -> MapContext:
     """Load the shared operational map picture without importing UI code."""
     from talon_core.assets import load_assets
-    from talon_core.community_safety import list_assignments, list_incidents
+    from talon_core.community_safety import list_assignments
     from talon_core.missions import load_missions
     from talon_core.zones import load_zones
 
     assets = load_assets(conn, limit=limit)
     assignments = list_assignments(conn, active_only=True, limit=limit)
-    incidents = list_incidents(conn, limit=limit)
     if mission_id is not None:
         assets = [
             asset
@@ -106,21 +98,6 @@ def load_map_context(
             for assignment in assignments
             if assignment.mission_id == mission_id
         ]
-        asset_ids = {asset.id for asset in assets}
-        assignment_ids = {assignment.id for assignment in assignments}
-        incidents = [
-            incident
-            for incident in incidents
-            if incident.linked_mission_id == mission_id
-            or (
-                incident.linked_assignment_id is not None
-                and incident.linked_assignment_id in assignment_ids
-            )
-            or (
-                incident.linked_asset_id is not None
-                and incident.linked_asset_id in asset_ids
-            )
-        ]
     zones = load_zones(conn, mission_id=mission_id, limit=limit)
     waypoints = load_waypoints_for_map(conn, mission_id=mission_id, limit=limit)
     missions = load_missions(conn, limit=limit)
@@ -130,7 +107,6 @@ def load_map_context(
         waypoints=waypoints,
         missions=missions,
         assignments=assignments,
-        incidents=incidents,
         selected_mission_id=mission_id,
     )
 

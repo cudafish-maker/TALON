@@ -683,20 +683,6 @@ class TalonCoreSession:
                 assignment_id=filters.get("assignment_id"),
                 limit=int(filters.get("limit", 100)),
             )
-        if name == "incidents.list":
-            self._require_unlocked()
-            from talon_core.community_safety import list_incidents
-
-            return list_incidents(
-                self._conn,
-                category_filter=filters.get("category_filter"),
-                severity_filter=filters.get("severity_filter"),
-                follow_up_only=bool(filters.get("follow_up_only", False)),
-                limit=int(filters.get("limit", 200)),
-            )
-        if name == "incidents.detail":
-            self._require_unlocked()
-            return self._incident_detail(int(filters["incident_id"]))
         if name == "chat.channels":
             self._require_unlocked()
             from talon_core.chat import load_channels
@@ -853,11 +839,6 @@ class TalonCoreSession:
                     "status = 'needs_support'",
                 ),
                 "checkins": self._count_rows("checkins"),
-                "incidents": self._count_rows("incidents"),
-                "incident_follow_ups": self._count_rows(
-                    "incidents",
-                    "follow_up_needed != 0",
-                ),
                 "channels": self._count_rows("channels"),
                 "messages": self._count_rows("messages"),
                 "urgent_messages": self._count_rows("messages", "is_urgent = 1"),
@@ -1101,13 +1082,6 @@ class TalonCoreSession:
         elif checkin_id is not None:
             records.add(("checkins", int(checkin_id)))
 
-        incident = getattr(result, "incident", None)
-        incident_id = getattr(result, "incident_id", None)
-        if incident is not None and getattr(incident, "id", None) is not None:
-            records.add(("incidents", int(incident.id)))
-        elif incident_id is not None:
-            records.add(("incidents", int(incident_id)))
-
         return records
 
     def _mark_client_record_pending(self, table: str, record_id: int) -> None:
@@ -1151,7 +1125,6 @@ class TalonCoreSession:
             "channels",
             "documents",
             "enrollment_tokens",
-            "incidents",
             "messages",
             "missions",
             "operators",
@@ -1308,23 +1281,6 @@ class TalonCoreSession:
 
             payload.setdefault("acknowledged_by", self.require_local_operator_id())
             return acknowledge_checkin_command(self._conn, **payload)
-        if name == "incidents.create":
-            from talon_core.services.community_safety import create_incident_command
-
-            payload.setdefault("created_by", self.require_local_operator_id())
-            return create_incident_command(self._conn, **payload)
-        if name == "incidents.clear_followup":
-            from talon_core.services.community_safety import (
-                clear_incident_follow_up_command,
-            )
-
-            return clear_incident_follow_up_command(self._conn, **payload)
-        if name == "incidents.delete":
-            self._require_server_mode("Incident delete")
-            from talon_core.services.community_safety import delete_incident_command
-
-            return delete_incident_command(self._conn, **payload)
-
         if name == "chat.ensure_defaults":
             from talon_core.chat import ensure_default_channels
 
@@ -1432,17 +1388,11 @@ class TalonCoreSession:
         from talon_core.sitrep import delete_sitrep
 
         record_id = int(sitrep_id)
-        unlinked_incident_ids = delete_sitrep(self._conn, record_id)
+        delete_sitrep(self._conn, record_id)
         return RecordCommandResult(
             "sitreps",
             record_id,
-            (
-                record_deleted("sitreps", record_id),
-                *(
-                    record_changed("incidents", incident_id)
-                    for incident_id in unlinked_incident_ids
-                ),
-            ),
+            (record_deleted("sitreps", record_id),),
         )
 
     def _sitreps_followup(
@@ -1783,18 +1733,6 @@ class TalonCoreSession:
                 }
             )
 
-        incidents = []
-        try:
-            from talon_core.community_safety import list_incidents
-
-            incidents = [
-                incident
-                for incident in list_incidents(self._conn, limit=500)
-                if incident.linked_sitrep_id == sitrep_id
-            ]
-        except Exception:
-            incidents = []
-
         return {
             "sitrep": sitrep,
             "callsign": callsign,
@@ -1803,7 +1741,6 @@ class TalonCoreSession:
             "mission_title": self._mission_title(sitrep.mission_id),
             "followups": list_sitrep_followups(self._conn, sitrep_id=sitrep_id),
             "documents": linked_documents,
-            "incidents": incidents,
         }
 
     def _mission_detail(self, mission_id: int) -> dict[str, typing.Any]:
@@ -1851,7 +1788,6 @@ class TalonCoreSession:
         from talon_core.community_safety import (
             list_assignments,
             list_checkins,
-            list_incidents,
         )
 
         return {
@@ -1864,11 +1800,6 @@ class TalonCoreSession:
             ),
             "operators": list_operators(self._conn, include_sentinel=True),
             "recent_checkins": list_checkins(self._conn, limit=50),
-            "open_incidents": list_incidents(
-                self._conn,
-                follow_up_only=True,
-                limit=50,
-            ),
             "sync": self._sync_status(),
         }
 
@@ -1876,18 +1807,11 @@ class TalonCoreSession:
         from talon_core.community_safety import (
             get_assignment,
             list_checkins,
-            list_incidents,
         )
 
         assignment = get_assignment(self._conn, assignment_id)
         if assignment is None:
             raise ValueError(f"Assignment {assignment_id} not found.")
-        incidents = [
-            incident
-            for incident in list_incidents(self._conn, limit=500)
-            if incident.linked_assignment_id == assignment_id
-            or incident.follow_up_assignment_id == assignment_id
-        ]
         return {
             "assignment": assignment,
             "creator_callsign": self._operator_callsign(assignment.created_by),
@@ -1897,46 +1821,7 @@ class TalonCoreSession:
                 else ""
             ),
             "checkins": list_checkins(self._conn, assignment_id=assignment_id, limit=100),
-            "incidents": incidents,
             "mission_title": self._mission_title(assignment.mission_id),
-        }
-
-    def _incident_detail(self, incident_id: int) -> dict[str, typing.Any]:
-        from talon_core.community_safety import get_assignment, get_incident
-        from talon_core.missions import get_mission
-
-        incident = get_incident(self._conn, incident_id)
-        if incident is None:
-            raise ValueError(f"Incident {incident_id} not found.")
-        assignment = (
-            get_assignment(self._conn, incident.linked_assignment_id)
-            if incident.linked_assignment_id is not None
-            else None
-        )
-        follow_up_assignment = (
-            get_assignment(self._conn, incident.follow_up_assignment_id)
-            if incident.follow_up_assignment_id is not None
-            else None
-        )
-        mission = (
-            get_mission(self._conn, incident.linked_mission_id)
-            if incident.linked_mission_id is not None
-            else None
-        )
-        return {
-            "incident": incident,
-            "creator_callsign": self._operator_callsign(incident.created_by),
-            "assignment_title": assignment.title if assignment is not None else "",
-            "follow_up_assignment_title": (
-                follow_up_assignment.title if follow_up_assignment is not None else ""
-            ),
-            "mission_title": mission.title if mission is not None else "",
-            "asset_label": self._asset_label(incident.linked_asset_id),
-            "sitrep_label": (
-                f"SITREP #{incident.linked_sitrep_id}"
-                if incident.linked_sitrep_id is not None
-                else ""
-            ),
         }
 
     def _operator_callsign(self, operator_id: int) -> str:

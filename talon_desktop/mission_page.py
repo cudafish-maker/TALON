@@ -84,7 +84,7 @@ class MissionDraftPreview(QtWidgets.QGraphicsView):
             if point is not None:
                 named_points.append((label, icon, point))
         for key, label in (
-            ("incident_command_post", "Incident Command Post"),
+            ("command_post", "Command Post"),
             ("staging_area", "Staging Area"),
             ("medical", "Medical"),
             ("evacuation", "Evacuation"),
@@ -507,7 +507,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         key_group = QtWidgets.QGroupBox("Key Locations")
         key_form = QtWidgets.QFormLayout(key_group)
         for key, label in (
-            ("incident_command_post", "Incident Command Post"),
+            ("command_post", "Command Post"),
             ("staging_area", "Staging Area"),
             ("medical", "Medical"),
             ("evacuation", "Evacuation"),

@@ -1,4 +1,4 @@
-"""PySide6 community safety assignment board and incident pages."""
+"""PySide6 community safety assignment board."""
 from __future__ import annotations
 
 import typing
@@ -10,9 +10,6 @@ from talon_core.community_safety import (
     ASSIGNMENT_STATUSES,
     ASSIGNMENT_TYPES,
     CHECKIN_STATES,
-    INCIDENT_CATEGORIES,
-    INCIDENT_FOLLOW_UP_TYPES,
-    INCIDENT_FOLLOW_UP_URGENCIES,
 )
 from talon_core.constants import PREDEFINED_SKILLS, SITREP_LEVELS
 from talon_core.utils.formatting import format_ts
@@ -21,15 +18,10 @@ from talon_desktop.community_safety import (
     ASSIGNMENT_STATUS_LABELS,
     ASSIGNMENT_TYPE_LABELS,
     CHECKIN_STATE_LABELS,
-    INCIDENT_CATEGORY_LABELS,
-    INCIDENT_FOLLOW_UP_TYPE_LABELS,
-    INCIDENT_FOLLOW_UP_URGENCY_LABELS,
     DesktopAssignmentItem,
     assignment_items_from_board,
     build_assignment_payload,
     build_checkin_payload,
-    build_incident_payload,
-    incident_items_from_entries,
     operator_status_items_from_board,
 )
 from talon_desktop.map_picker import format_coordinate, pick_point_on_map
@@ -77,8 +69,6 @@ class AssignmentPage(QtWidgets.QWidget):
         self.checkin_button.clicked.connect(self._create_checkin)
         self.ack_button = QtWidgets.QPushButton("Acknowledge")
         self.ack_button.clicked.connect(self._acknowledge_latest_checkin)
-        self.incident_button = QtWidgets.QPushButton("Open Incident")
-        self.incident_button.clicked.connect(self._create_incident_for_assignment)
         self.closeout_button = QtWidgets.QPushButton("Close Out")
         self.closeout_button.clicked.connect(lambda: self._close_assignment("completed"))
         self.closeout_button.setVisible(self._core.mode == "server")
@@ -146,7 +136,6 @@ class AssignmentPage(QtWidgets.QWidget):
         action_row = QtWidgets.QHBoxLayout()
         action_row.addWidget(self.checkin_button)
         action_row.addWidget(self.ack_button)
-        action_row.addWidget(self.incident_button)
         action_row.addWidget(self.closeout_button)
         action_row.addWidget(self.abort_button)
         right_layout.addLayout(action_row)
@@ -199,7 +188,7 @@ class AssignmentPage(QtWidgets.QWidget):
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
         _ = action, record_id
-        if table in {"assignments", "checkins", "incidents", "operators", "missions"}:
+        if table in {"assignments", "checkins", "operators", "missions"}:
             self.refresh()
 
     def _populate_assignment_table(self) -> None:
@@ -291,7 +280,6 @@ class AssignmentPage(QtWidgets.QWidget):
         is_open = bool(item is not None and item.status not in {"completed", "aborted"})
         self.checkin_button.setEnabled(has_selection)
         self.ack_button.setEnabled(has_selection)
-        self.incident_button.setEnabled(has_selection)
         self.closeout_button.setEnabled(self._core.mode == "server" and is_open)
         self.abort_button.setEnabled(self._core.mode == "server" and is_open)
         if item is None:
@@ -303,7 +291,6 @@ class AssignmentPage(QtWidgets.QWidget):
             return
         assignment = detail["assignment"]
         checkins = detail.get("checkins", [])
-        incidents = detail.get("incidents", [])
         lines = [
             f"#{assignment.id} {assignment.title}",
             f"Type: {item.type_label}",
@@ -339,7 +326,6 @@ class AssignmentPage(QtWidgets.QWidget):
                 f"{CHECKIN_STATE_LABELS.get(checkin.state, checkin.state)}"
                 for checkin in checkins[:5]
             ],
-            f"Linked incidents: {len(incidents)}",
         ]
         self.detail.setPlainText("\n".join(lines))
 
@@ -445,251 +431,6 @@ class AssignmentPage(QtWidgets.QWidget):
         except Exception as exc:
             _log.warning("Check-in acknowledgement failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "Acknowledge", str(exc))
-
-    def _create_incident_for_assignment(self) -> None:
-        item = self._selected_item()
-        if item is None:
-            return
-        dialog = IncidentCreateDialog(
-            self._core,
-            parent=self,
-            linked_assignment_id=item.id,
-            default_title=item.title,
-            default_location=item.location_label,
-        )
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
-            return
-        try:
-            self._core.command("incidents.create", dialog.payload())
-            self.refresh()
-        except Exception as exc:
-            _log.warning("Incident create failed: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
-
-
-class IncidentPage(QtWidgets.QWidget):
-    """Structured incident list and reporting surface."""
-
-    def __init__(self, core: TalonCoreSession) -> None:
-        super().__init__()
-        self._core = core
-        self._items = []
-
-        self.heading = QtWidgets.QLabel("Incidents")
-        self.heading.setObjectName("pageHeading")
-        self.summary = QtWidgets.QLabel("")
-        self.summary.setWordWrap(True)
-        self.category_filter = QtWidgets.QComboBox()
-        self.category_filter.addItem("All categories", "")
-        for category in INCIDENT_CATEGORIES:
-            self.category_filter.addItem(INCIDENT_CATEGORY_LABELS[category], category)
-        self.category_filter.currentIndexChanged.connect(lambda _index: self.refresh())
-        self.follow_up_filter = QtWidgets.QPushButton("Open Follow-ups")
-        self.follow_up_filter.setCheckable(True)
-        self.follow_up_filter.toggled.connect(lambda _checked: self.refresh())
-        self.refresh_button = QtWidgets.QPushButton("Refresh")
-        self.refresh_button.clicked.connect(self.refresh)
-        self.new_button = QtWidgets.QPushButton("New Incident")
-        self.new_button.clicked.connect(self._create_incident)
-        self.clear_followup_button = QtWidgets.QPushButton("Clear Follow-up")
-        self.clear_followup_button.clicked.connect(self._clear_followup)
-        self.delete_button = QtWidgets.QPushButton("Delete Incident")
-        self.delete_button.clicked.connect(self._delete_incident)
-        self.delete_button.setVisible(self._core.mode == "server")
-        self.delete_button.setStyleSheet(
-            "QPushButton { border-color: #c2665e; background: #3b2423; color: #ffd2cd; }"
-        )
-
-        top_row = QtWidgets.QHBoxLayout()
-        top_row.addWidget(self.heading)
-        top_row.addStretch(1)
-        top_row.addWidget(self.category_filter)
-        top_row.addWidget(self.follow_up_filter)
-        top_row.addWidget(self.refresh_button)
-        top_row.addWidget(self.clear_followup_button)
-        top_row.addWidget(self.delete_button)
-        top_row.addWidget(self.new_button)
-
-        self.table = QtWidgets.QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Time", "Category", "Severity", "Title", "Follow-up"])
-        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setStretchLastSection(True)
-        configure_data_table(self.table)
-        self.table.itemSelectionChanged.connect(self._selection_changed)
-
-        self.detail = QtWidgets.QTextEdit()
-        self.detail.setReadOnly(True)
-        self.detail.setMinimumWidth(360)
-
-        body = QtWidgets.QSplitter()
-        body.addWidget(self.table)
-        body.addWidget(self.detail)
-        body.setStretchFactor(0, 3)
-        body.setStretchFactor(1, 2)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(top_row)
-        layout.addWidget(self.summary)
-        layout.addWidget(body, stretch=1)
-
-    def refresh(self) -> None:
-        try:
-            entries = self._core.read_model(
-                "incidents.list",
-                {
-                    "category_filter": self.category_filter.currentData() or None,
-                    "follow_up_only": self.follow_up_filter.isChecked(),
-                },
-            )
-            self._items = incident_items_from_entries(entries)
-        except Exception as exc:
-            _log.warning("Could not refresh incidents: %s", exc)
-            self.summary.setText(f"Unable to load incidents: {exc}")
-            return
-        self.table.setRowCount(0)
-        for item in self._items:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            values = [
-                item.occurred_label,
-                item.category_label,
-                item.severity,
-                item.title,
-                "Yes" if item.follow_up_needed else "No",
-            ]
-            for column, value in enumerate(values):
-                cell = QtWidgets.QTableWidgetItem(value)
-                if column == 0:
-                    cell.setData(QtCore.Qt.UserRole, item.id)
-                if item.severity in {"IMMEDIATE", "FLASH", "FLASH_OVERRIDE"}:
-                    cell.setForeground(QtGui.QBrush(QtGui.QColor("#ffb4b4")))
-                self.table.setItem(row, column, cell)
-        self.table.resizeColumnsToContents()
-        self.summary.setText(f"{len(self._items)} incident report(s).")
-        if self._items:
-            self.table.selectRow(0)
-        else:
-            self.detail.clear()
-        self._selection_changed()
-
-    def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
-        _ = action, record_id
-        if table in {"incidents", "assignments", "missions", "assets", "sitreps"}:
-            self.refresh()
-
-    def _selection_changed(self) -> None:
-        item = self._selected_item()
-        if item is None:
-            self.clear_followup_button.setEnabled(False)
-            self.delete_button.setEnabled(False)
-            self.detail.clear()
-            return
-        self.clear_followup_button.setEnabled(item.follow_up_needed)
-        self.delete_button.setEnabled(self._core.mode == "server")
-        try:
-            detail = self._core.read_model("incidents.detail", {"incident_id": item.id})
-        except Exception as exc:
-            self.detail.setPlainText(f"Unable to load incident detail: {exc}")
-            return
-        incident = detail["incident"]
-        lines = [
-            f"#{incident.id} {item.title}",
-            f"Category: {item.category_label}",
-            f"Severity: {incident.severity}",
-            f"Time: {format_ts(incident.occurred_at)}",
-            f"Location: {incident.location_label or 'Not set'}",
-            f"Reported by: {detail.get('creator_callsign', '')}",
-            f"Emergency or partner notification: {incident.notified_services or 'None'}",
-            "",
-            "Narrative:",
-            incident.narrative or "None",
-            "",
-            "Actions taken:",
-            incident.actions_taken or "None",
-            "",
-            "Outcome:",
-            incident.outcome or "None",
-            "",
-            f"Follow-up needed: {'Yes' if incident.follow_up_needed else 'No'}",
-            f"Follow-up type: {getattr(incident, 'follow_up_type', '') or 'None'}",
-            f"Next action: {getattr(incident, 'follow_up_action', '') or 'None'}",
-            f"Responsible: {getattr(incident, 'follow_up_responsible', '') or 'None'}",
-            f"Due: {getattr(incident, 'follow_up_due', '') or 'None'}",
-            f"Urgency: {getattr(incident, 'follow_up_urgency', '') or 'None'}",
-            f"Follow-up assignment: {detail.get('follow_up_assignment_title', '') or 'None'}",
-            "Linked records:",
-            f"  Assignment: {detail.get('assignment_title', '') or 'None'}",
-            f"  Mission: {detail.get('mission_title', '') or 'None'}",
-            f"  Asset: {detail.get('asset_label', '') or 'None'}",
-            f"  SITREP: {detail.get('sitrep_label', '') or 'None'}",
-        ]
-        self.detail.setPlainText("\n".join(lines))
-
-    def _selected_item(self):
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            return None
-        row = rows[0].row()
-        if row < 0 or row >= len(self._items):
-            return None
-        return self._items[row]
-
-    def _create_incident(self) -> None:
-        dialog = IncidentCreateDialog(self._core, parent=self)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
-            return
-        try:
-            self._core.command("incidents.create", dialog.payload())
-            self.refresh()
-        except Exception as exc:
-            _log.warning("Incident create failed: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
-
-    def _delete_incident(self) -> None:
-        item = self._selected_item()
-        if item is None or self._core.mode != "server":
-            return
-        answer = QtWidgets.QMessageBox.question(
-            self,
-            "Delete Incident",
-            f"Delete {item.title}? This cannot be undone.",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if answer != QtWidgets.QMessageBox.Yes:
-            return
-        try:
-            self._core.command("incidents.delete", {"incident_id": item.id})
-            self.refresh()
-        except Exception as exc:
-            _log.warning("Incident delete failed: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
-
-    def _clear_followup(self) -> None:
-        item = self._selected_item()
-        if item is None or not item.follow_up_needed:
-            return
-        note, accepted = QtWidgets.QInputDialog.getMultiLineText(
-            self,
-            "Clear Follow-up",
-            "Outcome note",
-            "",
-        )
-        if not accepted:
-            return
-        try:
-            self._core.command(
-                "incidents.clear_followup",
-                {"incident_id": item.id, "outcome_note": note},
-            )
-            self.refresh()
-        except Exception as exc:
-            _log.warning("Incident follow-up clear failed: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "Incident", str(exc))
-
 
 class AssignmentCreateDialog(QtWidgets.QDialog):
     def __init__(self, core: TalonCoreSession, parent=None) -> None:
@@ -948,213 +689,6 @@ class CheckInDialog(QtWidgets.QDialog):
                 first_assigned_index = self.operator_combo.count() - 1
         if first_assigned_index >= 0:
             self.operator_combo.setCurrentIndex(first_assigned_index)
-
-
-class IncidentCreateDialog(QtWidgets.QDialog):
-    def __init__(
-        self,
-        core: TalonCoreSession,
-        parent=None,
-        *,
-        linked_assignment_id: int | None = None,
-        linked_mission_id: int | None = None,
-        linked_asset_id: int | None = None,
-        linked_sitrep_id: int | None = None,
-        default_title: str = "",
-        default_location: str = "",
-        default_narrative: str = "",
-        default_severity: str = "ROUTINE",
-        default_category: str = "other",
-    ) -> None:
-        super().__init__(parent)
-        self._core = core
-        self.setWindowTitle("New Incident Report")
-        self.resize(620, 560)
-        self.category_combo = QtWidgets.QComboBox()
-        for category in INCIDENT_CATEGORIES:
-            self.category_combo.addItem(INCIDENT_CATEGORY_LABELS[category], category)
-        category_index = self.category_combo.findData(default_category)
-        if category_index >= 0:
-            self.category_combo.setCurrentIndex(category_index)
-        self.severity_combo = QtWidgets.QComboBox()
-        for level in SITREP_LEVELS:
-            self.severity_combo.addItem(level, level)
-        severity_index = self.severity_combo.findData(default_severity)
-        if severity_index >= 0:
-            self.severity_combo.setCurrentIndex(severity_index)
-        self.title_field = QtWidgets.QLineEdit(default_title)
-        self.location_field = QtWidgets.QLineEdit(default_location)
-        self.narrative_field = QtWidgets.QTextEdit()
-        self.narrative_field.setMinimumHeight(110)
-        self.narrative_field.setPlainText(default_narrative)
-        self.actions_field = QtWidgets.QTextEdit()
-        self.actions_field.setMinimumHeight(90)
-        self.outcome_field = QtWidgets.QTextEdit()
-        self.outcome_field.setMinimumHeight(80)
-        self.follow_up = QtWidgets.QCheckBox("Follow-up needed")
-        self.follow_up.toggled.connect(self._sync_followup_fields)
-        self.follow_up_type_combo = QtWidgets.QComboBox()
-        for follow_up_type in INCIDENT_FOLLOW_UP_TYPES:
-            self.follow_up_type_combo.addItem(
-                INCIDENT_FOLLOW_UP_TYPE_LABELS[follow_up_type],
-                follow_up_type,
-            )
-        self.follow_up_action_field = QtWidgets.QTextEdit()
-        self.follow_up_action_field.setMinimumHeight(70)
-        self.follow_up_responsible_field = QtWidgets.QLineEdit()
-        self.follow_up_due_field = QtWidgets.QLineEdit()
-        self.follow_up_due_field.setPlaceholderText("YYYY-MM-DD HH:MM or operational due time")
-        self.follow_up_urgency_combo = QtWidgets.QComboBox()
-        for urgency in INCIDENT_FOLLOW_UP_URGENCIES:
-            self.follow_up_urgency_combo.addItem(
-                INCIDENT_FOLLOW_UP_URGENCY_LABELS[urgency],
-                urgency,
-            )
-        self.create_followup_assignment = QtWidgets.QCheckBox(
-            "Create linked assignment from this follow-up"
-        )
-        self.notified_field = QtWidgets.QLineEdit()
-        self.assignment_combo = QtWidgets.QComboBox()
-        self.assignment_combo.addItem("None", None)
-        self.mission_combo = QtWidgets.QComboBox()
-        self.mission_combo.addItem("None", None)
-        self.asset_combo = QtWidgets.QComboBox()
-        self.asset_combo.addItem("None", None)
-        self.sitrep_combo = QtWidgets.QComboBox()
-        self.sitrep_combo.addItem("None", None)
-        self._load_selectors(
-            linked_assignment_id=linked_assignment_id,
-            linked_mission_id=linked_mission_id,
-            linked_asset_id=linked_asset_id,
-            linked_sitrep_id=linked_sitrep_id,
-        )
-
-        form = QtWidgets.QFormLayout()
-        form.addRow("Category", self.category_combo)
-        form.addRow("Severity", self.severity_combo)
-        form.addRow("Title", self.title_field)
-        form.addRow("Location", self.location_field)
-        form.addRow("Assignment", self.assignment_combo)
-        form.addRow("Mission", self.mission_combo)
-        form.addRow("Asset", self.asset_combo)
-        form.addRow("SITREP", self.sitrep_combo)
-        form.addRow("Notified", self.notified_field)
-        form.addRow("", self.follow_up)
-        self.followup_group = QtWidgets.QGroupBox("Follow-up Details")
-        followup_form = QtWidgets.QFormLayout(self.followup_group)
-        followup_form.addRow("Type", self.follow_up_type_combo)
-        followup_form.addRow("Responsible", self.follow_up_responsible_field)
-        followup_form.addRow("Urgency", self.follow_up_urgency_combo)
-        followup_form.addRow("Due", self.follow_up_due_field)
-        followup_form.addRow("Next action", self.follow_up_action_field)
-        followup_form.addRow("", self.create_followup_assignment)
-        form.addRow("", self.followup_group)
-        form.addRow("Narrative", self.narrative_field)
-        form.addRow("Actions taken", self.actions_field)
-        form.addRow("Outcome", self.outcome_field)
-        self.status_label = QtWidgets.QLabel("")
-        self.status_label.setWordWrap(True)
-        form.addRow("", self.status_label)
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        scroll_body = QtWidgets.QWidget()
-        scroll_body.setLayout(form)
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(scroll_body)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(scroll, stretch=1)
-        layout.addWidget(buttons)
-        self._sync_followup_fields(False)
-
-    def payload(self) -> dict[str, object]:
-        return build_incident_payload(
-            category=str(self.category_combo.currentData()),
-            severity=str(self.severity_combo.currentData()),
-            title=self.title_field.text(),
-            location_label=self.location_field.text(),
-            narrative=self.narrative_field.toPlainText(),
-            actions_taken=self.actions_field.toPlainText(),
-            outcome=self.outcome_field.toPlainText(),
-            follow_up_needed=self.follow_up.isChecked(),
-            follow_up_type=str(self.follow_up_type_combo.currentData() or ""),
-            follow_up_action=self.follow_up_action_field.toPlainText(),
-            follow_up_responsible=self.follow_up_responsible_field.text(),
-            follow_up_due=self.follow_up_due_field.text(),
-            follow_up_urgency=str(self.follow_up_urgency_combo.currentData() or ""),
-            create_follow_up_assignment=self.create_followup_assignment.isChecked(),
-            notified_services=self.notified_field.text(),
-            linked_assignment_id=self._combo_int(self.assignment_combo),
-            linked_mission_id=self._combo_int(self.mission_combo),
-            linked_asset_id=self._combo_int(self.asset_combo),
-            linked_sitrep_id=self._combo_int(self.sitrep_combo),
-        )
-
-    def accept(self) -> None:
-        try:
-            self.payload()
-        except ValueError as exc:
-            self.status_label.setText(str(exc))
-            return
-        super().accept()
-
-    def _sync_followup_fields(self, checked: bool) -> None:
-        self.followup_group.setVisible(checked)
-        if checked and not self.create_followup_assignment.isChecked():
-            self.create_followup_assignment.setChecked(True)
-        for widget in (
-            self.follow_up_type_combo,
-            self.follow_up_action_field,
-            self.follow_up_responsible_field,
-            self.follow_up_due_field,
-            self.follow_up_urgency_combo,
-            self.create_followup_assignment,
-        ):
-            widget.setEnabled(checked)
-
-    def _load_selectors(
-        self,
-        *,
-        linked_assignment_id: int | None,
-        linked_mission_id: int | None,
-        linked_asset_id: int | None,
-        linked_sitrep_id: int | None,
-    ) -> None:
-        try:
-            for assignment in self._core.read_model("assignments.list"):
-                self.assignment_combo.addItem(
-                    str(getattr(assignment, "title", "")),
-                    int(getattr(assignment, "id")),
-                )
-            for mission in self._core.read_model("missions.list", {"status_filter": None}):
-                self.mission_combo.addItem(str(getattr(mission, "title", "")), int(mission.id))
-            for asset in self._core.read_model("assets.list"):
-                self.asset_combo.addItem(str(getattr(asset, "label", "")), int(asset.id))
-            for entry in self._core.read_model("sitreps.list", {"limit": 50}):
-                sitrep = entry[0] if isinstance(entry, tuple) else entry
-                label = f"#{getattr(sitrep, 'id')} {getattr(sitrep, 'level', '')}"
-                self.sitrep_combo.addItem(label, int(getattr(sitrep, "id")))
-        except Exception as exc:
-            _log.warning("Could not load incident dialog selectors: %s", exc)
-        self._restore_combo_value(self.assignment_combo, linked_assignment_id)
-        self._restore_combo_value(self.mission_combo, linked_mission_id)
-        self._restore_combo_value(self.asset_combo, linked_asset_id)
-        self._restore_combo_value(self.sitrep_combo, linked_sitrep_id)
-
-    @staticmethod
-    def _restore_combo_value(combo: QtWidgets.QComboBox, value: int | None) -> None:
-        if value is not None:
-            index = combo.findData(int(value))
-            if index >= 0:
-                combo.setCurrentIndex(index)
-
-    @staticmethod
-    def _combo_int(combo: QtWidgets.QComboBox) -> int | None:
-        value = combo.currentData()
-        return int(value) if value is not None else None
 
 
 def _coordinate_parts(text: str) -> tuple[str, str]:
