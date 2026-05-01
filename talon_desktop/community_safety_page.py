@@ -1,6 +1,8 @@
 """PySide6 community safety assignment board."""
 from __future__ import annotations
 
+import dataclasses
+import time
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -25,6 +27,12 @@ from talon_desktop.community_safety import (
     operator_status_items_from_board,
 )
 from talon_desktop.map_picker import format_coordinate, pick_point_on_map
+from talon_desktop.sitreps import (
+    AvailableOperatorItem,
+    available_operator_items,
+    feed_item_from_entry,
+    mission_operator_callsigns,
+)
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.community_safety")
@@ -37,6 +45,25 @@ _STATUS_COLORS = {
     "aborted": QtGui.QColor("#93a1a8"),
     "needs_support": QtGui.QColor("#ff5555"),
 }
+
+_PRIORITY_RANK = {
+    "FLASH_OVERRIDE": 0,
+    "FLASH": 1,
+    "IMMEDIATE": 2,
+    "PRIORITY": 3,
+    "ROUTINE": 4,
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class AssignmentTargetItem:
+    kind: typing.Literal["mission", "sitrep"]
+    id: int
+    title: str
+    priority: str
+    created_at: int
+    subtitle: str
+    mission_type: str = ""
 
 
 class AssignmentPage(QtWidgets.QWidget):
@@ -339,15 +366,72 @@ class AssignmentPage(QtWidgets.QWidget):
         return self._items[row]
 
     def _create_assignment(self) -> None:
-        dialog = AssignmentCreateDialog(self._core, parent=self)
+        dialog = AssignmentTargetOperatorDialog(self._core, parent=self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
+        target, operator = dialog.selection()
         try:
-            self._core.command("assignments.create", dialog.payload())
+            if target.kind == "sitrep":
+                self._core.command(
+                    "sitreps.assign_followup",
+                    {
+                        "sitrep_id": target.id,
+                        "assigned_to": operator.callsign,
+                        "note": f"Assigned from Assignment Board to {operator.callsign}.",
+                    },
+                )
+            else:
+                message_dialog = MissionAssignmentMessageDialog(
+                    target,
+                    operator,
+                    parent=self,
+                )
+                if message_dialog.exec() != QtWidgets.QDialog.Accepted:
+                    return
+                self._core.command(
+                    "assignments.create",
+                    {
+                        "assignment_type": "custom",
+                        "title": target.title,
+                        "mission_id": target.id,
+                        "status": "planned",
+                        "priority": target.priority,
+                        "assigned_operator_ids": [operator.id],
+                        "team_lead": operator.callsign,
+                        "handoff_notes": message_dialog.message_text(),
+                    },
+                )
+                if message_dialog.should_send_message():
+                    self._send_direct_assignment_message(
+                        operator_id=operator.id,
+                        body=message_dialog.message_text(),
+                    )
             self.refresh()
         except Exception as exc:
             _log.warning("Assignment create failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "Assignment", str(exc))
+
+    def _send_direct_assignment_message(self, *, operator_id: int, body: str) -> None:
+        current = self._core.read_model("chat.current_operator")
+        if int(current["id"]) == int(operator_id):
+            return
+        dm_result = self._core.command(
+            "chat.get_or_create_dm",
+            {
+                "operator_a_id": int(current["id"]),
+                "operator_b_id": int(operator_id),
+            },
+        )
+        channel = getattr(dm_result, "channel", None)
+        channel_id = int(getattr(channel, "id"))
+        self._core.command(
+            "chat.send_message",
+            {
+                "channel_id": channel_id,
+                "body": body,
+                "is_urgent": False,
+            },
+        )
 
     def _create_checkin(self) -> None:
         item = self._selected_item()
@@ -431,6 +515,301 @@ class AssignmentPage(QtWidgets.QWidget):
         except Exception as exc:
             _log.warning("Check-in acknowledgement failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "Acknowledge", str(exc))
+
+
+class AssignmentTargetOperatorDialog(QtWidgets.QDialog):
+    """Select an unassigned mission/SITREP target and an available operator."""
+
+    def __init__(self, core: TalonCoreSession, parent=None) -> None:
+        super().__init__(parent)
+        self._core = core
+        self._targets: list[AssignmentTargetItem] = []
+        self._operators: list[AvailableOperatorItem] = []
+        self.setWindowTitle("New Assignment")
+        self.setMinimumSize(980, 620)
+
+        self.sort_combo = QtWidgets.QComboBox()
+        self.sort_combo.addItem("Priority", "priority")
+        self.sort_combo.addItem("Oldest", "oldest")
+        self.sort_combo.addItem("Newest", "newest")
+        self.sort_combo.currentIndexChanged.connect(lambda _index: self._populate_targets())
+
+        self.target_table = QtWidgets.QTableWidget(0, 4)
+        self.target_table.setHorizontalHeaderLabels(["Target", "Type", "Priority", "Created"])
+        self.target_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.target_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.target_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.target_table.verticalHeader().setVisible(False)
+        self.target_table.horizontalHeader().setStretchLastSection(True)
+        configure_data_table(self.target_table)
+        self.target_table.itemSelectionChanged.connect(self._sync_summary)
+
+        self.operator_table = QtWidgets.QTableWidget(0, 3)
+        self.operator_table.setHorizontalHeaderLabels(["Operator", "Status", "Skills"])
+        self.operator_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.operator_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.operator_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.operator_table.verticalHeader().setVisible(False)
+        self.operator_table.horizontalHeader().setStretchLastSection(True)
+        configure_data_table(self.operator_table)
+        self.operator_table.itemSelectionChanged.connect(self._sync_summary)
+
+        self.summary_label = QtWidgets.QLabel("")
+        self.summary_label.setWordWrap(True)
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
+
+        target_panel_body = QtWidgets.QWidget()
+        target_panel_layout = QtWidgets.QVBoxLayout(target_panel_body)
+        target_panel_layout.setContentsMargins(0, 0, 0, 0)
+        target_panel_layout.addWidget(_form_row("Sort", self.sort_combo))
+        target_panel_layout.addWidget(self.target_table, stretch=1)
+
+        summary_body = QtWidgets.QWidget()
+        summary_layout = QtWidgets.QVBoxLayout(summary_body)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.addWidget(self.summary_label)
+        summary_layout.addStretch(1)
+
+        columns = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        columns.addWidget(_panel("Unassigned Targets", target_panel_body))
+        columns.addWidget(_panel("Unassigned Operators", self.operator_table))
+        columns.addWidget(_panel("Selection Summary", summary_body))
+        columns.setStretchFactor(0, 4)
+        columns.setStretchFactor(1, 4)
+        columns.setStretchFactor(2, 2)
+
+        self.assign_button = QtWidgets.QPushButton("Assign and Message")
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.assign_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.assign_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(columns, stretch=1)
+        layout.addWidget(self.status_label)
+        layout.addLayout(button_row)
+
+        self._load()
+
+    def selection(self) -> tuple[AssignmentTargetItem, AvailableOperatorItem]:
+        target = self._selected_target()
+        operator = self._selected_operator()
+        if target is None:
+            raise ValueError("Select an unassigned mission or SITREP.")
+        if operator is None:
+            raise ValueError("Select an unassigned operator.")
+        return target, operator
+
+    def accept(self) -> None:
+        try:
+            self.selection()
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        super().accept()
+
+    def _load(self) -> None:
+        try:
+            operators = self._core.read_model("operators.list")
+            assignments = self._core.read_model("assignments.list", {"active_only": True})
+            sitreps = self._core.read_model(
+                "sitreps.list",
+                {"unresolved_only": True, "limit": 500},
+            )
+            missions = self._core.read_model("missions.list", {"status_filter": None})
+        except Exception as exc:
+            _log.warning("Could not load assignment target picker: %s", exc)
+            self.status_label.setText(f"Unable to load assignment choices: {exc}")
+            operators = []
+            assignments = []
+            sitreps = []
+            missions = []
+
+        self._targets = _assignment_targets(missions, sitreps, assignments)
+        self._operators = available_operator_items(
+            operators,
+            assignments=assignments,
+            sitreps=sitreps,
+            missions=missions,
+        )
+        self._populate_targets()
+        self._populate_operators()
+        self._sync_summary()
+
+    def _populate_targets(self) -> None:
+        self.target_table.setRowCount(0)
+        for target in self._sorted_targets():
+            row = self.target_table.rowCount()
+            self.target_table.insertRow(row)
+            values = [
+                target.title,
+                "Mission" if target.kind == "mission" else "SITREP",
+                target.priority,
+                format_ts(target.created_at),
+            ]
+            for column, value in enumerate(values):
+                cell = QtWidgets.QTableWidgetItem(value)
+                if column == 0:
+                    cell.setData(QtCore.Qt.UserRole, target.id)
+                    cell.setData(QtCore.Qt.UserRole + 1, target.kind)
+                    cell.setToolTip(target.subtitle)
+                self.target_table.setItem(row, column, cell)
+        self.target_table.resizeColumnsToContents()
+        if self.target_table.rowCount():
+            self.target_table.selectRow(0)
+
+    def _populate_operators(self) -> None:
+        self.operator_table.setRowCount(0)
+        for operator in self._operators:
+            row = self.operator_table.rowCount()
+            self.operator_table.insertRow(row)
+            skills = ", ".join(operator.skills[:4]) if operator.skills else "No skills listed"
+            for column, value in enumerate((operator.callsign, "Available", skills)):
+                cell = QtWidgets.QTableWidgetItem(value)
+                if column == 0:
+                    cell.setData(QtCore.Qt.UserRole, operator.id)
+                self.operator_table.setItem(row, column, cell)
+        self.operator_table.resizeColumnsToContents()
+        if self.operator_table.rowCount():
+            self.operator_table.selectRow(0)
+
+    def _sorted_targets(self) -> list[AssignmentTargetItem]:
+        mode = str(self.sort_combo.currentData() or "priority")
+        if mode == "oldest":
+            return sorted(self._targets, key=lambda item: (item.created_at, item.id))
+        if mode == "newest":
+            return sorted(self._targets, key=lambda item: (-item.created_at, -item.id))
+        return sorted(
+            self._targets,
+            key=lambda item: (
+                _PRIORITY_RANK.get(item.priority, 99),
+                item.created_at,
+                item.id,
+            ),
+        )
+
+    def _selected_target(self) -> AssignmentTargetItem | None:
+        rows = self.target_table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        row = rows[0].row()
+        id_item = self.target_table.item(row, 0)
+        if id_item is None:
+            return None
+        target_id = int(id_item.data(QtCore.Qt.UserRole))
+        kind = str(id_item.data(QtCore.Qt.UserRole + 1))
+        return next(
+            (
+                target for target in self._targets
+                if target.id == target_id and target.kind == kind
+            ),
+            None,
+        )
+
+    def _selected_operator(self) -> AvailableOperatorItem | None:
+        rows = self.operator_table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        row = rows[0].row()
+        id_item = self.operator_table.item(row, 0)
+        if id_item is None:
+            return None
+        operator_id = int(id_item.data(QtCore.Qt.UserRole))
+        return next(
+            (operator for operator in self._operators if operator.id == operator_id),
+            None,
+        )
+
+    def _sync_summary(self) -> None:
+        target = self._selected_target()
+        operator = self._selected_operator()
+        if target is None or operator is None:
+            self.summary_label.setText(
+                "Select one unassigned target and one available operator."
+            )
+            self.assign_button.setEnabled(False)
+            return
+        action = "Assign and Message" if target.kind == "mission" else "Assign SITREP"
+        self.assign_button.setText(action)
+        self.assign_button.setEnabled(True)
+        self.summary_label.setText(
+            f"Target: {target.title}\n"
+            f"Type: {'Mission' if target.kind == 'mission' else 'SITREP'}\n"
+            f"Priority: {target.priority}\n\n"
+            f"Operator: {operator.callsign}\n"
+            f"Skills: {', '.join(operator.skills[:4]) if operator.skills else 'No skills listed'}"
+        )
+
+
+class MissionAssignmentMessageDialog(QtWidgets.QDialog):
+    """Optional direct-message step before confirming a mission assignment."""
+
+    def __init__(
+        self,
+        target: AssignmentTargetItem,
+        operator: AvailableOperatorItem,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._send_message = True
+        self.setWindowTitle("Message Operator Before Mission Assignment")
+        self.setMinimumSize(760, 420)
+        self.message_field = QtWidgets.QTextEdit()
+        self.message_field.setAcceptRichText(False)
+        self.message_field.setPlainText(
+            f"You are assigned to {target.title}. Review mission details and acknowledge."
+        )
+        self.message_field.setMinimumHeight(150)
+        summary = QtWidgets.QLabel(
+            f"Mission: {target.title}\n"
+            f"Operator: {operator.callsign}\n"
+            f"Priority: {target.priority}\n"
+            f"{target.subtitle}"
+        )
+        summary.setWordWrap(True)
+
+        self.back_button = QtWidgets.QPushButton("Back")
+        self.assign_only_button = QtWidgets.QPushButton("Assign Without Message")
+        self.send_button = QtWidgets.QPushButton("Send Message and Assign")
+        self.back_button.clicked.connect(self.reject)
+        self.assign_only_button.clicked.connect(self._assign_without_message)
+        self.send_button.clicked.connect(self._send_and_assign)
+
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(self.back_button)
+        buttons.addWidget(self.assign_only_button)
+        buttons.addWidget(self.send_button)
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("Mission Context", summary)
+        form.addRow("Direct Message", self.message_field)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addLayout(buttons)
+
+    def message_text(self) -> str:
+        return self.message_field.toPlainText().strip()
+
+    def should_send_message(self) -> bool:
+        return self._send_message and bool(self.message_text())
+
+    def _assign_without_message(self) -> None:
+        self._send_message = False
+        super().accept()
+
+    def _send_and_assign(self) -> None:
+        self._send_message = True
+        if not self.message_text():
+            self.message_field.setFocus()
+            return
+        super().accept()
+
 
 class AssignmentCreateDialog(QtWidgets.QDialog):
     def __init__(self, core: TalonCoreSession, parent=None) -> None:
@@ -701,6 +1080,91 @@ def _coordinate_parts(text: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
+def _assignment_targets(
+    missions: typing.Iterable[object],
+    sitreps: typing.Iterable[object],
+    assignments: typing.Iterable[object],
+) -> list[AssignmentTargetItem]:
+    assigned_mission_ids: set[int] = set()
+    for assignment in assignments:
+        mission_id = getattr(assignment, "mission_id", None)
+        if mission_id is None:
+            continue
+        if getattr(assignment, "status", "") in {"completed", "aborted"}:
+            continue
+        if getattr(assignment, "assigned_operator_ids", []) or []:
+            assigned_mission_ids.add(int(mission_id))
+
+    targets: list[AssignmentTargetItem] = []
+    for mission in missions:
+        status = str(getattr(mission, "status", "") or "")
+        mission_id = int(getattr(mission, "id"))
+        if status in {"completed", "aborted", "rejected"}:
+            continue
+        if mission_id in assigned_mission_ids:
+            continue
+        if mission_operator_callsigns(mission):
+            continue
+        priority = str(getattr(mission, "priority", "ROUTINE") or "ROUTINE")
+        mission_type = str(getattr(mission, "mission_type", "") or "")
+        created_at = int(getattr(mission, "created_at", 0) or 0)
+        targets.append(
+            AssignmentTargetItem(
+                kind="mission",
+                id=mission_id,
+                title=str(getattr(mission, "title", "") or f"Mission #{mission_id}"),
+                priority=priority,
+                created_at=created_at,
+                subtitle=(
+                    f"{mission_type or 'Mission'} | "
+                    f"created {_age_label(created_at)} | no assigned operators"
+                ),
+                mission_type=mission_type,
+            )
+        )
+
+    for entry in sitreps:
+        item = feed_item_from_entry(entry)
+        if item.status in {"resolved", "closed"}:
+            continue
+        if item.assigned_to.strip():
+            continue
+        title = item.body.splitlines()[0].strip() if item.body.strip() else ""
+        if not title:
+            title = f"{item.level} SITREP #{item.id}"
+        if len(title) > 80:
+            title = title[:77].rstrip() + "..."
+        targets.append(
+            AssignmentTargetItem(
+                kind="sitrep",
+                id=item.id,
+                title=title,
+                priority=item.level,
+                created_at=item.created_at,
+                subtitle=(
+                    f"{item.level} | created {_age_label(item.created_at)} | "
+                    f"{item.location_label or 'no location label'}"
+                ),
+            )
+        )
+    return targets
+
+
+def _age_label(created_at: int) -> str:
+    if created_at <= 0:
+        return "unknown"
+    seconds = max(0, int(time.time()) - int(created_at))
+    minutes = seconds // 60
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes} min ago"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours} hr ago"
+    return format_ts(created_at)
+
+
 class _MetricBox(QtWidgets.QFrame):
     def __init__(self, title: str, value: str, subtitle: str) -> None:
         super().__init__()
@@ -733,3 +1197,14 @@ def _panel(title: str, widget: QtWidgets.QWidget) -> QtWidgets.QFrame:
     layout.addWidget(heading)
     layout.addWidget(widget, stretch=1)
     return frame
+
+
+def _form_row(label: str, widget: QtWidgets.QWidget) -> QtWidgets.QWidget:
+    container = QtWidgets.QWidget()
+    layout = QtWidgets.QHBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    caption = QtWidgets.QLabel(label)
+    caption.setObjectName("sideMode")
+    layout.addWidget(caption)
+    layout.addWidget(widget, stretch=1)
+    return container

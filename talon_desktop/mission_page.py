@@ -31,6 +31,7 @@ from talon_desktop.mission_icons import (
     mission_location_icon_pixmap,
     mission_location_icon_key,
 )
+from talon_desktop.sitreps import AvailableOperatorItem, available_operator_items
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.missions")
@@ -260,10 +261,19 @@ class MissionCreateDialog(QtWidgets.QDialog):
         self.priority_combo = QtWidgets.QComboBox()
         for level in SITREP_LEVELS:
             self.priority_combo.addItem(level, level)
+        self._team_operators: list[AvailableOperatorItem] = []
         self.lead_combo = QtWidgets.QComboBox()
-        self.lead_combo.setEditable(True)
-        self._load_leads()
-        self.organization_field = QtWidgets.QLineEdit()
+        self.lead_combo.setEditable(False)
+        self.lead_combo.currentIndexChanged.connect(lambda _index: self._refresh_member_combo())
+        self.team_member_combo = QtWidgets.QComboBox()
+        self.team_member_add_button = QtWidgets.QPushButton("Add")
+        self.team_member_add_button.clicked.connect(self._add_team_member)
+        self.team_member_list = QtWidgets.QListWidget()
+        self.team_member_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.team_member_list.setMaximumHeight(100)
+        self.team_member_remove_button = QtWidgets.QPushButton("Remove")
+        self.team_member_remove_button.clicked.connect(self._remove_team_member)
+        self._load_team_operators()
 
         self.activation_enabled = QtWidgets.QCheckBox("Set activation time")
         self.activation_time = QtWidgets.QDateTimeEdit(QtCore.QDateTime.currentDateTime())
@@ -376,7 +386,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
             mission_type=self.type_combo.currentText(),
             priority=str(self.priority_combo.currentData()),
             lead_coordinator=self.lead_combo.currentText(),
-            organization=self.organization_field.text(),
+            organization=", ".join(self._selected_team_member_callsigns()),
             ao_text=self.ao_field.toPlainText(),
             route_text=self.route_field.toPlainText(),
             activation_time=self._activation_text(),
@@ -433,35 +443,40 @@ class MissionCreateDialog(QtWidgets.QDialog):
             item.setCheckState(QtCore.Qt.Unchecked)
             self.assets_list.addItem(item)
 
-    def _load_leads(self) -> None:
-        self.lead_combo.addItem("", "")
+    def _load_team_operators(self) -> None:
+        self.lead_combo.addItem("", None)
         try:
             operators = self._core.read_model("operators.list")
         except Exception as exc:
-            _log.warning("Could not load operators for mission lead dropdown: %s", exc)
+            _log.warning("Could not load operators for mission team dropdowns: %s", exc)
             operators = []
-        busy_operator_ids: set[int] = set()
         try:
-            board = self._core.read_model("assignments.board")
-            for assignment in board.get("assignments", []):
-                if getattr(assignment, "mission_id", None) is None:
-                    continue
-                if getattr(assignment, "status", "") in {"completed", "aborted"}:
-                    continue
-                for operator_id in getattr(assignment, "assigned_operator_ids", []) or []:
-                    busy_operator_ids.add(int(operator_id))
+            assignments = self._core.read_model("assignments.list", {"active_only": True})
         except Exception as exc:
-            _log.debug("Could not filter busy mission operators: %s", exc)
-        for operator in operators:
-            try:
-                operator_id = int(getattr(operator, "id"))
-            except (TypeError, ValueError):
-                continue
-            if operator_id in busy_operator_ids:
-                continue
-            callsign = str(getattr(operator, "callsign", "") or "").strip()
-            if callsign:
-                self.lead_combo.addItem(callsign, callsign)
+            _log.debug("Could not load active assignments for mission team filter: %s", exc)
+            assignments = []
+        try:
+            sitreps = self._core.read_model(
+                "sitreps.list",
+                {"unresolved_only": True, "limit": 500},
+            )
+        except Exception as exc:
+            _log.debug("Could not load assigned SITREPs for mission team filter: %s", exc)
+            sitreps = []
+        try:
+            missions = self._core.read_model("missions.list", {"status_filter": None})
+        except Exception as exc:
+            _log.debug("Could not load missions for mission team filter: %s", exc)
+            missions = []
+        self._team_operators = available_operator_items(
+            operators,
+            assignments=assignments,
+            sitreps=sitreps,
+            missions=missions,
+        )
+        for item in self._team_operators:
+            self.lead_combo.addItem(item.callsign, item.id)
+        self._refresh_member_combo()
 
     def _overview_tab(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
@@ -470,9 +485,85 @@ class MissionCreateDialog(QtWidgets.QDialog):
         form.addRow("Description", self.description_field)
         form.addRow("Type", self.type_combo)
         form.addRow("Priority", self.priority_combo)
-        form.addRow("Lead", self.lead_combo)
-        form.addRow("Organization", self.organization_field)
+        form.addRow("Team Lead", self.lead_combo)
+        form.addRow("Team Members", self._team_member_widget())
         return page
+
+    def _team_member_widget(self) -> QtWidgets.QWidget:
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        chooser = QtWidgets.QHBoxLayout()
+        chooser.addWidget(self.team_member_combo, stretch=1)
+        chooser.addWidget(self.team_member_add_button)
+        actions = QtWidgets.QHBoxLayout()
+        actions.addStretch(1)
+        actions.addWidget(self.team_member_remove_button)
+        layout.addLayout(chooser)
+        layout.addWidget(self.team_member_list)
+        layout.addLayout(actions)
+        return container
+
+    def _refresh_member_combo(self) -> None:
+        if not hasattr(self, "team_member_combo"):
+            return
+        lead_id = self.lead_combo.currentData()
+        if lead_id not in (None, ""):
+            for row in range(self.team_member_list.count() - 1, -1, -1):
+                value = self.team_member_list.item(row).data(QtCore.Qt.UserRole)
+                if value is not None and int(value) == int(lead_id):
+                    self.team_member_list.takeItem(row)
+        selected_ids = self._selected_team_member_ids()
+        self.team_member_combo.clear()
+        self.team_member_combo.addItem("Add unassigned operator", None)
+        for item in self._team_operators:
+            if item.id in selected_ids or item.id == lead_id:
+                continue
+            self.team_member_combo.addItem(item.callsign, item.id)
+        self.team_member_add_button.setEnabled(self.team_member_combo.count() > 1)
+
+    def _add_team_member(self) -> None:
+        operator_id = self.team_member_combo.currentData()
+        if operator_id is None:
+            return
+        operator = next(
+            (item for item in self._team_operators if item.id == int(operator_id)),
+            None,
+        )
+        if operator is None:
+            return
+        row = QtWidgets.QListWidgetItem(operator.callsign)
+        row.setData(QtCore.Qt.UserRole, operator.id)
+        row.setData(QtCore.Qt.UserRole + 1, operator.callsign)
+        self.team_member_list.addItem(row)
+        self._refresh_member_combo()
+
+    def _remove_team_member(self) -> None:
+        row = self.team_member_list.currentRow()
+        if row < 0 and self.team_member_list.count():
+            row = self.team_member_list.count() - 1
+        if row >= 0:
+            self.team_member_list.takeItem(row)
+        self._refresh_member_combo()
+
+    def _selected_team_member_ids(self) -> set[int]:
+        ids: set[int] = set()
+        if not hasattr(self, "team_member_list"):
+            return ids
+        for row in range(self.team_member_list.count()):
+            value = self.team_member_list.item(row).data(QtCore.Qt.UserRole)
+            if value is not None:
+                ids.add(int(value))
+        return ids
+
+    def _selected_team_member_callsigns(self) -> list[str]:
+        callsigns: list[str] = []
+        for row in range(self.team_member_list.count()):
+            value = self.team_member_list.item(row).data(QtCore.Qt.UserRole + 1)
+            callsign = str(value or self.team_member_list.item(row).text()).strip()
+            if callsign:
+                callsigns.append(callsign)
+        return callsigns
 
     def _timing_tab(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
@@ -1201,6 +1292,18 @@ class MissionPage(QtWidgets.QWidget):
             return None
         return self._items[row]
 
+    def select_mission(self, mission_id: int) -> None:
+        all_index = self.status_filter.findData(None)
+        if all_index >= 0 and self.status_filter.currentIndex() != all_index:
+            self.status_filter.blockSignals(True)
+            self.status_filter.setCurrentIndex(all_index)
+            self.status_filter.blockSignals(False)
+        self.refresh()
+        for row, item in enumerate(self._items):
+            if item.id == int(mission_id):
+                self.table.selectRow(row)
+                break
+
     def _selection_changed(self) -> None:
         item = self._selected_item()
         for button in self._server_buttons.values():
@@ -1280,8 +1383,8 @@ class MissionPage(QtWidgets.QWidget):
             f"Type: {getattr(mission, 'mission_type', '')}",
             f"Creator: {detail.get('creator_callsign', '')}",
             f"Channel: {detail.get('channel_name', '')}",
-            f"Lead: {getattr(mission, 'lead_coordinator', '')}",
-            f"Organization: {getattr(mission, 'organization', '')}",
+            f"Team Lead: {getattr(mission, 'lead_coordinator', '')}",
+            f"Team Members: {getattr(mission, 'organization', '')}",
             f"Activation: {getattr(mission, 'activation_time', '')}",
             f"Window: {getattr(mission, 'operation_window', '')}",
             f"Max Duration: {getattr(mission, 'max_duration', '')}",

@@ -556,6 +556,37 @@ MIGRATIONS: list[str] = [
     """
     DROP TABLE IF EXISTS incidents;
     """,
+    # 0022 — Operator location pings.
+    #
+    # These are distinct from SITREPs: a ping records where an operator says
+    # they are, carries a short TTL, and defaults map rendering to the latest
+    # non-expired ping per operator.
+    """
+    CREATE TABLE IF NOT EXISTS operator_location_pings (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        operator_id INTEGER NOT NULL REFERENCES operators(id),
+        lat         REAL    NOT NULL,
+        lon         REAL    NOT NULL,
+        accuracy_m  REAL,
+        source      TEXT    NOT NULL DEFAULT 'manual_map',
+        note        TEXT    NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL,
+        expires_at  INTEGER NOT NULL,
+        mission_id  INTEGER REFERENCES missions(id),
+        uuid        TEXT    NOT NULL UNIQUE,
+        sync_status TEXT    NOT NULL DEFAULT 'synced',
+        version     INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE INDEX idx_operator_location_pings_operator_time
+        ON operator_location_pings(operator_id, created_at);
+    CREATE INDEX idx_operator_location_pings_expires
+        ON operator_location_pings(expires_at);
+    CREATE INDEX idx_operator_location_pings_mission
+        ON operator_location_pings(mission_id, expires_at);
+    CREATE INDEX idx_operator_location_pings_sync_status
+        ON operator_location_pings(sync_status);
+    """,
 ]
 
 

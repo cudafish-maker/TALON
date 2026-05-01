@@ -1127,6 +1127,7 @@ class TalonCoreSession:
             "enrollment_tokens",
             "messages",
             "missions",
+            "operator_location_pings",
             "operators",
             "sitrep_documents",
             "sitrep_followups",
@@ -1281,6 +1282,8 @@ class TalonCoreSession:
 
             payload.setdefault("acknowledged_by", self.require_local_operator_id())
             return acknowledge_checkin_command(self._conn, **payload)
+        if name == "location_pings.create":
+            return self._location_pings_create(**payload)
         if name == "chat.ensure_defaults":
             from talon_core.chat import ensure_default_channels
 
@@ -1381,6 +1384,49 @@ class TalonCoreSession:
             sync_status=sync_status,
         )
         return RecordCommandResult("sitreps", sitrep_id, (record_changed("sitreps", sitrep_id),))
+
+    def _location_pings_create(
+        self,
+        *,
+        lat: float,
+        lon: float,
+        accuracy_m: typing.Optional[float] = None,
+        source: str = "manual_map",
+        note: str = "",
+        mission_id: typing.Optional[int] = None,
+        operator_id: typing.Optional[int] = None,
+        sync_status: str = "synced",
+    ) -> RecordCommandResult:
+        from talon_core.location_pings import create_operator_location_ping
+        from talon_core.services.events import record_changed
+
+        local_operator_id = self.require_local_operator_id()
+        if self.mode == "client":
+            requested_operator_id = int(operator_id or local_operator_id)
+            if requested_operator_id != int(local_operator_id):
+                raise CoreSessionError(
+                    "Client location pings can only use the local operator."
+                )
+            operator_id = local_operator_id
+        elif operator_id is None:
+            operator_id = local_operator_id
+
+        ping_id = create_operator_location_ping(
+            self._conn,
+            operator_id=int(operator_id),
+            lat=lat,
+            lon=lon,
+            accuracy_m=accuracy_m,
+            source=source,
+            note=note,
+            mission_id=mission_id,
+            sync_status=sync_status,
+        )
+        return RecordCommandResult(
+            "operator_location_pings",
+            ping_id,
+            (record_changed("operator_location_pings", ping_id),),
+        )
 
     def _sitreps_delete(self, *, sitrep_id: int) -> RecordCommandResult:
         self._require_server_mode("SITREP delete")

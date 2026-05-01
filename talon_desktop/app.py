@@ -1,6 +1,7 @@
 """PySide6 desktop application shell."""
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import threading
 import typing
@@ -36,6 +37,7 @@ from talon_desktop.settings import (
     settings_byte_array,
 )
 from talon_desktop.sitrep_page import SitrepAlertOverlay, SitrepPage, latest_sitrep_item
+from talon_desktop.sitreps import feed_item_from_entry, mission_operator_callsigns
 from talon_desktop.theme import apply_desktop_theme
 
 _log = get_logger("desktop")
@@ -602,6 +604,104 @@ class CurrentPageStack(QtWidgets.QStackedWidget):
         self.repaint()
 
 
+@dataclasses.dataclass(frozen=True)
+class AssignmentNotification:
+    kind: typing.Literal["sitrep", "mission"]
+    target_id: int
+    title: str
+    body: str
+    tag: str
+
+
+class AssignmentNotificationOverlay(QtWidgets.QFrame):
+    """Global assignment popup hosted by the main shell."""
+
+    openRequested = QtCore.Signal(str, int)
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("assignmentNotificationOverlay")
+        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self._notification: AssignmentNotification | None = None
+        self._queue: list[AssignmentNotification] = []
+
+        self.title = QtWidgets.QLabel("")
+        self.title.setObjectName("sitrepAlertTitle")
+        self.title.setWordWrap(True)
+        self.tag = QtWidgets.QLabel("")
+        self.tag.setObjectName("sitrepTag")
+        self.body = QtWidgets.QLabel("")
+        self.body.setObjectName("sitrepAlertBody")
+        self.body.setWordWrap(True)
+        self.dismiss_button = QtWidgets.QPushButton("Dismiss")
+        self.open_button = QtWidgets.QPushButton("Open")
+        self.dismiss_button.clicked.connect(self._dismiss_current)
+        self.open_button.clicked.connect(self._open_current)
+
+        header = QtWidgets.QHBoxLayout()
+        header.addWidget(self.title, stretch=1)
+        header.addWidget(self.tag)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.addStretch(1)
+        actions.addWidget(self.dismiss_button)
+        actions.addWidget(self.open_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        layout.addLayout(header)
+        layout.addWidget(self.body)
+        layout.addLayout(actions)
+        self.hide()
+
+    def show_notification(self, notification: AssignmentNotification) -> None:
+        if self.isVisible() and self._notification is not None:
+            self._queue.append(notification)
+            return
+        self._display(notification)
+
+    def reposition(self) -> None:
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        margin = 18
+        width = min(420, max(340, parent.width() - (margin * 2)))
+        hint_height = max(146, self.sizeHint().height())
+        self.setGeometry(
+            max(margin, parent.width() - width - margin),
+            margin,
+            width,
+            hint_height,
+        )
+
+    def _display(self, notification: AssignmentNotification) -> None:
+        self._notification = notification
+        self.title.setText(notification.title)
+        self.body.setText(notification.body)
+        self.tag.setText(notification.tag)
+        self.open_button.setText(
+            "Open SITREP" if notification.kind == "sitrep" else "Open Mission"
+        )
+        self.reposition()
+        self.show()
+        self.raise_()
+
+    def _dismiss_current(self) -> None:
+        if self._queue:
+            self._display(self._queue.pop(0))
+            return
+        self._notification = None
+        self.hide()
+
+    def _open_current(self) -> None:
+        notification = self._notification
+        self._dismiss_current()
+        if notification is not None:
+            self.openRequested.emit(notification.kind, notification.target_id)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     networkSetupRequested = QtCore.Signal()
 
@@ -623,6 +723,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_buffer = log_buffer if log_buffer is not None else desktop_log_buffer()
         self._log_dialog: LogDialog | None = None
         self._last_direct_tcp_warning_session_id: int | None = None
+        self._assignment_notification_seen: set[tuple[object, ...]] = set()
+        self._assignment_notifications_primed = False
         self._settings_prefix = f"{core.mode}/main_window"
         self._theme_key = str(self._settings.value(self._setting_key("theme"), "dark"))
         self._font_scale = self._read_font_scale()
@@ -672,6 +774,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self._root_splitter)
         self.setMinimumSize(320, 240)
         self._sitrep_alert_overlay = SitrepAlertOverlay(self.stack)
+        self._assignment_notification_overlay = AssignmentNotificationOverlay(self.stack)
+        self._assignment_notification_overlay.openRequested.connect(
+            self._open_assignment_notification_target
+        )
         self.statusBar().showMessage("Core unlocked.")
         self.network_method_badge = QtWidgets.QLabel("Network method unknown")
         self.network_method_badge.setObjectName("networkMethodBadge")
@@ -706,6 +812,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._restore_desktop_state()
         self.nav.setCurrentRow(self._initial_nav_row())
         self.refresh_all()
+        self._prime_assignment_notifications()
         self._refresh_network_method_status()
         self._refresh_log_button()
 
@@ -719,6 +826,11 @@ class MainWindow(QtWidgets.QMainWindow):
         page = self._pages.get(section_key)
         if page is not None and hasattr(page, "refresh"):
             page.refresh()
+        if (
+            self._assignment_notifications_primed
+            and section_key in {"sitreps", "missions", "assignments"}
+        ):
+            self._scan_assignment_notifications()
 
     def set_network_setup_busy(self, busy: bool) -> None:
         self.network_setup_button.setDisabled(busy)
@@ -745,6 +857,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "_sitrep_alert_overlay"):
             self._sitrep_alert_overlay.reposition()
+        if hasattr(self, "_assignment_notification_overlay"):
+            self._assignment_notification_overlay.reposition()
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
@@ -1074,7 +1188,7 @@ class MainWindow(QtWidgets.QMainWindow):
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
-        elif table in {"missions", "zones", "waypoints", "sitreps"}:
+        elif table in {"missions", "operator_location_pings", "zones", "waypoints", "sitreps"}:
             page = self._pages.get("map")
             if isinstance(page, MapPage):
                 page.handle_record_mutation(action, table, record_id)
@@ -1108,11 +1222,163 @@ class MainWindow(QtWidgets.QMainWindow):
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
+        if (
+            self._assignment_notifications_primed
+            and action == "changed"
+            and table in {"sitreps", "sitrep_followups", "missions", "assignments"}
+        ):
+            self._scan_assignment_notifications()
+
+    def _prime_assignment_notifications(self) -> None:
+        try:
+            self._assignment_notification_seen = {
+                key for key, _notification in self._assignment_notification_entries()
+            }
+        except Exception as exc:
+            _log.debug("Could not prime assignment notifications: %s", exc)
+            self._assignment_notification_seen = set()
+        self._assignment_notifications_primed = True
+
+    def _scan_assignment_notifications(self) -> None:
+        try:
+            entries = self._assignment_notification_entries()
+        except Exception as exc:
+            _log.debug("Could not scan assignment notifications: %s", exc)
+            return
+        for key, notification in entries:
+            if key in self._assignment_notification_seen:
+                continue
+            self._assignment_notification_seen.add(key)
+            self._assignment_notification_overlay.show_notification(notification)
+
+    def _assignment_notification_entries(
+        self,
+    ) -> list[tuple[tuple[object, ...], AssignmentNotification]]:
+        try:
+            current = self._core.read_model("chat.current_operator")
+        except Exception:
+            return []
+        operator_id = int(current.get("id", 0) or 0)
+        callsign = str(current.get("callsign", "") or "").strip()
+        if operator_id <= 0 or not callsign:
+            return []
+        folded_callsign = callsign.casefold()
+        entries: list[tuple[tuple[object, ...], AssignmentNotification]] = []
+
+        try:
+            sitreps = self._core.read_model(
+                "sitreps.list",
+                {"unresolved_only": True, "limit": 500},
+            )
+        except Exception:
+            sitreps = []
+        for entry in sitreps:
+            item = feed_item_from_entry(entry)
+            if item.assigned_to.strip().casefold() != folded_callsign:
+                continue
+            body = item.body.splitlines()[0].strip() if item.body.strip() else ""
+            target = body or f"{item.level} SITREP #{item.id}"
+            key = ("sitrep", item.id, folded_callsign)
+            entries.append(
+                (
+                    key,
+                    AssignmentNotification(
+                        kind="sitrep",
+                        target_id=item.id,
+                        title="New SITREP Assignment",
+                        body=f"You have been assigned to {target}.",
+                        tag=item.level,
+                    ),
+                )
+            )
+
+        try:
+            missions = self._core.read_model("missions.list", {"status_filter": None})
+        except Exception:
+            missions = []
+        mission_titles: dict[int, str] = {}
+        for mission in missions:
+            mission_id = int(getattr(mission, "id"))
+            mission_titles[mission_id] = str(
+                getattr(mission, "title", "") or f"Mission #{mission_id}"
+            )
+            status = str(getattr(mission, "status", "") or "")
+            if status in {"completed", "aborted", "rejected"}:
+                continue
+            role = _mission_assignment_role(mission, folded_callsign)
+            if role is None:
+                continue
+            key = ("mission", mission_id, role, folded_callsign)
+            entries.append(
+                (
+                    key,
+                    AssignmentNotification(
+                        kind="mission",
+                        target_id=mission_id,
+                        title="New Mission Assignment",
+                        body=(
+                            f"You have been assigned to {mission_titles[mission_id]} "
+                            f"as {role}."
+                        ),
+                        tag="MISSION",
+                    ),
+                )
+            )
+
+        try:
+            assignments = self._core.read_model("assignments.list", {"active_only": True})
+        except Exception:
+            assignments = []
+        for assignment in assignments:
+            mission_id = getattr(assignment, "mission_id", None)
+            if mission_id is None:
+                continue
+            assigned_ids = {
+                int(value)
+                for value in getattr(assignment, "assigned_operator_ids", []) or []
+            }
+            if operator_id not in assigned_ids:
+                continue
+            assignment_id = int(getattr(assignment, "id"))
+            title = mission_titles.get(
+                int(mission_id),
+                str(getattr(assignment, "title", "") or f"Mission #{mission_id}"),
+            )
+            team_lead = str(getattr(assignment, "team_lead", "") or "").strip()
+            role = "Team Lead" if team_lead.casefold() == folded_callsign else "Team Member"
+            key = ("mission-assignment", assignment_id, operator_id)
+            entries.append(
+                (
+                    key,
+                    AssignmentNotification(
+                        kind="mission",
+                        target_id=int(mission_id),
+                        title="New Mission Assignment",
+                        body=f"You have been assigned to {title} as {role}.",
+                        tag="MISSION",
+                    ),
+                )
+            )
+        return entries
+
+    @QtCore.Slot(str, int)
+    def _open_assignment_notification_target(self, kind: str, target_id: int) -> None:
+        section_key = "sitreps" if kind == "sitrep" else "missions"
+        for row in range(self.nav.count()):
+            if self.nav.item(row).data(QtCore.Qt.UserRole) == section_key:
+                self.nav.setCurrentRow(row)
+                break
+        page = self._pages.get(section_key)
+        if kind == "sitrep" and isinstance(page, SitrepPage):
+            page.select_sitrep(target_id)
+        elif kind == "mission" and isinstance(page, MissionPage):
+            page.select_mission(target_id)
 
     def _mark_badges_for_mutation(self, table: str) -> None:
         sections_by_table = {
             "assets": ("assets", "map", "dashboard"),
             "missions": ("missions", "map", "dashboard"),
+            "operator_location_pings": ("map", "dashboard"),
             "zones": ("map", "dashboard"),
             "waypoints": ("map", "dashboard"),
             "sitreps": ("sitreps", "map", "dashboard"),
@@ -1469,6 +1735,16 @@ def _as_text(value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _mission_assignment_role(mission: object, folded_callsign: str) -> str | None:
+    lead = str(getattr(mission, "lead_coordinator", "") or "").strip()
+    if lead.casefold() == folded_callsign:
+        return "Team Lead"
+    for callsign in mission_operator_callsigns(mission):
+        if callsign.casefold() == folded_callsign:
+            return "Team Member"
+    return None
 
 
 def _lock_message(reason: str) -> str:

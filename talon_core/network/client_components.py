@@ -27,7 +27,15 @@ from talon_core.operators import SERVER_OPERATOR_ID
 
 _SERVER_OPERATOR_UUID = "00000000000000000000000000000001"
 _SERVER_OPERATOR_FK_TABLES = frozenset(
-    {"assets", "sitreps", "missions", "zones", "messages", "documents"}
+    {
+        "assets",
+        "sitreps",
+        "missions",
+        "zones",
+        "messages",
+        "documents",
+        "operator_location_pings",
+    }
 )
 
 

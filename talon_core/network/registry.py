@@ -4,7 +4,11 @@ import json
 import time
 import typing
 
-from talon_core.constants import ASSET_CATEGORIES, SITREP_LEVELS
+from talon_core.constants import (
+    ASSET_CATEGORIES,
+    OPERATOR_LOCATION_PING_TTL_S,
+    SITREP_LEVELS,
+)
 from talon_core.community_safety import (
     ASSIGNMENT_STATUSES,
     ASSIGNMENT_TYPES,
@@ -88,6 +92,7 @@ TABLES: dict[str, SyncedTable] = {
         predelete_sql=(
             "UPDATE sitreps SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE assignments SET mission_id = NULL WHERE mission_id = ?",
+            "UPDATE operator_location_pings SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE zones SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE channels SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE assets SET mission_id = NULL WHERE mission_id = ?",
@@ -159,6 +164,15 @@ TABLES: dict[str, SyncedTable] = {
         tombstone_order=4,
         ownership_fields=("operator_id",),
         ui_refresh_targets=_fields("assignments", "map", "main"),
+    ),
+    "operator_location_pings": SyncedTable(
+        name="operator_location_pings",
+        sync_order=13,
+        client_pushable=True,
+        offline_creatable=True,
+        tombstone_order=7,
+        ownership_fields=("operator_id",),
+        ui_refresh_targets=_fields("map", "main"),
     ),
     "sitrep_followups": SyncedTable(
         name="sitrep_followups",
@@ -635,6 +649,28 @@ def _client_push_dto(
             "acknowledged_by": None,
             "acknowledged_at": None,
             "created_at": now,
+        }
+
+    if table_name == "operator_location_pings":
+        mission_id = _optional_int(record.get("mission_id"), "mission_id")
+        _require_fk(conn, "missions", mission_id)
+        return {
+            "lat": _required_float(record.get("lat"), "lat", -90.0, 90.0),
+            "lon": _required_float(record.get("lon"), "lon", -180.0, 180.0),
+            "accuracy_m": _optional_float(
+                record.get("accuracy_m"),
+                "accuracy_m",
+                0.0,
+                1_000_000.0,
+            ),
+            "source": (
+                str(record.get("source") or "manual_map").strip()
+                or "manual_map"
+            ),
+            "note": str(record.get("note") or "").strip(),
+            "created_at": now,
+            "expires_at": now + OPERATOR_LOCATION_PING_TTL_S,
+            "mission_id": mission_id,
         }
 
     if table_name == "messages":

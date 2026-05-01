@@ -39,6 +39,7 @@ def test_registry_exposes_current_sync_sets():
         "sitrep_followups",
         "sitrep_documents",
         "checkins",
+        "operator_location_pings",
     )
     assert registry.CLIENT_PUSH_TABLES == {
         "assets",
@@ -48,6 +49,7 @@ def test_registry_exposes_current_sync_sets():
         "zones",
         "assignments",
         "checkins",
+        "operator_location_pings",
         "sitrep_followups",
         "sitrep_documents",
     }
@@ -61,6 +63,7 @@ def test_registry_exposes_current_sync_sets():
         "sitrep_followups",
         "sitrep_documents",
         "checkins",
+        "operator_location_pings",
     )
     assert registry.TOMBSTONE_APPLY_ORDER == (
         "messages",
@@ -70,6 +73,7 @@ def test_registry_exposes_current_sync_sets():
         "checkins",
         "sitrep_documents",
         "sitrep_followups",
+        "operator_location_pings",
         "sitreps",
         "assets",
         "documents",
@@ -86,6 +90,7 @@ def test_registry_captures_table_metadata():
     assets = registry.get_table("assets")
     assignments = registry.get_table("assignments")
     checkins = registry.get_table("checkins")
+    operator_location_pings = registry.get_table("operator_location_pings")
     sitrep_followups = registry.get_table("sitrep_followups")
     sitrep_documents = registry.get_table("sitrep_documents")
 
@@ -96,6 +101,7 @@ def test_registry_captures_table_metadata():
     assert assets.ownership_fields == ("created_by",)
     assert assignments.ownership_fields == ("created_by",)
     assert checkins.ownership_fields == ("operator_id",)
+    assert operator_location_pings.ownership_fields == ("operator_id",)
     assert sitrep_followups.ownership_fields == ("author_id",)
     assert sitrep_documents.ownership_fields == ("created_by",)
     assert assets.client_push_forced_fields == {"verified": 0, "confirmed_by": None}
@@ -108,6 +114,7 @@ def test_registry_captures_table_metadata():
         "main",
     }
     assert registry.ui_refresh_targets("sitrep_followups") == {"sitrep", "map", "main"}
+    assert registry.ui_refresh_targets("operator_location_pings") == {"map", "main"}
     assert registry.ui_refresh_targets("sitrep_documents") == {
         "sitrep",
         "documents",
@@ -188,6 +195,28 @@ def test_registry_wire_transforms_encode_message_body_for_server_store(test_key)
 
     assert stored["body"] == b"plain text"
     assert stored["sender_id"] == 7
+
+
+def test_registry_normalizes_operator_location_ping_client_push(test_key):
+    stored = registry.prepare_client_push_record_for_server_store(
+        "operator_location_pings",
+        {
+            "id": 1,
+            "uuid": "b" * 32,
+            "operator_id": 999,
+            "lat": 40.5,
+            "lon": -75.5,
+            "source": "manual_map",
+            "note": "  checking in  ",
+        },
+        uuid_value="b" * 32,
+        operator_id=7,
+        db_key=test_key,
+    )
+
+    assert stored["operator_id"] == 7
+    assert stored["note"] == "checking in"
+    assert stored["expires_at"] > stored["created_at"]
 
 
 def test_server_notifications_ignore_unsupported_tables(tmp_db, test_key):

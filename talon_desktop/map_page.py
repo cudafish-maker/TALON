@@ -16,6 +16,7 @@ from talon_desktop.map_data import (
     MapBounds,
     MapOverlayBundle,
     MissionLocationOverlay,
+    OperatorPingOverlay,
     RouteOverlay,
     SitrepOverlay,
     WaypointOverlay,
@@ -79,6 +80,17 @@ class MapGraphicsView(QtWidgets.QGraphicsView):
         self._zoom_timer.setInterval(90)
         self._zoom_timer.setSingleShot(True)
         self._zoom_timer.timeout.connect(self._emit_pending_zoom)
+        self._placement_mode = False
+
+    def set_placement_mode(self, enabled: bool) -> None:
+        self._placement_mode = bool(enabled)
+        if self._placement_mode:
+            self._pan_active = False
+            self._pan_moved = False
+            self._pending_pan_delta = QtCore.QPointF()
+        self.setCursor(
+            QtCore.Qt.CrossCursor if self._placement_mode else QtCore.Qt.ArrowCursor
+        )
 
     def reset_zoom(self) -> None:
         self.resetTransform()
@@ -90,6 +102,9 @@ class MapGraphicsView(QtWidgets.QGraphicsView):
         self.sceneSizeChanged.emit(float(size.width()), float(size.height()))
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._placement_mode and event.button() == QtCore.Qt.LeftButton:
+            event.accept()
+            return
         if event.button() == QtCore.Qt.LeftButton:
             self._pan_active = True
             self._pan_moved = False
@@ -100,6 +115,9 @@ class MapGraphicsView(QtWidgets.QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._placement_mode:
+            event.accept()
+            return
         if self._pan_active and event.buttons() & QtCore.Qt.LeftButton:
             current = event.position().toPoint()
             delta = current - self._last_pan_pos
@@ -120,6 +138,11 @@ class MapGraphicsView(QtWidgets.QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._placement_mode and event.button() == QtCore.Qt.LeftButton:
+            point = self.mapToScene(event.position().toPoint())
+            self.sceneClicked.emit(point.x(), point.y())
+            event.accept()
+            return
         if event.button() == QtCore.Qt.LeftButton and self._pan_active:
             self._emit_pending_pan()
             self.setCursor(QtCore.Qt.ArrowCursor)
@@ -226,6 +249,7 @@ class MapPage(QtWidgets.QWidget):
         self._mission_ids: list[int | None] = [None]
         self._overlay_details: dict[str, str] = {}
         self._visible_asset_ids: set[int] | None = None
+        self._ping_placement_active = False
         self._scene_width = SCENE_WIDTH
         self._scene_height = SCENE_HEIGHT
         self._scene_margin = 0.0
@@ -263,8 +287,11 @@ class MapPage(QtWidgets.QWidget):
             )
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
-        self.report_here_button = QtWidgets.QPushButton("Report Here")
-        self.report_here_button.clicked.connect(self._report_at_view_center)
+        self.ping_location_button = QtWidgets.QPushButton("Ping Location")
+        self.ping_location_button.clicked.connect(self._start_ping_placement)
+        self.cancel_ping_button = QtWidgets.QPushButton("Cancel Ping")
+        self.cancel_ping_button.clicked.connect(self._cancel_ping_placement)
+        self.cancel_ping_button.setVisible(False)
         self.asset_filter_button = QtWidgets.QPushButton("Assets")
         self.asset_filter_button.clicked.connect(self._choose_visible_assets)
 
@@ -274,7 +301,8 @@ class MapPage(QtWidgets.QWidget):
         top_row.addLayout(layer_row)
         top_row.addWidget(self.mission_filter)
         top_row.addWidget(self.asset_filter_button)
-        top_row.addWidget(self.report_here_button)
+        top_row.addWidget(self.ping_location_button)
+        top_row.addWidget(self.cancel_ping_button)
         top_row.addWidget(self.refresh_button)
 
         self.view = MapGraphicsView(self._scene)
@@ -284,8 +312,13 @@ class MapPage(QtWidgets.QWidget):
         self.view.setMinimumSize(320, 280)
         self.view.zoomRequested.connect(self._zoom_at_scene_point)
         self.view.panRequested.connect(self._pan_by_scene_delta)
-        self.view.sceneClicked.connect(self._select_overlay_at_scene_point)
+        self.view.sceneClicked.connect(self._handle_scene_click)
         self.view.sceneSizeChanged.connect(self._resize_scene)
+        self._cancel_ping_shortcut = QtGui.QShortcut(
+            QtGui.QKeySequence(QtCore.Qt.Key_Escape),
+            self,
+        )
+        self._cancel_ping_shortcut.activated.connect(self._cancel_ping_placement)
 
         self.left_panel = self._build_left_panel()
         self.right_panel = self._build_right_panel()
@@ -339,6 +372,7 @@ class MapPage(QtWidgets.QWidget):
             f"{len(self._bundle.waypoints)} waypoints, "
             f"{len(self._bundle.assignments)} assignments, "
             f"{len(self._bundle.mission_locations)} mission locations, "
+            f"{len(self._bundle.operator_pings)} operator pings, "
             f"{len(self._bundle.sitreps)} mapped SITREPs."
         )
 
@@ -472,6 +506,21 @@ class MapPage(QtWidgets.QWidget):
         )
         self.sitrep_panel_list.setMinimumHeight(72)
 
+        self.ping_panel_count = QtWidgets.QLabel("0")
+        self.ping_panel_count.setObjectName("sideMode")
+        self.ping_panel_count.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
+        self.ping_panel_list = QtWidgets.QListWidget()
+        self.ping_panel_list.setObjectName("mapSideList")
+        self.ping_panel_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self.ping_panel_list.setMinimumHeight(72)
+        self.ping_panel_list.itemSelectionChanged.connect(
+            self._select_ping_from_panel
+        )
+
         self.right_panel_splitter = MapRightPanelSplitter()
         self.right_panel_splitter.setObjectName("mapRightSplitter")
         self.right_panel_splitter.setChildrenCollapsible(False)
@@ -487,6 +536,13 @@ class MapPage(QtWidgets.QWidget):
         )
         self.right_panel_splitter.addWidget(
             self._build_right_panel_section(
+                "Pings",
+                self.ping_panel_list,
+                self.ping_panel_count,
+            )
+        )
+        self.right_panel_splitter.addWidget(
+            self._build_right_panel_section(
                 "SITREPs",
                 self.sitrep_panel_list,
                 self.sitrep_panel_count,
@@ -494,8 +550,9 @@ class MapPage(QtWidgets.QWidget):
         )
         self.right_panel_splitter.setStretchFactor(0, 1)
         self.right_panel_splitter.setStretchFactor(1, 2)
-        self.right_panel_splitter.setStretchFactor(2, 2)
-        self.right_panel_splitter.setSizes([130, 255, 255])
+        self.right_panel_splitter.setStretchFactor(2, 1)
+        self.right_panel_splitter.setStretchFactor(3, 2)
+        self.right_panel_splitter.setSizes([120, 210, 160, 210])
         layout.addWidget(self.right_panel_splitter, stretch=1)
         return panel
 
@@ -571,6 +628,11 @@ class MapPage(QtWidgets.QWidget):
         assets = list(getattr(context, "assets", []) or []) if context is not None else []
         missions = list(getattr(context, "missions", []) or []) if context is not None else []
         sitreps = list(self._sitrep_entries or [])
+        operator_pings = (
+            list(self._bundle.operator_pings)
+            if self._bundle is not None
+            else []
+        )
 
         visible_asset_ids = (
             {asset.id for asset in self._bundle.assets}
@@ -619,6 +681,20 @@ class MapPage(QtWidgets.QWidget):
                     self.mission_panel_list.setCurrentItem(item)
         finally:
             self.mission_panel_list.blockSignals(False)
+
+        self.ping_panel_count.setText(str(len(operator_pings)))
+        self.ping_panel_list.blockSignals(True)
+        self.ping_panel_list.clear()
+        try:
+            for ping in operator_pings[:24]:
+                age = _relative_age_label(ping.created_at)
+                item = QtWidgets.QListWidgetItem(
+                    f"{ping.callsign}\n{age} - {ping.point.lat:.4f}, {ping.point.lon:.4f}"
+                )
+                item.setData(QtCore.Qt.UserRole, f"ping:{ping.id}")
+                self.ping_panel_list.addItem(item)
+        finally:
+            self.ping_panel_list.blockSignals(False)
 
         self.sitrep_panel_count.setText(str(len(sitreps)))
         self.sitrep_panel_list.clear()
@@ -685,6 +761,19 @@ class MapPage(QtWidgets.QWidget):
         if index < 0 or index == self.mission_filter.currentIndex():
             return
         self.mission_filter.setCurrentIndex(index)
+
+    def _select_ping_from_panel(self) -> None:
+        item = self.ping_panel_list.currentItem()
+        if item is None:
+            return
+        value = str(item.data(QtCore.Qt.UserRole) or "")
+        if not value.startswith("ping:"):
+            return
+        try:
+            ping_id = int(value.split(":", 1)[1])
+        except ValueError:
+            return
+        self._select_overlay_by_key(f"ping:{ping_id}")
 
     def _asset_by_id(self, asset_id: int) -> object | None:
         context = self._map_context
@@ -779,6 +868,7 @@ class MapPage(QtWidgets.QWidget):
             "assignments",
             "checkins",
             "missions",
+            "operator_location_pings",
             "sitrep_followups",
             "sitreps",
             "waypoints",
@@ -828,6 +918,8 @@ class MapPage(QtWidgets.QWidget):
             ):
                 continue
             self._draw_sitrep(sitrep)
+        for ping in bundle.operator_pings:
+            self._draw_operator_ping(ping)
         self._scene.setSceneRect(0, 0, self._scene_width, self._scene_height)
         if refit:
             self.view.reset_zoom()
@@ -1002,6 +1094,50 @@ class MapPage(QtWidgets.QWidget):
             ),
         )
 
+    def _draw_operator_ping(self, ping: OperatorPingOverlay) -> None:
+        x = ping.point.x
+        y = ping.point.y
+        radius = 10.0
+        ellipse = self._scene.addEllipse(
+            x - radius,
+            y - radius,
+            radius * 2.0,
+            radius * 2.0,
+            QtGui.QPen(QtGui.QColor("#ecf0f1"), 2),
+            QtGui.QBrush(QtGui.QColor(127, 176, 105, 130)),
+        )
+        hline = self._scene.addLine(
+            x - 16,
+            y,
+            x + 16,
+            y,
+            QtGui.QPen(QtGui.QColor("#7fb069"), 2),
+        )
+        vline = self._scene.addLine(
+            x,
+            y - 16,
+            x,
+            y + 16,
+            QtGui.QPen(QtGui.QColor("#7fb069"), 2),
+        )
+        group = self._scene.createItemGroup([ellipse, hline, vline])
+        group.setZValue(26)
+        self._register_item(
+            group,
+            key=f"ping:{ping.id}",
+            label=f"{ping.callsign} location ping",
+            detail=(
+                f"Operator Ping #{ping.id}\n"
+                f"Operator: {ping.callsign} (#{ping.operator_id})\n"
+                f"Age: {_relative_age_label(ping.created_at)}\n"
+                f"Source: {ping.source or 'manual_map'}\n"
+                f"Mission: {ping.mission_id or ''}\n"
+                f"Lat/Lon: {ping.point.lat:.6f}, {ping.point.lon:.6f}\n"
+                f"Expires: {_relative_expiry_label(ping.expires_at)}"
+                + (f"\n\n{ping.note}" if ping.note else "")
+            ),
+        )
+
     def _draw_sitrep(self, sitrep: SitrepOverlay) -> None:
         size = 7
         polygon = QtGui.QPolygonF(
@@ -1060,6 +1196,12 @@ class MapPage(QtWidgets.QWidget):
         if detail:
             self._set_selection_detail(detail)
             _log.debug("Map overlay selected: %s", detail.replace("\n", " | "))
+
+    def _handle_scene_click(self, x: float, y: float) -> None:
+        if self._ping_placement_active:
+            self._create_ping_at_scene_point(x, y)
+            return
+        self._select_overlay_at_scene_point(x, y)
 
     def _select_overlay_at_scene_point(self, x: float, y: float) -> None:
         point = QtCore.QPointF(x, y)
@@ -1128,49 +1270,66 @@ class MapPage(QtWidgets.QWidget):
         self._render_bundle(self._bundle)
         self._refresh_side_panels()
 
-    def _report_at_view_center(self) -> None:
-        bounds = self._view_bounds or (self._bundle.bounds if self._bundle is not None else None)
+    def _start_ping_placement(self) -> None:
+        bounds = self._view_bounds or (
+            self._bundle.bounds if self._bundle is not None else None
+        )
         if bounds is None:
-            self.summary.setText("Load the map before creating a map SITREP.")
+            self.summary.setText("Load the map before pinging your location.")
+            return
+        self._set_ping_placement_active(True)
+        self.summary.setText("Click the map to ping your location. Press Esc to cancel.")
+
+    def _cancel_ping_placement(self) -> None:
+        if not self._ping_placement_active:
+            return
+        self._set_ping_placement_active(False)
+        self.summary.setText("Location ping cancelled.")
+
+    def _set_ping_placement_active(self, active: bool) -> None:
+        self._ping_placement_active = bool(active)
+        self.view.set_placement_mode(self._ping_placement_active)
+        self.ping_location_button.setText(
+            "Ping Location Armed" if self._ping_placement_active else "Ping Location"
+        )
+        self.ping_location_button.setEnabled(not self._ping_placement_active)
+        self.cancel_ping_button.setVisible(self._ping_placement_active)
+        if self._ping_placement_active:
+            self.view.setFocus(QtCore.Qt.OtherFocusReason)
+
+    def _create_ping_at_scene_point(self, x: float, y: float) -> None:
+        bounds = self._view_bounds or (
+            self._bundle.bounds if self._bundle is not None else None
+        )
+        if bounds is None:
+            self.summary.setText("Load the map before pinging your location.")
+            self._set_ping_placement_active(False)
             return
         lat, lon = lat_lon_for_scene_point(
             bounds,
-            self._scene_width / 2.0,
-            self._scene_height / 2.0,
+            x,
+            y,
             scene_width=self._scene_width,
             scene_height=self._scene_height,
             scene_margin=self._scene_margin,
         )
-        body, accepted = QtWidgets.QInputDialog.getMultiLineText(
-            self,
-            "Report Here",
-            f"SITREP at {lat:.6f}, {lon:.6f}",
-            "",
-        )
-        if not accepted:
-            return
-        body = body.strip()
-        if not body:
-            self.summary.setText("SITREP body is required.")
-            return
         try:
             self._core.command(
-                "sitreps.create",
+                "location_pings.create",
                 {
-                    "level": "ROUTINE",
-                    "body": body,
                     "lat": lat,
                     "lon": lon,
-                    "location_label": "Map report",
-                    "location_precision": "exact",
-                    "location_source": "map",
+                    "source": "manual_map",
                     "mission_id": self._selected_mission_id(),
                 },
             )
+            self._set_ping_placement_active(False)
             self.refresh()
+            self.summary.setText(f"Location ping sent at {lat:.6f}, {lon:.6f}.")
         except Exception as exc:
-            _log.warning("Map SITREP create failed: %s", exc)
-            self.summary.setText(f"SITREP not sent: {exc}")
+            _log.warning("Location ping create failed: %s", exc)
+            self.summary.setText(f"Location ping not sent: {exc}")
+            self._set_ping_placement_active(False)
 
     def _selected_mission_id(self) -> int | None:
         index = self.mission_filter.currentIndex()
@@ -1272,3 +1431,32 @@ class MapPage(QtWidgets.QWidget):
             self._network.setCache(cache)
         except Exception as exc:
             _log.debug("Map tile cache disabled: %s", exc)
+
+
+def _relative_age_label(timestamp: int) -> str:
+    import time
+
+    age_s = max(0, int(time.time()) - int(timestamp or 0))
+    if age_s < 60:
+        return "just now"
+    if age_s < 3600:
+        minutes = max(1, age_s // 60)
+        return f"{minutes} min ago"
+    hours = max(1, age_s // 3600)
+    if hours < 24:
+        return f"{hours} hr ago"
+    days = max(1, hours // 24)
+    return f"{days} day{'s' if days != 1 else ''} ago"
+
+
+def _relative_expiry_label(timestamp: int) -> str:
+    import time
+
+    remaining_s = int(timestamp or 0) - int(time.time())
+    if remaining_s <= 0:
+        return "expired"
+    if remaining_s < 3600:
+        minutes = max(1, remaining_s // 60)
+        return f"in {minutes} min"
+    hours = max(1, remaining_s // 3600)
+    return f"in {hours} hr"

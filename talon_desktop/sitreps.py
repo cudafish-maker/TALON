@@ -357,6 +357,7 @@ def available_operator_items(
     *,
     assignments: typing.Iterable[object] = (),
     sitreps: typing.Iterable[object] = (),
+    missions: typing.Iterable[object] = (),
     current_sitrep_id: int | None = None,
 ) -> list[AvailableOperatorItem]:
     """Return operators not already committed to active work."""
@@ -381,6 +382,13 @@ def available_operator_items(
         if assigned_to:
             busy_callsigns.add(assigned_to.casefold())
 
+    for mission in missions:
+        status = str(_field(mission, "status", default="") or "")
+        if status in {"completed", "aborted", "rejected"}:
+            continue
+        for callsign in mission_operator_callsigns(mission):
+            busy_callsigns.add(callsign.casefold())
+
     available: list[AvailableOperatorItem] = []
     for operator in operators:
         operator_id = _optional_int(_field(operator, "id", default=None))
@@ -401,6 +409,29 @@ def available_operator_items(
             )
         )
     return available
+
+
+def mission_operator_callsigns(mission: object) -> tuple[str, ...]:
+    """Return operator callsigns encoded in current mission team fields."""
+    values: list[str] = []
+    lead = str(_field(mission, "lead_coordinator", default="") or "").strip()
+    if lead:
+        values.append(lead)
+    members = str(_field(mission, "organization", default="") or "").strip()
+    for piece in members.replace("\n", ",").replace(";", ",").split(","):
+        callsign = piece.strip()
+        if callsign:
+            values.append(callsign)
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for callsign in values:
+        folded = callsign.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        unique.append(callsign)
+    return tuple(unique)
 
 
 def should_play_audio(level: str, audio_enabled: bool) -> bool:

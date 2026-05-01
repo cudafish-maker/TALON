@@ -379,6 +379,21 @@ def test_core_session_phase1_domain_boundary(tmp_path: pathlib.Path) -> None:
     assert [asset.id for asset in map_context.assets] == [asset_result.asset_id]
     assert [mission.id for mission in map_context.missions] == [mission_result.mission.id]
 
+    ping_result = session.command(
+        "location_pings.create",
+        lat=40.7,
+        lon=-75.2,
+        note="Server operator location",
+        mission_id=mission_result.mission.id,
+    )
+    map_context = session.read_model(
+        "map.context",
+        {"mission_id": mission_result.mission.id},
+    )
+    assert [ping.id for ping in map_context.operator_pings] == [ping_result.record_id]
+    assert map_context.operator_pings[0].operator_callsign == "SERVER"
+    assert map_context.operator_pings[0].note == "Server operator location"
+
     session.command("settings.set_audio_enabled", enabled=True)
     assert session.read_model("settings.audio_enabled") is True
     session.command("settings.set_meta", key="global_font_scale", value=1.3)
@@ -389,6 +404,7 @@ def test_core_session_phase1_domain_boundary(tmp_path: pathlib.Path) -> None:
     assert "sitreps" in tables
     assert "messages" in tables
     assert "missions" in tables
+    assert "operator_location_pings" in tables
 
 
 def test_core_session_community_safety_commands_and_read_models(

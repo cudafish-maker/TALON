@@ -8,6 +8,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from talon_core import TalonCoreSession
 from talon_core.constants import SITREP_LEVELS
 from talon_core.utils.logging import get_logger
+from talon_desktop.map_picker import MapCoordinateDialog, format_coordinate
 from talon_desktop.sitreps import (
     SitrepFeedItem,
     available_operator_items,
@@ -260,6 +261,22 @@ class SitrepPage(QtWidgets.QWidget):
         if value is None:
             return None
         return int(value)
+
+    def select_sitrep(self, sitrep_id: int) -> None:
+        all_index = self.level_filter.findData("")
+        if all_index >= 0 and self.level_filter.currentIndex() != all_index:
+            self.level_filter.blockSignals(True)
+            self.level_filter.setCurrentIndex(all_index)
+            self.level_filter.blockSignals(False)
+        if not self.show_closed_filter.isChecked():
+            self.show_closed_filter.blockSignals(True)
+            self.show_closed_filter.setChecked(True)
+            self.show_closed_filter.blockSignals(False)
+        self.refresh()
+        for row, item in enumerate(self._items):
+            if item.id == int(sitrep_id):
+                self.feed.setCurrentRow(row)
+                break
 
     def refresh(self) -> None:
         selected_id = self._selected_sitrep_id()
@@ -662,8 +679,10 @@ class SitrepCreateDialog(QtWidgets.QDialog):
     def __init__(self, core: TalonCoreSession, parent=None) -> None:
         super().__init__(parent)
         self._core = core
+        self._asset_locations: dict[int, tuple[str, float, float]] = {}
+        self._location_source = ""
         self.setWindowTitle("New SITREP")
-        self.resize(520, 430)
+        self.setMinimumSize(980, 620)
 
         self.level_combo = QtWidgets.QComboBox()
         for level in SITREP_LEVELS:
@@ -678,7 +697,7 @@ class SitrepCreateDialog(QtWidgets.QDialog):
 
         self.context_group = QtWidgets.QGroupBox("Optional context")
         self.context_group.setCheckable(True)
-        self.context_group.setChecked(False)
+        self.context_group.setChecked(True)
         self.context_group.toggled.connect(self._sync_context_visibility)
         self.asset_combo = QtWidgets.QComboBox()
         self.mission_combo = QtWidgets.QComboBox()
@@ -689,6 +708,12 @@ class SitrepCreateDialog(QtWidgets.QDialog):
         self.lat_field.setPlaceholderText("Latitude")
         self.lon_field = QtWidgets.QLineEdit()
         self.lon_field.setPlaceholderText("Longitude")
+        self.pick_location_button = QtWidgets.QPushButton("Pick on Map")
+        self.pick_location_button.clicked.connect(self._pick_location_on_map)
+        self.asset_location_button = QtWidgets.QPushButton("Use Asset Position")
+        self.asset_location_button.clicked.connect(self._use_asset_position)
+        self.clear_location_button = QtWidgets.QPushButton("Clear")
+        self.clear_location_button.clicked.connect(self._clear_location)
 
         context_form = QtWidgets.QFormLayout(self.context_group)
         context_form.addRow("Mission", self.mission_combo)
@@ -696,10 +721,13 @@ class SitrepCreateDialog(QtWidgets.QDialog):
         context_form.addRow("Asset", self.asset_combo)
         context_form.addRow("Location", self.location_label_field)
         coord_row = QtWidgets.QWidget()
-        coord_layout = QtWidgets.QHBoxLayout(coord_row)
+        coord_layout = QtWidgets.QGridLayout(coord_row)
         coord_layout.setContentsMargins(0, 0, 0, 0)
-        coord_layout.addWidget(self.lat_field)
-        coord_layout.addWidget(self.lon_field)
+        coord_layout.addWidget(self.lat_field, 0, 0)
+        coord_layout.addWidget(self.lon_field, 0, 1)
+        coord_layout.addWidget(self.pick_location_button, 1, 0)
+        coord_layout.addWidget(self.asset_location_button, 1, 1)
+        coord_layout.addWidget(self.clear_location_button, 1, 2)
         context_form.addRow("Lat / Lon", coord_row)
 
         form = QtWidgets.QFormLayout()
@@ -708,6 +736,27 @@ class SitrepCreateDialog(QtWidgets.QDialog):
         form.addRow("", self.context_group)
         form.addRow("", self.status_label)
 
+        form_page = QtWidgets.QWidget()
+        form_page.setLayout(form)
+
+        self.map_picker = MapCoordinateDialog(
+            core=self._core,
+            title="SITREP Location",
+            mode="point",
+            parent=self,
+        )
+        self.map_picker.setWindowFlags(QtCore.Qt.Widget)
+        self.map_picker.setMinimumSize(420, 460)
+        self.map_picker.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+        )
+        self.map_picker.cancel_button.setVisible(False)
+        self.map_picker.use_button.clicked.disconnect()
+        self.map_picker.use_button.clicked.connect(self._apply_map_location)
+        self.map_picker.selectionChanged.connect(self._sync_map_apply_state)
+        self._configure_location_picker()
+
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
         )
@@ -715,11 +764,18 @@ class SitrepCreateDialog(QtWidgets.QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
+        content = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        content.addWidget(form_page)
+        content.addWidget(self.map_picker)
+        content.setStretchFactor(0, 3)
+        content.setStretchFactor(1, 2)
+
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(form)
+        layout.addWidget(content, stretch=1)
         layout.addWidget(buttons)
         self._refresh_link_selectors()
-        self._sync_context_visibility(False)
+        self._sync_context_visibility(True)
+        self._sync_map_apply_state()
 
     def payload(self) -> dict[str, object]:
         use_context = self.context_group.isChecked()
@@ -732,7 +788,7 @@ class SitrepCreateDialog(QtWidgets.QDialog):
             location_label=self.location_label_field.text() if use_context else "",
             lat_text=self.lat_field.text() if use_context else "",
             lon_text=self.lon_field.text() if use_context else "",
-            location_source="manual"
+            location_source=(self._location_source or "manual")
             if use_context
             and (
                 self.location_label_field.text().strip()
@@ -758,9 +814,16 @@ class SitrepCreateDialog(QtWidgets.QDialog):
         self.mission_combo.addItem("None", None)
         self.assignment_combo.clear()
         self.assignment_combo.addItem("None", None)
+        self._asset_locations.clear()
         try:
             for asset in self._core.read_model("assets.list"):
-                self.asset_combo.addItem(str(getattr(asset, "label", asset.id)), int(asset.id))
+                asset_id = int(getattr(asset, "id"))
+                label = str(getattr(asset, "label", asset.id))
+                self.asset_combo.addItem(label, asset_id)
+                lat = getattr(asset, "lat", None)
+                lon = getattr(asset, "lon", None)
+                if lat is not None and lon is not None:
+                    self._asset_locations[asset_id] = (label, float(lat), float(lon))
             for mission in self._core.read_model("missions.list", {"status_filter": None}):
                 if getattr(mission, "status", "") not in ("pending_approval", "active"):
                     continue
@@ -782,6 +845,10 @@ class SitrepCreateDialog(QtWidgets.QDialog):
             self.location_label_field,
             self.lat_field,
             self.lon_field,
+            self.pick_location_button,
+            self.asset_location_button,
+            self.clear_location_button,
+            self.map_picker,
         ):
             widget.setVisible(checked)
         form = self.context_group.layout()
@@ -797,6 +864,68 @@ class SitrepCreateDialog(QtWidgets.QDialog):
         if value in (None, ""):
             return None
         return int(typing.cast(int, value))
+
+    def _configure_location_picker(self) -> None:
+        initial: list[tuple[float, float]] = []
+        try:
+            if self.lat_field.text().strip() and self.lon_field.text().strip():
+                initial = [(float(self.lat_field.text()), float(self.lon_field.text()))]
+        except ValueError:
+            initial = []
+        self.map_picker.configure_selection(
+            title="SITREP Location",
+            mode="point",
+            initial_points=initial,
+            minimum_points=1,
+        )
+        self.map_picker.use_button.setText("Use Selected")
+        self._sync_map_apply_state()
+
+    def _pick_location_on_map(self) -> None:
+        self._configure_location_picker()
+        self.status_label.setText("Map target: SITREP location.")
+
+    def _apply_map_location(self) -> None:
+        error = self.map_picker.selection_error()
+        if error:
+            self.status_label.setText(error)
+            return
+        selected = self.map_picker.selected_points
+        if not selected:
+            self.status_label.setText("Select a map point first.")
+            return
+        lat, lon = selected[0]
+        self.lat_field.setText(f"{lat:.6f}")
+        self.lon_field.setText(f"{lon:.6f}")
+        if not self.location_label_field.text().strip():
+            self.location_label_field.setText("Map point")
+        self._location_source = "map"
+        self.status_label.setText(f"Applied SITREP location: {format_coordinate(lat, lon)}.")
+        self._sync_map_apply_state()
+
+    def _sync_map_apply_state(self) -> None:
+        self.map_picker.use_button.setEnabled(not self.map_picker.selection_error())
+
+    def _use_asset_position(self) -> None:
+        asset_id = self._combo_int(self.asset_combo)
+        if asset_id is None or asset_id not in self._asset_locations:
+            self.status_label.setText("Select an asset with a saved position.")
+            return
+        label, lat, lon = self._asset_locations[asset_id]
+        self.location_label_field.setText(label)
+        self.lat_field.setText(f"{lat:.6f}")
+        self.lon_field.setText(f"{lon:.6f}")
+        self._location_source = "asset"
+        self._configure_location_picker()
+        self.status_label.setText(f"Applied asset position: {label}.")
+
+    def _clear_location(self) -> None:
+        self.location_label_field.clear()
+        self.lat_field.clear()
+        self.lon_field.clear()
+        self._location_source = ""
+        self._configure_location_picker()
+        self.status_label.clear()
 
 
 class SitrepAssignDialog(QtWidgets.QDialog):
@@ -860,10 +989,12 @@ class SitrepAssignDialog(QtWidgets.QDialog):
                 "sitreps.list",
                 {"unresolved_only": True, "limit": 500},
             )
+            missions = self._core.read_model("missions.list", {"status_filter": None})
             items = available_operator_items(
                 operators,
                 assignments=assignments,
                 sitreps=sitreps,
+                missions=missions,
                 current_sitrep_id=self._sitrep_id,
             )
         except Exception as exc:

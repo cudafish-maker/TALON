@@ -91,6 +91,19 @@ class MissionLocationOverlay:
 
 
 @dataclasses.dataclass(frozen=True)
+class OperatorPingOverlay:
+    id: int
+    operator_id: int
+    callsign: str
+    source: str
+    note: str
+    created_at: int
+    expires_at: int
+    mission_id: int | None
+    point: ProjectedPoint
+
+
+@dataclasses.dataclass(frozen=True)
 class MapOverlayBundle:
     bounds: MapBounds
     assets: tuple[AssetOverlay, ...]
@@ -100,6 +113,7 @@ class MapOverlayBundle:
     sitreps: tuple[SitrepOverlay, ...]
     assignments: tuple[AssignmentOverlay, ...]
     mission_locations: tuple[MissionLocationOverlay, ...]
+    operator_pings: tuple[OperatorPingOverlay, ...]
 
 
 SCENE_WIDTH = 1000.0
@@ -127,6 +141,7 @@ def build_map_overlays(
     waypoints = list(_field(context, "waypoints", default=[]) or [])
     missions = list(_field(context, "missions", default=[]) or [])
     assignments = list(_field(context, "assignments", default=[]) or [])
+    operator_pings = list(_field(context, "operator_pings", default=[]) or [])
     selected_mission_id = _optional_int(_field(context, "selected_mission_id", default=None))
     overlay_missions = [
         mission
@@ -140,6 +155,7 @@ def build_map_overlays(
             zones=zones,
             waypoints=waypoints,
             assignments=assignments,
+            operator_pings=operator_pings,
             missions=overlay_missions,
             sitrep_entries=sitrep_entries,
         )
@@ -269,6 +285,28 @@ def build_map_overlays(
         scene_height=scene_height,
         scene_margin=scene_margin,
     )
+    operator_ping_items = tuple(
+        OperatorPingOverlay(
+            id=int(_field(ping, "id")),
+            operator_id=int(_field(ping, "operator_id")),
+            callsign=str(_field(ping, "operator_callsign", default="UNKNOWN") or "UNKNOWN"),
+            source=str(_field(ping, "source", default="") or ""),
+            note=str(_field(ping, "note", default="") or ""),
+            created_at=int(_field(ping, "created_at", default=0) or 0),
+            expires_at=int(_field(ping, "expires_at", default=0) or 0),
+            mission_id=_optional_int(_field(ping, "mission_id", default=None)),
+            point=project_lat_lon(
+                bounds,
+                float(_field(ping, "lat")),
+                float(_field(ping, "lon")),
+                scene_width=scene_width,
+                scene_height=scene_height,
+                scene_margin=scene_margin,
+            ),
+        )
+        for ping in operator_pings
+        if _has_coordinates(ping)
+    )
 
     return MapOverlayBundle(
         bounds=bounds,
@@ -279,6 +317,7 @@ def build_map_overlays(
         sitreps=tuple(sitrep_items),
         assignments=assignment_overlays,
         mission_locations=mission_location_items,
+        operator_pings=operator_ping_items,
     )
 
 
@@ -288,6 +327,7 @@ def bounds_for_context(
     zones: typing.Iterable[object],
     waypoints: typing.Iterable[object],
     assignments: typing.Iterable[object] = (),
+    operator_pings: typing.Iterable[object] = (),
     missions: typing.Iterable[object] = (),
     sitrep_entries: typing.Iterable[object] = (),
 ) -> MapBounds:
@@ -303,6 +343,9 @@ def bounds_for_context(
     for assignment in assignments:
         if _has_coordinates(assignment):
             coords.append((float(_field(assignment, "lat")), float(_field(assignment, "lon"))))
+    for ping in operator_pings:
+        if _has_coordinates(ping):
+            coords.append((float(_field(ping, "lat")), float(_field(ping, "lon"))))
     for mission in missions:
         coords.extend(_mission_location_points(mission))
     for entry in sitrep_entries:

@@ -168,6 +168,22 @@ class AssignmentCheckIn:
 
 
 @dataclasses.dataclass
+class OperatorLocationPing:
+    id: int
+    operator_id: int
+    operator_callsign: str
+    lat: float
+    lon: float
+    accuracy_m: typing.Optional[float]
+    source: str
+    note: str
+    created_at: int
+    expires_at: int
+    mission_id: typing.Optional[int]
+    version: int
+
+
+@dataclasses.dataclass
 class Waypoint:
     id: int
     mission_id: int

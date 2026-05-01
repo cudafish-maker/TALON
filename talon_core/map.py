@@ -9,6 +9,7 @@ from talon_core.db.models import (
     Asset,
     CommunityAssignment,
     Mission,
+    OperatorLocationPing,
     Waypoint,
     Zone,
 )
@@ -23,6 +24,7 @@ class MapContext:
     waypoints: list[Waypoint] = dataclasses.field(default_factory=list)
     missions: list[Mission] = dataclasses.field(default_factory=list)
     assignments: list[CommunityAssignment] = dataclasses.field(default_factory=list)
+    operator_pings: list[OperatorLocationPing] = dataclasses.field(default_factory=list)
     selected_mission_id: typing.Optional[int] = None
 
     @property
@@ -82,11 +84,17 @@ def load_map_context(
     """Load the shared operational map picture without importing UI code."""
     from talon_core.assets import load_assets
     from talon_core.community_safety import list_assignments
+    from talon_core.location_pings import load_latest_operator_location_pings
     from talon_core.missions import load_missions
     from talon_core.zones import load_zones
 
     assets = load_assets(conn, limit=limit)
     assignments = list_assignments(conn, active_only=True, limit=limit)
+    operator_pings = load_latest_operator_location_pings(
+        conn,
+        mission_id=mission_id,
+        limit=limit,
+    )
     if mission_id is not None:
         assets = [
             asset
@@ -107,6 +115,7 @@ def load_map_context(
         waypoints=waypoints,
         missions=missions,
         assignments=assignments,
+        operator_pings=operator_pings,
         selected_mission_id=mission_id,
     )
 

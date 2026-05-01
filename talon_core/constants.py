@@ -19,13 +19,16 @@ HEARTBEAT_LORA_S: Final = 120
 # Lease duration before soft-lock (24 hours)
 LEASE_DURATION_S: Final = 86400
 
+# Operator map pings remain operationally visible for one day by default.
+OPERATOR_LOCATION_PING_TTL_S: Final = 86400
+
 # Transport interface priority (highest first).
 # WARNING: TCP exposes the operator's IP address. When TCP is active,
 # the UI must display a warning and recommend using a VPN.
 TRANSPORT_PRIORITY: Final = ("yggdrasil", "i2p", "tcp", "rnode")
 
 # Database schema version
-DB_SCHEMA_VERSION: Final = 21
+DB_SCHEMA_VERSION: Final = 22
 
 # ---------------------------------------------------------------------------
 # Reticulum network aspects

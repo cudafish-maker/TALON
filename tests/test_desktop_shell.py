@@ -84,6 +84,7 @@ from talon_desktop.sitreps import (
     build_create_payload,
     build_filter_payload,
     feed_item_from_entry,
+    mission_operator_callsigns,
     severity_counts,
     should_play_audio,
     sitrep_template_for_key,
@@ -825,7 +826,7 @@ try:
     )
     first = MainWindow(core, CoreEventBridge(), settings=settings)
     assert first._pages["map"].right_panel_splitter.orientation() == QtCore.Qt.Vertical
-    first._pages["map"].right_panel_splitter.setSizes([80, 320, 120])
+    first._pages["map"].right_panel_splitter.setSizes([80, 320, 160, 120])
     documents_row = None
     for index in range(first.nav.count()):
         if first.nav.item(index).data(QtCore.Qt.UserRole) == "documents":
@@ -851,8 +852,8 @@ try:
     assert second._pages["assets"].table.columnWidth(1) == 211
     map_splitter_sizes = second._pages["map"].right_panel_splitter.sizes()
     assert second._pages["map"].right_panel_splitter.orientation() == QtCore.Qt.Vertical
-    assert len(map_splitter_sizes) == 3
-    assert map_splitter_sizes[1] > map_splitter_sizes[2]
+    assert len(map_splitter_sizes) == 4
+    assert map_splitter_sizes[1] > map_splitter_sizes[3]
     print("settings-ok")
 finally:
     if second is not None:
@@ -1007,7 +1008,8 @@ try:
     app.processEvents()
     assert not hasattr(dialog, "template_combo")
     assert dialog.context_group.isCheckable()
-    assert dialog.context_group.isChecked() is False
+    assert dialog.context_group.isChecked() is True
+    assert isinstance(dialog.map_picker, QtWidgets.QWidget)
     dialog.body_field.setPlainText("Minimal report")
     assert dialog.payload() == {"level": "ROUTINE", "body": "Minimal report"}
     dialog.close()
@@ -1097,6 +1099,8 @@ class FakeCore:
 
     def read_model(self, name, filters=None):
         if name in {"assets.list", "operators.list"}:
+            return []
+        if name in {"assignments.list", "missions.list"}:
             return []
         if name == "assignments.board":
             return {"assignments": []}
@@ -1241,6 +1245,7 @@ class FakeCore:
     def __init__(self) -> None:
         self.paths = types.SimpleNamespace(data_dir=pathlib.Path(sys.argv[1]).parent)
         self.map_filters = []
+        self.commands = []
 
     def read_model(self, name, filters=None):
         if name == "map.context":
@@ -1271,10 +1276,31 @@ class FakeCore:
                     asset for asset in assets
                     if asset.mission_id == selected_mission_id
                 ]
+            operator_pings = [
+                types.SimpleNamespace(
+                    id=20,
+                    operator_id=2,
+                    operator_callsign="ALPHA",
+                    lat=39.954,
+                    lon=-75.164,
+                    accuracy_m=None,
+                    source="manual_map",
+                    note="",
+                    created_at=9999999999,
+                    expires_at=9999999999,
+                    mission_id=7,
+                )
+            ]
+            if selected_mission_id is not None:
+                operator_pings = [
+                    ping for ping in operator_pings
+                    if ping.mission_id == selected_mission_id
+                ]
             return types.SimpleNamespace(
                 assets=assets,
                 zones=[],
                 waypoints=[],
+                operator_pings=operator_pings,
                 missions=[
                     types.SimpleNamespace(
                         id=7,
@@ -1302,6 +1328,12 @@ class FakeCore:
             return sitreps
         raise KeyError(name)
 
+    def command(self, name, payload=None, **kwargs):
+        data = dict(payload or {})
+        data.update(kwargs)
+        self.commands.append((name, data))
+        return types.SimpleNamespace(record_id=21)
+
 core = FakeCore()
 page = MapPage(core)
 try:
@@ -1311,9 +1343,10 @@ try:
     assert not page.left_panel.isHidden()
     assert not page.right_panel.isHidden()
     assert page.right_panel_splitter.orientation() == QtCore.Qt.Vertical
-    assert page.right_panel_splitter.count() == 3
+    assert page.right_panel_splitter.count() == 4
     assert page.asset_panel_list.count() == 2
     assert page.mission_panel_list.count() == 1
+    assert page.ping_panel_list.count() == 1
     assert page.sitrep_panel_list.count() == 1
     page._resize_scene(900.0, 500.0)
     scene_rect = page._scene.sceneRect()
@@ -1346,6 +1379,16 @@ try:
     mission_bounds = page._view_bounds
     assert mission_bounds.min_lat < 39.953 < mission_bounds.max_lat
     assert mission_bounds.min_lon < -75.163 < mission_bounds.max_lon
+
+    page._start_ping_placement()
+    assert page._ping_placement_active is True
+    assert page.view.cursor().shape() == QtCore.Qt.CrossCursor
+    page._handle_scene_click(450.0, 250.0)
+    assert page._ping_placement_active is False
+    assert core.commands[-1][0] == "location_pings.create"
+    assert core.commands[-1][1]["mission_id"] == 7
+    assert -90.0 <= core.commands[-1][1]["lat"] <= 90.0
+    assert -180.0 <= core.commands[-1][1]["lon"] <= 180.0
 
     page._toggle_panel("left")
     assert page.left_panel.isHidden()
@@ -2593,6 +2636,24 @@ def test_sitrep_available_operator_items_excludes_assigned_work() -> None:
 
     assert [item.callsign for item in available] == ["DELTA"]
     assert available[0].skills == ()
+
+
+def test_available_operator_items_excludes_mission_team_members() -> None:
+    operators = [
+        types.SimpleNamespace(id=2, callsign="ALPHA", revoked=False, skills=[]),
+        types.SimpleNamespace(id=3, callsign="BRAVO", revoked=False, skills=[]),
+        types.SimpleNamespace(id=4, callsign="CHARLIE", revoked=False, skills=[]),
+    ]
+    mission = types.SimpleNamespace(
+        status="active",
+        lead_coordinator="ALPHA",
+        organization="BRAVO, BRAVO\n",
+    )
+
+    available = available_operator_items(operators, missions=[mission])
+
+    assert mission_operator_callsigns(mission) == ("ALPHA", "BRAVO")
+    assert [item.callsign for item in available] == ["CHARLIE"]
 
 
 def test_asset_create_payload_validates_and_normalizes_fields() -> None:
