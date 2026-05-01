@@ -116,7 +116,6 @@ def test_registry_captures_table_metadata():
     assert registry.ui_refresh_targets("incidents") == {
         "incidents",
         "assignments",
-        "sitrep",
         "main",
     }
     assert registry.ui_refresh_targets("sitrep_followups") == {"sitrep", "map", "main"}
