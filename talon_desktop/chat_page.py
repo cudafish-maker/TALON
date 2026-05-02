@@ -28,6 +28,8 @@ _log = get_logger("desktop.chat")
 _URGENT_BACKGROUND = QtGui.QColor("#3a1620")
 _URGENT_FOREGROUND = QtGui.QColor("#f0c674")
 _GRID_FOREGROUND = QtGui.QColor("#8fbcbb")
+_UNREAD_CHANNEL_BACKGROUND = QtGui.QColor("#2a1719")
+_UNREAD_CHANNEL_FOREGROUND = QtGui.QColor("#f6fbfb")
 
 
 class DmDialog(QtWidgets.QDialog):
@@ -283,6 +285,7 @@ class ChatPage(QtWidgets.QWidget):
         self._messages: list[DesktopMessageItem] = []
         self._operators: list[DesktopOperatorItem] = []
         self._active_channel_id: int | None = None
+        self._unread_channel_ids: set[int] = set()
         self._pending_grid_ref = ""
         self._blink_on = False
         self._blink_timer = QtCore.QTimer(self)
@@ -318,6 +321,7 @@ class ChatPage(QtWidgets.QWidget):
         self.channel_list.setMinimumWidth(240)
         self.channel_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.channel_list.itemSelectionChanged.connect(self._on_channel_selected)
+        self.channel_list.itemClicked.connect(self._on_channel_clicked)
         self.channel_search = QtWidgets.QLineEdit()
         self.channel_search.setPlaceholderText("Search channels")
         self.channel_search.textChanged.connect(lambda _text: self._populate_channels(self._active_channel_id))
@@ -423,11 +427,19 @@ class ChatPage(QtWidgets.QWidget):
         self._refresh_messages()
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
-        _ = action, record_id
+        _ = action
         if table in {"channels", "operators"}:
             self.refresh()
         elif table == "messages":
+            self._mark_message_channel_unread(record_id)
             self._refresh_messages()
+
+    def mark_unread_channel(self, channel_id: int, *, force: bool = False) -> None:
+        channel_id = int(channel_id)
+        if not force and channel_id == self._selected_channel_id():
+            return
+        self._unread_channel_ids.add(channel_id)
+        self._populate_channels(self._selected_channel_id() or self._active_channel_id)
 
     def _populate_channels(self, preferred_id: int | None) -> None:
         self.channel_list.blockSignals(True)
@@ -458,6 +470,12 @@ class ChatPage(QtWidgets.QWidget):
                 item = QtWidgets.QListWidgetItem(label)
                 item.setSizeHint(QtCore.QSize(0, 28))
                 item.setData(QtCore.Qt.UserRole, channel.id)
+                if channel.id in self._unread_channel_ids:
+                    item.setBackground(_UNREAD_CHANNEL_BACKGROUND)
+                    item.setForeground(_UNREAD_CHANNEL_FOREGROUND)
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
                 if channel.is_dm:
                     item.setToolTip(
                         "Direct messages are server-readable until Phase 2b E2E encryption lands."
@@ -554,6 +572,21 @@ class ChatPage(QtWidgets.QWidget):
         return item
 
     def _on_channel_selected(self) -> None:
+        channel_id = self._selected_channel_id()
+        if channel_id is not None and channel_id in self._unread_channel_ids:
+            self._unread_channel_ids.discard(channel_id)
+            self._populate_channels(channel_id)
+        self._refresh_messages()
+
+    def _on_channel_clicked(self, item: QtWidgets.QListWidgetItem) -> None:
+        value = item.data(QtCore.Qt.UserRole)
+        if value in (None, ""):
+            return
+        channel_id = int(value)
+        if channel_id not in self._unread_channel_ids:
+            return
+        self._unread_channel_ids.discard(channel_id)
+        self._populate_channels(channel_id)
         self._refresh_messages()
 
     def _on_message_selected(self) -> None:
@@ -770,6 +803,28 @@ class ChatPage(QtWidgets.QWidget):
             item.setBackground(
                 QtGui.QColor("#532233") if self._blink_on else _URGENT_BACKGROUND
             )
+
+    def _mark_message_channel_unread(self, message_id: int) -> None:
+        try:
+            context = self._core.read_model(
+                "chat.message_context",
+                {"message_id": int(message_id)},
+            )
+        except Exception as exc:
+            _log.debug("Could not load message notification context: %s", exc)
+            return
+        if not isinstance(context, dict):
+            return
+        sender_id = int(context.get("sender_id", 0) or 0)
+        if (
+            self._core.operator_id is not None
+            and sender_id == int(self._core.operator_id)
+        ):
+            return
+        channel_id = int(context.get("channel_id", 0) or 0)
+        if channel_id <= 0 or channel_id == self._selected_channel_id():
+            return
+        self._unread_channel_ids.add(channel_id)
 
 
 def _channel_sort_key(channel: DesktopChannelItem) -> tuple[int, str]:

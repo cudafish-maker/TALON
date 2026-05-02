@@ -413,9 +413,15 @@ class ClientSyncManager:
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
-def _notify_ui(table: str, *, badge: bool = True) -> None:
+def _notify_ui(
+    table: str,
+    *,
+    badge: bool = True,
+    action: str = "changed",
+    record_id: int | None = None,
+) -> None:
     """Default no-op UI callback used outside a client adapter."""
-    _ = (table, badge)
+    _ = (table, badge, action, record_id)
 
 
 def _parse_combined(combined: str) -> tuple:

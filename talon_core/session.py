@@ -525,26 +525,59 @@ class TalonCoreSession:
             for handler in tuple(self._event_handlers):
                 handler(event)
 
-    def _notify_server_ui(self, table: str) -> None:
+    def _notify_server_ui(
+        self,
+        table: str,
+        *,
+        action: str = "changed",
+        record_id: typing.Optional[int] = None,
+    ) -> None:
         if self._on_data_pushed is not None:
             self._on_data_pushed(table)
             return
-        self._publish_table_refresh(table)
+        self._publish_table_refresh(table, action=action, record_id=record_id)
 
-    def _notify_client_ui(self, table: str, *, badge: bool = True) -> None:
+    def _notify_client_ui(
+        self,
+        table: str,
+        *,
+        badge: bool = True,
+        action: str = "changed",
+        record_id: typing.Optional[int] = None,
+    ) -> None:
         if self._on_data_pushed is not None:
             self._on_data_pushed(table, badge=badge)
             return
-        self._publish_table_refresh(table)
+        self._publish_table_refresh(
+            table,
+            action=action,
+            record_id=record_id if badge else None,
+        )
 
-    def _publish_table_refresh(self, table: str) -> None:
+    def _publish_table_refresh(
+        self,
+        table: str,
+        *,
+        action: str = "changed",
+        record_id: typing.Optional[int] = None,
+    ) -> None:
         from talon_core.network.registry import ui_refresh_targets
-        from talon_core.services.events import ui_refresh_requested
+        from talon_core.services.events import (
+            record_changed,
+            record_deleted,
+            ui_refresh_requested,
+        )
 
         targets = set(ui_refresh_targets(table))
         if table == "operators":
             targets.add("chat")
         if not targets:
+            return
+        if record_id is not None:
+            event_factory = record_deleted if action == "deleted" else record_changed
+            self.publish_events(
+                (event_factory(table, int(record_id), ui_targets=targets),)
+            )
             return
         self.publish_events((ui_refresh_requested(ui_targets=targets),))
 
@@ -564,6 +597,13 @@ class TalonCoreSession:
         data.update(kwargs)
         result = self._execute_command(command_name, data)
         events = tuple(getattr(result, "events", ()) or ())
+        if events:
+            events = tuple(
+                dataclasses.replace(event, origin_operator_id=self._operator_id)
+                if getattr(event, "origin_operator_id", None) is None
+                else event
+                for event in events
+            )
         if events:
             self._apply_sync_side_effects(events, result=result)
             self.publish_events(events)
@@ -643,6 +683,11 @@ class TalonCoreSession:
         if name == "sitreps.detail":
             self._require_unlocked()
             return self._sitrep_detail(int(filters["sitrep_id"]))
+        if name == "sitreps.followup_detail":
+            self._require_unlocked()
+            from talon_core.sitrep import get_sitrep_followup
+
+            return get_sitrep_followup(self._conn, int(filters["followup_id"]))
         if name == "missions.list":
             self._require_unlocked()
             from talon_core.missions import load_missions
@@ -696,6 +741,20 @@ class TalonCoreSession:
                 int(filters["channel_id"]),
                 limit=int(filters.get("limit", 100)),
             )
+        if name == "chat.message_context":
+            self._require_unlocked()
+            row = self._conn.execute(
+                "SELECT id, channel_id, sender_id FROM messages WHERE id = ?",
+                (int(filters["message_id"]),),
+            ).fetchone()
+            if row is None:
+                return None
+            self._ensure_chat_channel_access(int(row[1]))
+            return {
+                "id": int(row[0]),
+                "channel_id": int(row[1]),
+                "sender_id": int(row[2]),
+            }
         if name == "chat.operators":
             self._require_unlocked()
             return self._chat_operators(set(filters.get("online_peers") or set()))

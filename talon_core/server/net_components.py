@@ -41,11 +41,20 @@ class AuthenticatedOperator:
 class ServerUiDispatcher:
     """Dispatch server-side UI refresh notifications."""
 
-    def __init__(self, *, notify_ui: typing.Callable[[str], None]) -> None:
+    def __init__(self, *, notify_ui: typing.Callable[..., None]) -> None:
         self._notify_ui = notify_ui
 
-    def notify(self, table: str) -> None:
-        self._notify_ui(table)
+    def notify(
+        self,
+        table: str,
+        *,
+        action: str = "changed",
+        record_id: typing.Optional[int] = None,
+    ) -> None:
+        try:
+            self._notify_ui(table, action=action, record_id=record_id)
+        except TypeError:
+            self._notify_ui(table)
 
 
 class ServerActiveClients:
@@ -1055,9 +1064,12 @@ class ServerMessageHandlers:
                                 handler.notify_change("sitreps", linked_sitrep_id)
                             if linked_assignment_id is not None:
                                 handler.notify_change("assignments", linked_assignment_id)
-                            self._ui_dispatcher.notify(table)
+                            self._ui_dispatcher.notify(table, record_id=new_record_id)
                             if linked_assignment_id is not None:
-                                self._ui_dispatcher.notify("assignments")
+                                self._ui_dispatcher.notify(
+                                    "assignments",
+                                    record_id=linked_assignment_id,
+                                )
                     except Exception as exc:
                         self._log.warning(
                             "Client push INSERT failed table=%s uuid=%s: %s",
@@ -1090,7 +1102,7 @@ class ServerMessageHandlers:
                                 server_id,
                             )
                             handler.notify_change(table, server_id)
-                            self._ui_dispatcher.notify(table)
+                            self._ui_dispatcher.notify(table, record_id=server_id)
                         except Exception as exc:
                             self._log.warning(
                                 "Client push: deletion_request failed uuid=%s: %s",
@@ -1177,7 +1189,7 @@ class ServerMessageHandlers:
                 server_id,
             )
             self._handler.notify_change("operators", server_id)
-            self._ui_dispatcher.notify("operators")
+            self._ui_dispatcher.notify("operators", record_id=server_id)
             return True
         except Exception as exc:
             self._log.warning(
@@ -1229,7 +1241,7 @@ class ServerMessageHandlers:
                 verified,
             )
             self._handler.notify_change("assets", server_id)
-            self._ui_dispatcher.notify("assets")
+            self._ui_dispatcher.notify("assets", record_id=server_id)
             return True
         except Exception as exc:
             self._log.warning(

@@ -978,6 +978,27 @@ def test_core_session_network_client_notify_publishes_refresh_event(
     session.close()
 
 
+def test_core_session_network_notify_with_record_id_publishes_mutation(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    received = []
+    session.subscribe(received.append)
+
+    session._notify_client_ui("assets", badge=True, record_id=7)
+
+    assert len(received) == 1
+    assert received[0].kind == "record_changed"
+    assert received[0].record_id == 7
+    assert received[0].table == "assets"
+    assert received[0].ui_targets == frozenset({"assets", "main"})
+    assert received[0].origin_operator_id is None
+
+    session.close()
+
+
 def test_core_session_network_operator_notify_refreshes_chat(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -992,6 +1013,32 @@ def test_core_session_network_operator_notify_refreshes_chat(
     assert len(received) == 1
     assert received[0].kind == "ui_refresh_requested"
     assert received[0].ui_targets == frozenset({"operators", "chat"})
+
+    session.close()
+
+
+def test_core_session_command_events_include_local_origin(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    received = []
+    session.subscribe(received.append)
+
+    session.command(
+        "assets.create",
+        {
+            "category": "cache",
+            "label": "Local cache",
+            "description": "",
+        },
+    )
+
+    assert received
+    assert received[-1].kind == "record_changed"
+    assert received[-1].table == "assets"
+    assert received[-1].origin_operator_id == session.operator_id
 
     session.close()
 

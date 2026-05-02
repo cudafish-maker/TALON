@@ -27,6 +27,7 @@ class DomainEvent:
     kind: DomainEventKind
     records: tuple[RecordMutation, ...] = ()
     operator_id: typing.Optional[int] = None
+    origin_operator_id: typing.Optional[int] = None
     lease_expires_at: typing.Optional[int] = None
     ui_targets: frozenset[str] = dataclasses.field(default_factory=frozenset)
 

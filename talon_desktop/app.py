@@ -707,6 +707,12 @@ class ServerReviewNotification:
     tag: str
 
 
+@dataclasses.dataclass(frozen=True)
+class _AssetNotificationState:
+    created_by: int
+    mission_id: int | None
+
+
 class ServerReviewNotificationOverlay(QtWidgets.QFrame):
     """Global server review popup hosted by the main shell."""
 
@@ -823,6 +829,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._assignment_notifications_primed = False
         self._server_review_notification_seen: set[tuple[object, ...]] = set()
         self._server_review_notifications_primed = False
+        self._active_event_origin_operator_id: int | None = None
+        self._asset_notification_state: dict[int, _AssetNotificationState] = {}
+        self._assignment_operator_state: dict[int, frozenset[int]] = {}
+        self._mission_assignment_state: dict[int, frozenset[str]] = {}
+        self._sitrep_assignment_state: dict[int, str] = {}
         self._settings_prefix = f"{core.mode}/main_window"
         self._theme_key = str(self._settings.value(self._setting_key("theme"), "dark"))
         self._font_scale = self._read_font_scale()
@@ -913,6 +924,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._restore_desktop_state()
         self.nav.setCurrentRow(self._initial_nav_row())
         self.refresh_all()
+        self._prime_notification_state()
         self._prime_assignment_notifications()
         self._prime_server_review_notifications()
         self._refresh_network_method_status()
@@ -1174,6 +1186,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_visual_preferences()
 
     def _on_core_event(self, event: object) -> None:
+        origin = getattr(event, "origin_operator_id", None)
+        self._active_event_origin_operator_id = (
+            int(origin) if origin is not None else None
+        )
         kind = getattr(event, "kind", "event")
         self.statusBar().showMessage(f"Core event: {kind}", 5000)
 
@@ -1259,7 +1275,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_record_mutated(self, action: str, table: str, record_id: int) -> None:
         self.statusBar().showMessage(f"{table} {action}: #{record_id}", 5000)
-        self._mark_badges_for_mutation(action, table)
+        unread_chat_channel_id = self._unread_chat_channel_for_mutation(
+            action,
+            table,
+            record_id,
+        )
+        unread_asset_id = self._unread_asset_for_mutation(action, table, record_id)
+        badge_sections = self._badge_sections_for_mutation(
+            action,
+            table,
+            record_id,
+            unread_chat_channel_id=unread_chat_channel_id,
+            unread_asset_id=unread_asset_id,
+        )
         if table == "sitreps":
             page = self._pages.get("sitreps")
             if isinstance(page, SitrepPage):
@@ -1268,7 +1296,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if isinstance(assignment_page, AssignmentPage):
                 assignment_page.handle_record_mutation(action, table, record_id)
             if action == "changed":
-                self._show_sitrep_overlay(record_id)
+                if "sitreps" in badge_sections:
+                    self._show_sitrep_overlay(record_id)
             map_page = self._pages.get("map")
             if isinstance(map_page, MapPage):
                 map_page.handle_record_mutation(action, table, record_id)
@@ -1304,7 +1333,13 @@ class MainWindow(QtWidgets.QMainWindow):
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
-        elif table in {"missions", "operator_location_pings", "zones", "waypoints", "sitreps"}:
+        elif table in {
+            "missions",
+            "operator_location_pings",
+            "zones",
+            "waypoints",
+            "sitreps",
+        }:
             page = self._pages.get("map")
             if isinstance(page, MapPage):
                 page.handle_record_mutation(action, table, record_id)
@@ -1319,6 +1354,11 @@ class MainWindow(QtWidgets.QMainWindow):
             chat_page = self._pages.get("chat")
             if isinstance(chat_page, ChatPage):
                 chat_page.handle_record_mutation(action, table, record_id)
+                if unread_chat_channel_id is not None:
+                    chat_page.mark_unread_channel(
+                        unread_chat_channel_id,
+                        force=self._current_section_key() != "chat",
+                    )
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
@@ -1353,6 +1393,11 @@ class MainWindow(QtWidgets.QMainWindow):
             and table in {"sitreps", "missions", "assets"}
         ):
             self._scan_server_review_notifications()
+        if unread_asset_id is not None:
+            asset_page = self._pages.get("assets")
+            if isinstance(asset_page, AssetPage):
+                asset_page.mark_unread_asset(unread_asset_id)
+        self._mark_badges_for_sections(badge_sections)
 
     def _prime_server_review_notifications(self) -> None:
         if self._core.mode != "server":
@@ -1627,28 +1672,416 @@ class MainWindow(QtWidgets.QMainWindow):
         elif section_key == "assets" and isinstance(page, AssetPage):
             page.select_asset(target_id)
 
-    def _mark_badges_for_mutation(self, action: str, table: str) -> None:
-        if action != "changed":
-            return
-        sections_by_table = {
-            "assets": ("assets", "map", "dashboard"),
-            "missions": ("missions", "assignments", "map", "dashboard"),
-            "operator_location_pings": ("map", "dashboard"),
-            "zones": ("map", "dashboard"),
-            "waypoints": ("map", "dashboard"),
-            "sitreps": ("sitreps", "assignments", "map", "dashboard"),
-            "sitrep_followups": ("sitreps", "assignments", "map", "dashboard"),
-            "sitrep_documents": ("sitreps", "documents", "map", "dashboard"),
-            "assignments": ("assignments", "map", "missions", "dashboard"),
-            "checkins": ("assignments", "map", "dashboard"),
-            "channels": ("chat",),
-            "messages": ("chat", "dashboard"),
-            "documents": ("documents",),
-            "operators": ("operators", "keys", "chat"),
-        }
-        for section in sections_by_table.get(table, ()):
+    def _prime_notification_state(self) -> None:
+        self._asset_notification_state = self._load_asset_notification_state()
+        self._assignment_operator_state = self._load_assignment_operator_state()
+        self._mission_assignment_state = self._load_mission_assignment_state()
+        self._sitrep_assignment_state = self._load_sitrep_assignment_state()
+
+    def _badge_sections_for_mutation(
+        self,
+        action: str,
+        table: str,
+        record_id: int,
+        *,
+        unread_chat_channel_id: int | None,
+        unread_asset_id: int | None,
+    ) -> tuple[str, ...]:
+        if self._mutation_origin_is_local_operator():
+            self._update_assignment_tracking(action, table, record_id)
+            return ()
+
+        sections: list[str] = []
+        if table == "messages":
+            if (
+                unread_chat_channel_id is not None
+                and self._current_section_key() != "chat"
+            ):
+                sections.append("chat")
+        elif table == "assets":
+            if unread_asset_id is not None:
+                sections.append("assets")
+        elif table == "sitreps":
+            if action == "changed" and self._sitrep_change_is_from_other(record_id):
+                sections.append("sitreps")
+            if self._sitrep_assignment_changed_for_current_operator(action, record_id):
+                sections.append("assignments")
+        elif table == "sitrep_followups":
+            if action == "changed" and self._sitrep_followup_is_from_other(record_id):
+                sections.append("sitreps")
+            if self._sitrep_followup_assigns_current_operator(record_id):
+                sections.append("assignments")
+        elif table == "assignments":
+            if self._assignment_changed_for_current_operator(action, record_id):
+                sections.append("assignments")
+        elif table == "missions":
+            if action == "changed":
+                sections.append("missions")
+            if self._mission_assignment_changed_for_current_operator(action, record_id):
+                sections.append("assignments")
+        elif action == "changed":
+            sections.extend(
+                {
+                    "sitrep_documents": ("sitreps", "documents"),
+                    "checkins": ("assignments",),
+                    "documents": ("documents",),
+                    "operators": ("operators", "keys", "chat"),
+                }.get(table, ())
+            )
+
+        unique: list[str] = []
+        for section in sections:
+            if section not in unique:
+                unique.append(section)
+        return tuple(unique)
+
+    def _mark_badges_for_sections(self, sections: typing.Iterable[str]) -> None:
+        current = self._current_section_key()
+        for section in sections:
+            if section == current:
+                continue
+            if section in {"dashboard", "map"}:
+                continue
             if section in self._pages:
                 self.nav.increment_badge(section)
+
+    def _current_section_key(self) -> str:
+        item = self.nav.currentItem()
+        if item is None:
+            return ""
+        value = item.data(QtCore.Qt.UserRole)
+        return str(value or "")
+
+    def _mutation_origin_is_local_operator(self) -> bool:
+        local_operator_id = self._local_operator_id()
+        return (
+            local_operator_id is not None
+            and self._active_event_origin_operator_id == local_operator_id
+        )
+
+    def _local_operator_id(self) -> int | None:
+        if self._core.operator_id is not None:
+            return int(self._core.operator_id)
+        try:
+            current = self._core.read_model("chat.current_operator")
+        except Exception:
+            return None
+        if not isinstance(current, dict):
+            return None
+        value = current.get("id")
+        return int(value) if value is not None else None
+
+    def _local_callsign(self) -> str:
+        try:
+            current = self._core.read_model("chat.current_operator")
+        except Exception:
+            return ""
+        if not isinstance(current, dict):
+            return ""
+        return str(current.get("callsign", "") or "").strip()
+
+    def _unread_chat_channel_for_mutation(
+        self,
+        action: str,
+        table: str,
+        record_id: int,
+    ) -> int | None:
+        if action != "changed" or table != "messages":
+            return None
+        if self._mutation_origin_is_local_operator():
+            return None
+        try:
+            context = self._core.read_model(
+                "chat.message_context",
+                {"message_id": int(record_id)},
+            )
+        except Exception as exc:
+            _log.debug("Could not load chat notification context: %s", exc)
+            return None
+        if not isinstance(context, dict):
+            return None
+        sender_id = int(context.get("sender_id", 0) or 0)
+        local_operator_id = self._local_operator_id()
+        if local_operator_id is not None and sender_id == local_operator_id:
+            return None
+        channel_id = int(context.get("channel_id", 0) or 0)
+        return channel_id if channel_id > 0 else None
+
+    def _unread_asset_for_mutation(
+        self,
+        action: str,
+        table: str,
+        record_id: int,
+    ) -> int | None:
+        if table != "assets":
+            return None
+        asset_id = int(record_id)
+        previous = self._asset_notification_state.get(asset_id)
+        if action == "deleted":
+            self._asset_notification_state.pop(asset_id, None)
+            return None
+        if action != "changed":
+            return None
+        try:
+            asset = self._core.read_model("assets.detail", {"asset_id": asset_id})
+        except Exception as exc:
+            _log.debug("Could not load asset notification context: %s", exc)
+            return None
+        if asset is None:
+            self._asset_notification_state.pop(asset_id, None)
+            return None
+        current = _AssetNotificationState(
+            created_by=int(getattr(asset, "created_by", 0) or 0),
+            mission_id=_optional_int(getattr(asset, "mission_id", None)),
+        )
+        self._asset_notification_state[asset_id] = current
+        if self._mutation_origin_is_local_operator():
+            return None
+        local_operator_id = self._local_operator_id()
+        is_new = previous is None
+        is_assigned = previous is not None and previous.mission_id != current.mission_id
+        if (
+            is_new
+            and local_operator_id is not None
+            and current.created_by == local_operator_id
+        ):
+            return None
+        if is_new or (is_assigned and current.mission_id is not None):
+            return asset_id
+        return None
+
+    def _sitrep_change_is_from_other(self, sitrep_id: int) -> bool:
+        try:
+            detail = self._core.read_model(
+                "sitreps.detail",
+                {"sitrep_id": int(sitrep_id)},
+            )
+        except Exception as exc:
+            _log.debug("Could not load SITREP notification context: %s", exc)
+            return False
+        sitrep = detail.get("sitrep") if isinstance(detail, dict) else None
+        if sitrep is None:
+            return False
+        local_operator_id = self._local_operator_id()
+        if local_operator_id is None:
+            return True
+        followups = list(detail.get("followups", []) or [])
+        if followups:
+            latest = followups[-1]
+            return int(getattr(latest, "author_id", 0) or 0) != local_operator_id
+        return int(getattr(sitrep, "author_id", 0) or 0) != local_operator_id
+
+    def _sitrep_followup_is_from_other(self, followup_id: int) -> bool:
+        followup = self._sitrep_followup(followup_id)
+        if followup is None:
+            return False
+        local_operator_id = self._local_operator_id()
+        return (
+            local_operator_id is None
+            or int(getattr(followup, "author_id", 0) or 0) != local_operator_id
+        )
+
+    def _sitrep_followup_assigns_current_operator(self, followup_id: int) -> bool:
+        if not self._sitrep_followup_is_from_other(followup_id):
+            return False
+        followup = self._sitrep_followup(followup_id)
+        if followup is None:
+            return False
+        assigned_to = str(getattr(followup, "assigned_to", "") or "").strip()
+        callsign = self._local_callsign()
+        return bool(callsign and assigned_to.casefold() == callsign.casefold())
+
+    def _sitrep_followup(self, followup_id: int) -> object | None:
+        try:
+            return self._core.read_model(
+                "sitreps.followup_detail",
+                {"followup_id": int(followup_id)},
+            )
+        except Exception as exc:
+            _log.debug("Could not load SITREP follow-up notification context: %s", exc)
+            return None
+
+    def _assignment_changed_for_current_operator(
+        self,
+        action: str,
+        assignment_id: int,
+    ) -> bool:
+        assignment_id = int(assignment_id)
+        previous = self._assignment_operator_state.get(assignment_id, frozenset())
+        if action == "deleted":
+            self._assignment_operator_state.pop(assignment_id, None)
+            return self._local_operator_id() in previous
+        if action != "changed":
+            return False
+        current = self._assignment_operator_ids(assignment_id)
+        self._assignment_operator_state[assignment_id] = current
+        local_operator_id = self._local_operator_id()
+        return (
+            local_operator_id is not None
+            and previous != current
+            and local_operator_id in previous.symmetric_difference(current)
+        )
+
+    def _mission_assignment_changed_for_current_operator(
+        self,
+        action: str,
+        mission_id: int,
+    ) -> bool:
+        mission_id = int(mission_id)
+        previous = self._mission_assignment_state.get(mission_id, frozenset())
+        if action == "deleted":
+            self._mission_assignment_state.pop(mission_id, None)
+            callsign = self._local_callsign().casefold()
+            return bool(callsign and callsign in previous)
+        if action != "changed":
+            return False
+        current = self._mission_operator_callsigns(mission_id)
+        self._mission_assignment_state[mission_id] = current
+        callsign = self._local_callsign().casefold()
+        return bool(
+            callsign
+            and previous != current
+            and callsign in previous ^ current
+        )
+
+    def _sitrep_assignment_changed_for_current_operator(
+        self,
+        action: str,
+        sitrep_id: int,
+    ) -> bool:
+        sitrep_id = int(sitrep_id)
+        previous = self._sitrep_assignment_state.get(sitrep_id, "")
+        if action == "deleted":
+            self._sitrep_assignment_state.pop(sitrep_id, None)
+            callsign = self._local_callsign().casefold()
+            return bool(callsign and previous == callsign)
+        if action != "changed":
+            return False
+        current = self._sitrep_assigned_callsign(sitrep_id)
+        if current:
+            self._sitrep_assignment_state[sitrep_id] = current
+        else:
+            self._sitrep_assignment_state.pop(sitrep_id, None)
+        callsign = self._local_callsign().casefold()
+        return bool(
+            callsign
+            and previous != current
+            and callsign in {previous, current}
+        )
+
+    def _update_assignment_tracking(
+        self,
+        action: str,
+        table: str,
+        record_id: int,
+    ) -> None:
+        if table == "assignments":
+            self._assignment_changed_for_current_operator(action, record_id)
+        elif table == "missions":
+            self._mission_assignment_changed_for_current_operator(action, record_id)
+        elif table == "sitreps":
+            self._sitrep_assignment_changed_for_current_operator(action, record_id)
+
+    def _load_asset_notification_state(self) -> dict[int, _AssetNotificationState]:
+        try:
+            assets = self._core.read_model("assets.list", {"limit": 500})
+        except Exception as exc:
+            _log.debug("Could not prime asset notification state: %s", exc)
+            return {}
+        return {
+            int(getattr(asset, "id")): _AssetNotificationState(
+                created_by=int(getattr(asset, "created_by", 0) or 0),
+                mission_id=_optional_int(getattr(asset, "mission_id", None)),
+            )
+            for asset in assets
+        }
+
+    def _load_assignment_operator_state(self) -> dict[int, frozenset[int]]:
+        try:
+            assignments = self._core.read_model("assignments.list", {"limit": 500})
+        except Exception as exc:
+            _log.debug("Could not prime assignment notification state: %s", exc)
+            return {}
+        return {
+            int(getattr(assignment, "id")): frozenset(
+                int(value)
+                for value in getattr(assignment, "assigned_operator_ids", []) or []
+            )
+            for assignment in assignments
+        }
+
+    def _load_mission_assignment_state(self) -> dict[int, frozenset[str]]:
+        try:
+            missions = self._core.read_model("missions.list", {"status_filter": None})
+        except Exception as exc:
+            _log.debug("Could not prime mission assignment notification state: %s", exc)
+            return {}
+        return {
+            int(getattr(mission, "id")): frozenset(
+                callsign.casefold() for callsign in mission_operator_callsigns(mission)
+            )
+            for mission in missions
+        }
+
+    def _load_sitrep_assignment_state(self) -> dict[int, str]:
+        try:
+            sitreps = self._core.read_model("sitreps.list", {"limit": 500})
+        except Exception as exc:
+            _log.debug("Could not prime SITREP assignment notification state: %s", exc)
+            return {}
+        state: dict[int, str] = {}
+        for entry in sitreps:
+            item = feed_item_from_entry(entry)
+            if item.assigned_to.strip():
+                state[item.id] = item.assigned_to.strip().casefold()
+        return state
+
+    def _assignment_operator_ids(self, assignment_id: int) -> frozenset[int]:
+        try:
+            detail = self._core.read_model(
+                "assignments.detail",
+                {"assignment_id": int(assignment_id)},
+            )
+        except Exception as exc:
+            _log.debug("Could not load assignment notification context: %s", exc)
+            return frozenset()
+        assignment = detail.get("assignment") if isinstance(detail, dict) else None
+        if assignment is None:
+            return frozenset()
+        return frozenset(
+            int(value)
+            for value in getattr(assignment, "assigned_operator_ids", []) or []
+        )
+
+    def _mission_operator_callsigns(self, mission_id: int) -> frozenset[str]:
+        try:
+            detail = self._core.read_model(
+                "missions.detail",
+                {"mission_id": int(mission_id)},
+            )
+        except Exception as exc:
+            _log.debug("Could not load mission notification context: %s", exc)
+            return frozenset()
+        mission = detail.get("mission") if isinstance(detail, dict) else None
+        if mission is None:
+            return frozenset()
+        return frozenset(
+            callsign.casefold() for callsign in mission_operator_callsigns(mission)
+        )
+
+    def _sitrep_assigned_callsign(self, sitrep_id: int) -> str:
+        try:
+            detail = self._core.read_model(
+                "sitreps.detail",
+                {"sitrep_id": int(sitrep_id)},
+            )
+        except Exception as exc:
+            _log.debug("Could not load SITREP assignment notification context: %s", exc)
+            return ""
+        sitrep = detail.get("sitrep") if isinstance(detail, dict) else None
+        if sitrep is None:
+            return ""
+        return str(getattr(sitrep, "assigned_to", "") or "").strip().casefold()
 
     def _show_sitrep_overlay(self, record_id: int) -> None:
         try:
@@ -1990,6 +2423,15 @@ def _as_text(value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _optional_int(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _mission_assignment_role(mission: object, folded_callsign: str) -> str | None:

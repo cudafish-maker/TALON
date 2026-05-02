@@ -90,9 +90,14 @@ def _teardown(link: RNS.Link) -> None:
         pass
 
 
-def _notify_ui(table: str) -> None:
+def _notify_ui(
+    table: str,
+    *,
+    action: str = "changed",
+    record_id: int | None = None,
+) -> None:
     """Default no-op UI callback used outside a server adapter."""
-    _ = table
+    _ = (table, action, record_id)
 
 
 def _is_hex(value: str) -> bool:

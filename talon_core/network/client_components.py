@@ -91,8 +91,23 @@ class ClientUiDispatcher:
     ) -> None:
         self._notify_ui = notify_ui
 
-    def notify(self, table: str, *, badge: bool = True) -> None:
-        self._notify_ui(table, badge=badge)
+    def notify(
+        self,
+        table: str,
+        *,
+        badge: bool = True,
+        action: str = "changed",
+        record_id: typing.Optional[int] = None,
+    ) -> None:
+        try:
+            self._notify_ui(
+                table,
+                badge=badge,
+                action=action,
+                record_id=record_id,
+            )
+        except TypeError:
+            self._notify_ui(table, badge=badge)
 
 
 class ClientDocumentTransfers:
@@ -717,7 +732,11 @@ class ClientRecordApplier:
                 )
 
         if applied:
-            self._ui_dispatcher.notify(table, badge=badge)
+            self._ui_dispatcher.notify(
+                table,
+                badge=badge,
+                record_id=record.get("id"),
+            )
             if (
                 table == "operators"
                 and record.get("id") == manager._operator_id
@@ -817,7 +836,12 @@ class ClientRecordApplier:
                 )
 
         if deleted:
-            self._ui_dispatcher.notify(table, badge=badge)
+            self._ui_dispatcher.notify(
+                table,
+                badge=badge,
+                action="deleted",
+                record_id=rid,
+            )
 
 
 class ClientTombstoneReconciler:

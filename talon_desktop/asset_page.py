@@ -17,6 +17,8 @@ from talon_desktop.map_picker import format_coordinate, pick_point_on_map
 from talon_desktop.theme import configure_data_table
 
 _log = get_logger("desktop.assets")
+_UNREAD_ASSET_BACKGROUND = QtGui.QColor("#2a1719")
+_UNREAD_ASSET_FOREGROUND = QtGui.QColor("#f6fbfb")
 
 
 class AssetDialog(QtWidgets.QDialog):
@@ -177,6 +179,7 @@ class AssetPage(QtWidgets.QWidget):
         super().__init__()
         self._core = core
         self._items: list[DesktopAssetItem] = []
+        self._unread_asset_ids: set[int] = set()
 
         self.heading = QtWidgets.QLabel("Assets")
         self.heading.setObjectName("pageHeading")
@@ -221,6 +224,7 @@ class AssetPage(QtWidgets.QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         configure_data_table(self.table)
         self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.table.cellClicked.connect(self._asset_clicked)
 
         self.detail = QtWidgets.QTextEdit()
         self.detail.setReadOnly(True)
@@ -249,6 +253,8 @@ class AssetPage(QtWidgets.QWidget):
             self.summary.setText(f"Unable to load assets: {exc}")
             return
 
+        selected_item = self._selected_item()
+        selected_id = selected_item.id if selected_item is not None else None
         self.table.setRowCount(0)
         for item in self._items:
             self._add_row(item)
@@ -259,7 +265,13 @@ class AssetPage(QtWidgets.QWidget):
             f"{total} assets, {verified} verified, {requested} deletion request(s)."
         )
         if total:
-            self.table.selectRow(0)
+            selected_row = 0
+            if selected_id is not None:
+                for row, item in enumerate(self._items):
+                    if item.id == selected_id:
+                        selected_row = row
+                        break
+            self.table.selectRow(selected_row)
         else:
             self.detail.clear()
         self._selection_changed()
@@ -269,12 +281,21 @@ class AssetPage(QtWidgets.QWidget):
         for row, item in enumerate(self._items):
             if item.id == int(asset_id):
                 self.table.selectRow(row)
+                self.clear_unread_asset(item.id)
                 break
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
         _ = action, record_id
         if table == "assets":
             self.refresh()
+
+    def mark_unread_asset(self, asset_id: int) -> None:
+        self._unread_asset_ids.add(int(asset_id))
+        self._sync_unread_rows()
+
+    def clear_unread_asset(self, asset_id: int) -> None:
+        self._unread_asset_ids.discard(int(asset_id))
+        self._sync_unread_rows()
 
     def _add_row(self, item: DesktopAssetItem) -> None:
         row = self.table.rowCount()
@@ -292,6 +313,12 @@ class AssetPage(QtWidgets.QWidget):
             cell = QtWidgets.QTableWidgetItem(value)
             if column == 0:
                 cell.setData(QtCore.Qt.UserRole, item.id)
+            if item.id in self._unread_asset_ids:
+                cell.setBackground(_UNREAD_ASSET_BACKGROUND)
+                cell.setForeground(_UNREAD_ASSET_FOREGROUND)
+                font = cell.font()
+                font.setBold(True)
+                cell.setFont(font)
             self.table.setItem(row, column, cell)
 
     def _selected_item(self) -> DesktopAssetItem | None:
@@ -319,6 +346,31 @@ class AssetPage(QtWidgets.QWidget):
             "Delete" if self._core.mode == "server" else "Request Delete"
         )
         self.detail.setPlainText(self._detail_text(item))
+
+    def _asset_clicked(self, row: int, _column: int) -> None:
+        if row < 0 or row >= len(self._items):
+            return
+        self.clear_unread_asset(self._items[row].id)
+
+    def _sync_unread_rows(self) -> None:
+        for row, item in enumerate(self._items):
+            unread = item.id in self._unread_asset_ids
+            for column in range(self.table.columnCount()):
+                cell = self.table.item(row, column)
+                if cell is None:
+                    continue
+                if unread:
+                    cell.setBackground(_UNREAD_ASSET_BACKGROUND)
+                    cell.setForeground(_UNREAD_ASSET_FOREGROUND)
+                    font = cell.font()
+                    font.setBold(True)
+                    cell.setFont(font)
+                else:
+                    cell.setBackground(QtGui.QBrush())
+                    cell.setForeground(QtGui.QBrush())
+                    font = cell.font()
+                    font.setBold(False)
+                    cell.setFont(font)
 
     def _create_asset(self) -> None:
         dialog = AssetDialog(core=self._core, parent=self)
