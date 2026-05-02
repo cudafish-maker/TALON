@@ -46,13 +46,9 @@ cache/
 .mypy_cache/
 .ruff_cache/
 
-# Project docs
+# Local-only docs and design artifacts
 *.md
-!AGENTS.md
-!CLAUDE.md
-!wiki/
-!wiki/**/
-!wiki/**/*.md
+/wireframes/
 .codex
 
 # OS
