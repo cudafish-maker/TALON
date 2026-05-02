@@ -11,6 +11,7 @@ from talon_core.network.rns_config import (
     default_reticulum_config,
     i2pd_client_config,
     i2pd_server_config,
+    merge_reticulum_interface_template,
     reticulum_acceptance_path,
     tcp_client_config,
     tcp_server_config,
@@ -1480,6 +1481,123 @@ def test_core_sync_status_reports_redacted_network_method(
     assert i2p.network_method_label == "I2P"
     assert i2p.network_method_exposes_ip is False
 
+    session.close()
+
+
+def test_core_reticulum_interface_templates_merge_without_replacing(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    merged = merge_reticulum_interface_template(
+        default_reticulum_config("client"),
+        tcp_client_config("203.0.113.44", port=4242),
+        mode="client",
+    )
+
+    assert "TALON AutoInterface" in merged
+    assert "TALON TCP Client" in merged
+    assert "target_host = 203.0.113.44" in merged
+    assert session.validate_reticulum_config_text(merged).valid is True
+
+    duplicate = merge_reticulum_interface_template(
+        merged,
+        tcp_client_config("198.51.100.10", port=4243),
+        mode="client",
+    )
+
+    assert "TALON TCP Client" in duplicate
+    assert "TALON TCP Client 2" in duplicate
+    assert "target_host = 198.51.100.10" in duplicate
+    assert session.validate_reticulum_config_text(duplicate).valid is True
+
+    session.close()
+
+
+def test_core_sync_status_prefers_live_reticulum_interface_method(
+    tmp_path: pathlib.Path,
+) -> None:
+    class TCPClientInterface:
+        name = "TALON Direct TCP"
+        i2p_tunneled = False
+
+    class Link:
+        attached_interface = TCPClientInterface()
+
+    class FakeClientSync:
+        _link = Link()
+
+        def status(self):
+            return {
+                "started": True,
+                "connected": True,
+                "enrolled": True,
+                "operator_id": 2,
+                "last_sync_at": 12345,
+                "connection_session_id": 7,
+            }
+
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.save_reticulum_config_text(
+        i2pd_client_config(
+            "5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p"
+        )
+    )
+    session._client_sync = FakeClientSync()
+
+    sync_status = session.read_model("sync.status")
+
+    assert sync_status.connected is True
+    assert sync_status.network_method == "tcp"
+    assert sync_status.network_method_label == "TCP"
+    assert sync_status.network_method_exposes_ip is True
+
+    session._client_sync = None
+    session.close()
+
+
+def test_core_sync_status_classifies_live_yggdrasil_link_without_addresses(
+    tmp_path: pathlib.Path,
+) -> None:
+    class TCPClientInterface:
+        name = "TALON Yggdrasil Client"
+        target_ip = "201:5d78:af73:5caf:a4de:a79f:3278:71e5"
+        i2p_tunneled = False
+
+    class Link:
+        attached_interface = TCPClientInterface()
+
+    class FakeClientSync:
+        _link = Link()
+
+        def status(self):
+            return {
+                "started": True,
+                "connected": True,
+                "enrolled": True,
+                "operator_id": 2,
+                "last_sync_at": 12345,
+                "connection_session_id": 8,
+            }
+
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.save_reticulum_config_text(tcp_client_config("203.0.113.44", port=4242))
+    session._client_sync = FakeClientSync()
+
+    sync_status = session.read_model("sync.status")
+
+    assert sync_status.network_method == "yggdrasil"
+    assert sync_status.network_method_label == "Yggdrasil"
+    assert sync_status.network_method_exposes_ip is False
+    assert "201:5d78" not in sync_status.network_method_label
+
+    session._client_sync = None
     session.close()
 
 

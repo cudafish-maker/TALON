@@ -1060,11 +1060,59 @@ class TalonCoreSession:
         if not self.is_unlocked:
             return ReticulumTransportSummary(method="unknown", label="Unknown")
         try:
-            from talon_core.network.rns_config import reticulum_transport_summary
+            from talon_core.network.rns_config import (
+                reticulum_transport_summary,
+                reticulum_transport_summary_from_runtime,
+            )
 
+            runtime_summary = reticulum_transport_summary_from_runtime(
+                self._runtime_network_interfaces()
+            )
+            if runtime_summary.method != "unknown":
+                return runtime_summary
             return reticulum_transport_summary(self.paths.rns_config_dir, mode=self.mode)
         except Exception:
             return ReticulumTransportSummary(method="unknown", label="Unknown")
+
+    def _runtime_network_interfaces(self) -> tuple[object, ...]:
+        interfaces: list[object] = []
+        if self._client_sync is not None:
+            link = getattr(self._client_sync, "_link", None)
+            interface = getattr(link, "attached_interface", None)
+            if interface is not None:
+                interfaces.append(interface)
+            elif getattr(self._client_sync, "_server_hash", None):
+                interface = self._next_hop_interface(
+                    getattr(self._client_sync, "_server_hash")
+                )
+                if interface is not None:
+                    interfaces.append(interface)
+
+        if self._net_handler is not None:
+            lock = getattr(self._net_handler, "_links_lock", None)
+            active_links = getattr(self._net_handler, "_active_links", {})
+            if lock is not None:
+                with lock:
+                    links = tuple(active_links.values())
+            else:
+                links = tuple(active_links.values())
+            for link in links:
+                interface = getattr(link, "attached_interface", None)
+                if interface is not None:
+                    interfaces.append(interface)
+        return tuple(interfaces)
+
+    @staticmethod
+    def _next_hop_interface(destination_hash: bytes) -> object | None:
+        try:
+            import RNS
+
+            next_hop_interface = getattr(RNS.Transport, "next_hop_interface", None)
+            if callable(next_hop_interface):
+                return next_hop_interface(destination_hash)
+        except Exception:
+            return None
+        return None
 
     def _apply_sync_side_effects(
         self,

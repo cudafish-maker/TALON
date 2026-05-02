@@ -192,13 +192,15 @@ def _run_desktop_install(
     *extra_args: str,
     env: dict[str, str] | None = None,
     check: bool = True,
+    install_deps: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     install_env = env or _desktop_env(tmp_path)
+    dep_args = [] if install_deps else ["--no-deps"]
     return subprocess.run(
         [
             "bash",
             str(DESKTOP_INSTALLER),
-            "--no-deps",
+            *dep_args,
             "--prefix",
             str(tmp_path / "install"),
             "--bin-dir",
@@ -259,6 +261,11 @@ def test_desktop_client_artifact_installs_only_client_launcher_and_entry(tmp_pat
     rns_text = rns_config.read_text(encoding="utf-8")
     assert "enable_transport = False" in rns_text
     assert "share_instance = No" in rns_text
+    assert "TALON AutoInterface" in rns_text
+    assert "TALON i2pd Client" in rns_text
+    assert "type = I2PInterface" in rns_text
+    assert "enabled = No" in rns_text
+    assert "connectable = No" in rns_text
     assert not reticulum_acceptance_path(rns_config.parent).exists()
     launcher = (tmp_path / "bin" / "talon-desktop-client").read_text(encoding="utf-8")
     assert f"export TALON_CONFIG='{tmp_path / 'home' / '.talon' / 'talon.ini'}'" in launcher
@@ -283,7 +290,139 @@ def test_desktop_server_artifact_installs_only_server_launcher_and_entry(tmp_pat
     rns_text = rns_config.read_text(encoding="utf-8")
     assert "enable_transport = True" in rns_text
     assert "share_instance = No" in rns_text
+    assert "TALON AutoInterface" in rns_text
+    assert "TALON i2pd Server" in rns_text
+    assert "type = I2PInterface" in rns_text
+    assert "enabled = Yes" in rns_text
+    assert "connectable = Yes" in rns_text
     assert not reticulum_acceptance_path(rns_config.parent).exists()
+
+
+def test_desktop_client_i2p_peer_option_enables_client_stanza(tmp_path):
+    env = _desktop_env(tmp_path)
+    peer = "5URVJICPZI7Q3YBZTSEF4I5OW2AQ4SOKTFJ7ZEDZ53S47R54JNQQ.B32.I2P"
+    _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "client"),
+        "--i2p-peer",
+        peer,
+        env=env,
+    )
+
+    rns_config = tmp_path / "home" / ".talon" / "reticulum" / "config"
+    rns_text = rns_config.read_text(encoding="utf-8")
+    assert "TALON i2pd Client" in rns_text
+    assert "enabled = Yes" in rns_text
+    assert "connectable = No" in rns_text
+    assert (
+        "peers = 5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p"
+        in rns_text
+    )
+
+
+def test_desktop_server_rejects_i2p_peer_option(tmp_path):
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "server"),
+        "--i2p-peer",
+        "5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p",
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "--i2p-peer is only supported for client artifacts" in result.stderr
+
+
+def test_desktop_client_rejects_invalid_i2p_peer_option(tmp_path):
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "client"),
+        "--i2p-peer",
+        "not-a-peer",
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "--i2p-peer must be a server .b32.i2p address" in result.stderr
+
+
+def test_desktop_installer_configures_i2pd_sam_when_deps_enabled(tmp_path):
+    env = _desktop_env(tmp_path)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    systemctl_log = tmp_path / "systemctl.log"
+    i2pd_config = tmp_path / "i2pd" / "i2pd.conf"
+    i2pd_config.parent.mkdir()
+    i2pd_config.write_text(
+        "[http]\n"
+        "enabled = false\n"
+        "\n"
+        "[sam]\n"
+        "enabled = false\n"
+        "address = 0.0.0.0\n"
+        "port = 9999\n",
+        encoding="utf-8",
+    )
+
+    for name in ["xdg-open", "i2pd"]:
+        tool = fake_bin / name
+        tool.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+        tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+
+    sudo = fake_bin / "sudo"
+    sudo.write_text("#!/usr/bin/env sh\nexec \"$@\"\n", encoding="utf-8")
+    sudo.chmod(sudo.stat().st_mode | stat.S_IXUSR)
+
+    ldconfig = fake_bin / "ldconfig"
+    ldconfig.write_text(
+        "#!/usr/bin/env sh\n"
+        "cat <<'OUT'\n"
+        "libGL.so.1 (libc6,x86-64) => /tmp/libGL.so.1\n"
+        "libEGL.so.1 (libc6,x86-64) => /tmp/libEGL.so.1\n"
+        "libxkbcommon.so.0 (libc6,x86-64) => /tmp/libxkbcommon.so.0\n"
+        "libxcb-cursor.so.0 (libc6,x86-64) => /tmp/libxcb-cursor.so.0\n"
+        "libxcb-icccm.so.4 (libc6,x86-64) => /tmp/libxcb-icccm.so.4\n"
+        "libxcb-image.so.0 (libc6,x86-64) => /tmp/libxcb-image.so.0\n"
+        "libxcb-keysyms.so.1 (libc6,x86-64) => /tmp/libxcb-keysyms.so.1\n"
+        "libxcb-render-util.so.0 (libc6,x86-64) => /tmp/libxcb-render-util.so.0\n"
+        "libxcb-xinerama.so.0 (libc6,x86-64) => /tmp/libxcb-xinerama.so.0\n"
+        "libmagic.so.1 (libc6,x86-64) => /tmp/libmagic.so.1\n"
+        "libsqlcipher.so.1 (libc6,x86-64) => /tmp/libsqlcipher.so.1\n"
+        "OUT\n",
+        encoding="utf-8",
+    )
+    ldconfig.chmod(ldconfig.stat().st_mode | stat.S_IXUSR)
+
+    systemctl = fake_bin / "systemctl"
+    systemctl.write_text(
+        "#!/usr/bin/env sh\n"
+        "printf '%s\\n' \"$*\" >> \"$TALON_FAKE_SYSTEMCTL_LOG\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(systemctl.stat().st_mode | stat.S_IXUSR)
+
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["TALON_I2PD_CONFIG_PATH"] = str(i2pd_config)
+    env["TALON_FAKE_SYSTEMCTL_LOG"] = str(systemctl_log)
+
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "server"),
+        env=env,
+        install_deps=True,
+    )
+
+    text = i2pd_config.read_text(encoding="utf-8")
+    assert "Runtime dependency check passed." in result.stdout
+    assert "[sam]" in text
+    assert "enabled = true" in text
+    assert "address = 127.0.0.1" in text
+    assert "port = 7656" in text
+    assert list(i2pd_config.parent.glob("i2pd.conf.talon-backup.*"))
+    systemctl_lines = systemctl_log.read_text(encoding="utf-8").splitlines()
+    assert "enable i2pd.service" in systemctl_lines
+    assert "restart i2pd.service" in systemctl_lines
 
 
 def test_desktop_fresh_installer_rns_config_requires_first_launch_acceptance(tmp_path):

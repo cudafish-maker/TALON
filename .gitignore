@@ -46,8 +46,7 @@ cache/
 .mypy_cache/
 .ruff_cache/
 
-# Local-only docs and design artifacts
-*.md
+# Local-only design artifacts
 /wireframes/
 .codex
 

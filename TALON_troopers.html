@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TALON — Federal Network Authority Public Information Broadcast</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,600&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      font-size: 11pt;
+      background: #0a0f1e;
+      color: #e8e0c8;
+    }
+
+    body {
+      font-family: 'Barlow', Arial, sans-serif;
+      line-height: 1.65;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 0 80px;
+    }
+
+    /* ── Broadcast header ── */
+    .broadcast-bar {
+      background: #c8a020;
+      color: #0a0f1e;
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 9pt;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      text-align: center;
+      padding: 7px 12px;
+    }
+
+    /* ── Title card ── */
+    .title-card {
+      background: #0d1530;
+      border-bottom: 4px solid #c8a020;
+      padding: 56px 48px 48px;
+      text-align: center;
+      position: relative;
+    }
+
+    .fed-seal {
+      font-size: 52pt;
+      line-height: 1;
+      margin-bottom: 12px;
+      display: block;
+      filter: drop-shadow(0 0 12px rgba(200, 160, 32, 0.5));
+    }
+
+    .title-card h1 {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 34pt;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #c8a020;
+      line-height: 1.05;
+      margin-bottom: 8px;
+    }
+
+    .title-card .subtitle {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 12pt;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #8ab0d8;
+      margin-bottom: 18px;
+    }
+
+    .title-card .broadcast-id {
+      font-size: 8.5pt;
+      color: #556;
+      letter-spacing: 0.1em;
+      font-family: 'Barlow Condensed', monospace;
+      margin-top: 20px;
+    }
+
+    /* ── Content area ── */
+    .content {
+      padding: 0 48px;
+    }
+
+    /* ── PSA segment ── */
+    .segment {
+      padding: 40px 0 0;
+      border-bottom: 1px solid #1e2840;
+    }
+
+    .segment:last-of-type { border-bottom: none; }
+
+    .segment-label {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #c8a020;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .segment-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #c8a020;
+      opacity: 0.4;
+    }
+
+    h2 {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 20pt;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #fff;
+      line-height: 1.1;
+      margin-bottom: 18px;
+    }
+
+    h3 {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 13pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8ab0d8;
+      margin: 28px 0 10px;
+    }
+
+    p {
+      margin-bottom: 1em;
+      color: #ccc8b8;
+    }
+
+    p strong {
+      color: #e8e0c8;
+      font-weight: 600;
+    }
+
+    /* ── Anchor callout ── */
+    .anchor-callout {
+      background: #0d1530;
+      border-left: 4px solid #c8a020;
+      padding: 18px 20px;
+      margin: 24px 0;
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 13pt;
+      font-weight: 600;
+      font-style: italic;
+      color: #e8e0c8;
+      line-height: 1.5;
+    }
+
+    /* ── Stat boxes ── */
+    .stat-row {
+      display: flex;
+      gap: 12px;
+      margin: 24px 0;
+    }
+
+    .stat-box {
+      flex: 1;
+      background: #0d1530;
+      border: 1px solid #1e3060;
+      border-top: 3px solid #c8a020;
+      padding: 16px 14px;
+      text-align: center;
+    }
+
+    .stat-box .number {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 24pt;
+      font-weight: 800;
+      color: #c8a020;
+      line-height: 1;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .stat-box .label {
+      font-size: 8.5pt;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #8ab0d8;
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-weight: 600;
+    }
+
+    /* ── Comparison table ── */
+    .comparison {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+      font-size: 10pt;
+    }
+
+    .comparison thead tr {
+      background: #c8a020;
+    }
+
+    .comparison th {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 9.5pt;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #0a0f1e;
+      padding: 9px 12px;
+      text-align: left;
+    }
+
+    .comparison td {
+      padding: 8px 12px;
+      vertical-align: top;
+      border-bottom: 1px solid #1e2840;
+      color: #bbb8a8;
+    }
+
+    .comparison tr:nth-child(even) td { background: #0d1530; }
+
+    .comparison td:first-child {
+      font-weight: 600;
+      color: #e8e0c8;
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 10.5pt;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .tick { color: #4caf50; font-weight: 700; }
+    .cross { color: #e05050; font-weight: 700; }
+
+    /* ── "Would you like to know more?" ── */
+    .know-more {
+      margin: 32px 0 8px;
+      text-align: center;
+    }
+
+    .know-more-btn {
+      display: inline-block;
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 10.5pt;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #0a0f1e;
+      background: #c8a020;
+      padding: 9px 24px;
+      border: none;
+      cursor: default;
+    }
+
+    /* ── Manifesto call-to-action ── */
+    .cta-block {
+      background: #c8a020;
+      color: #0a0f1e;
+      padding: 32px 36px;
+      margin: 40px 0 0;
+      text-align: center;
+    }
+
+    .cta-block h2 {
+      color: #0a0f1e;
+      font-size: 22pt;
+      margin-bottom: 12px;
+    }
+
+    .cta-block p {
+      color: #1a1200;
+      font-size: 11pt;
+      font-weight: 500;
+      margin-bottom: 0.6em;
+    }
+
+    .cta-block .service-line {
+      font-family: 'Barlow Condensed', Arial Narrow, Arial, sans-serif;
+      font-size: 16pt;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #0a0f1e;
+      margin-top: 18px;
+      display: block;
+    }
+
+    /* ── Footer bar ── */
+    .footer-bar {
+      background: #060a14;
+      border-top: 1px solid #1e2840;
+      padding: 18px 48px;
+      font-size: 8pt;
+      color: #446;
+      font-family: 'Barlow Condensed', monospace;
+      letter-spacing: 0.06em;
+      margin-top: 40px;
+    }
+
+    /* ── Print ── */
+    @media print {
+      html { background: #0a0f1e; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { max-width: 100%; padding-bottom: 0; }
+
+      @page {
+        size: Letter;
+        margin: 15mm 18mm 20mm 18mm;
+        @bottom-center {
+          content: "FEDERAL NETWORK AUTHORITY — PUBLIC BROADCAST — PAGE " counter(page);
+          font-family: Arial, sans-serif;
+          font-size: 7pt;
+          color: #888;
+          letter-spacing: 0.1em;
+        }
+      }
+
+      h2 { break-after: avoid; }
+      h3 { break-after: avoid; }
+      p { orphans: 3; widows: 3; }
+      .stat-row { break-inside: avoid; }
+      .comparison { break-inside: avoid; }
+      .cta-block { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="broadcast-bar">
+    ★ Federal Network Authority — Public Information Broadcast — Civic Readiness Series ★
+  </div>
+
+  <div class="title-card">
+    <span class="fed-seal">★</span>
+    <h1>TALON</h1>
+    <div class="subtitle">Tactical Awareness &amp; Linked Operations Network</div>
+    <p style="color:#8ab0d8; font-family:'Barlow Condensed',sans-serif; font-size:11pt; letter-spacing:0.08em; font-weight:600;">
+      YOUR COMMUNITY. YOUR NETWORK. YOUR DUTY.
+    </p>
+    <div class="broadcast-id">BROADCAST ID: FNA-CIV-7741 &nbsp;|&nbsp; CIVIC READINESS DIVISION &nbsp;|&nbsp; CLEARANCE: PUBLIC</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ══ SEGMENT 1 ══════════════════════════════════════════ -->
+    <div class="segment">
+      <div class="segment-label">Segment 01 — The Threat</div>
+      <h2>The Bugs Don't Knock Out Your Data Center.<br>The Storm Does.</h2>
+
+      <p>Good evening, citizen. Tonight we'd like to talk to you about something more dangerous than any enemy combatant: <strong>the moment your neighborhood loses power and nobody can reach anybody.</strong></p>
+
+      <p>Every year, disasters strike communities across the continent. Wildfires. Floods. Ice storms. Grid failures. And every year, the first thing that fails is the thing everyone counted on to coordinate the response — the commercial network. The cell towers saturate in minutes. The group chats go silent. The emergency management app spins. The official broadcast frequency asks you to do things you have no way to organize.</p>
+
+      <p>Meanwhile, the people who need help are waiting. And the people who can help have no way to find them.</p>
+
+      <div class="anchor-callout">
+        "A community that cannot coordinate is a community that cannot survive. And a community that cannot survive is not doing its part."
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-box">
+          <span class="number">&lt; 4 min</span>
+          <span class="label">Average time for cell towers to saturate in a major disaster zone</span>
+        </div>
+        <div class="stat-box">
+          <span class="number">0</span>
+          <span class="label">Corporate data centers that will prioritize your neighborhood over their SLA</span>
+        </div>
+        <div class="stat-box">
+          <span class="number">$0</span>
+          <span class="label">Cost to build a TALON mesh node that outlasts the grid</span>
+        </div>
+      </div>
+
+      <div class="know-more">
+        <span class="know-more-btn">★ Would You Like To Know More? ★</span>
+      </div>
+    </div>
+
+    <!-- ══ SEGMENT 2 ══════════════════════════════════════════ -->
+    <div class="segment">
+      <div class="segment-label">Segment 02 — The Enemy Within (The Platform)</div>
+      <h2>They're Not On Your Side.<br>They Never Were.</h2>
+
+      <p>Let's talk about the other threat. Not the weather. Not the disaster. The <strong>platform.</strong></p>
+
+      <p>Right now, every message you send, every location you share, every status update you post — it lives on someone else's server. A corporation whose name you recognize but whose interests are not yours. A jurisdiction you did not choose. A terms-of-service agreement you accepted by clicking a button at 1 AM.</p>
+
+      <p>That corporation will sell your data. It will hand it over when asked. It will shut down, pivot, get acquired, change its terms, or simply decide that you are not worth keeping. And when the disaster comes and you need your coordination tools the most, those tools will be exactly as available as that corporation decides they should be.</p>
+
+      <h3>The TAK Server Problem</h3>
+
+      <p>Some of you have heard of ATAK. Good software, built for good people — originally built for the military, which means it was built for people with satellite uplinks, MANET radios, dedicated IT support staff, and a logistics chain that does not break on a Tuesday. The civilian versions work. They require a TAK Server. That server needs four CPU cores, eight gigabytes of RAM, a cloud hosting account, SSL certificates, monthly fees, and someone technical enough to maintain it.</p>
+
+      <p>The Federal Network Authority respects the work done by these tools. We simply note that a mutual aid group running on volunteer time and community donations should not need to pay forty dollars a month to coordinate a neighborhood response to a burst water main.</p>
+
+      <table class="comparison">
+        <thead>
+          <tr><th>Capability</th><th>ATAK / TAK Server</th><th>TALON</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Works without internet</td>
+            <td><span class="cross">✗</span> Needs TAK Server over IP</td>
+            <td><span class="tick">✓</span> Runs over LoRa, serial, any link</td>
+          </tr>
+          <tr>
+            <td>Server hardware needed</td>
+            <td>4 cores, 8 GB RAM, $20–50/month cloud or dedicated machine</td>
+            <td>Raspberry Pi — $55, one-time, fits in a pocket</td>
+          </tr>
+          <tr>
+            <td>Power draw</td>
+            <td>40–80 W on-prem; dies with the grid</td>
+            <td>5–8 W; runs on a USB battery pack for hours</td>
+          </tr>
+          <tr>
+            <td>Mesh node cost</td>
+            <td>MANET radios — specialized, expensive</td>
+            <td>Pi + RNode LoRa radio — $85–135 total</td>
+          </tr>
+          <tr>
+            <td>Data ownership</td>
+            <td>Lives on TAK Server; centralized; one breach, everything exposed</td>
+            <td>SQLCipher on your device; you hold the key</td>
+          </tr>
+          <tr>
+            <td>Military origin</td>
+            <td><span class="cross">✗</span> DoD; civilian adaptations carry that DNA</td>
+            <td><span class="tick">✓</span> Civilian-first; your neighbors, not your targets</td>
+          </tr>
+          <tr>
+            <td>Cost</td>
+            <td>Free software, non-trivial infrastructure cost</td>
+            <td><span class="tick">✓</span> Free. Hardware you already own, or nearly own.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="know-more">
+        <span class="know-more-btn">★ Would You Like To Know More? ★</span>
+      </div>
+    </div>
+
+    <!-- ══ SEGMENT 3 ══════════════════════════════════════════ -->
+    <div class="segment">
+      <div class="segment-label">Segment 03 — How TALON Works</div>
+      <h2>One Node. One Community.<br>One Network You Own.</h2>
+
+      <p>TALON runs on <strong>Reticulum</strong> — a mesh networking protocol built specifically for the conditions that break everything else. Low bandwidth. No central infrastructure. Intermittent links. Hostile environments. It routes to <em>cryptographic identities</em>, not to IP addresses. Your address on the network is a hash of who you are, not where you happen to be standing. It never changes. The network finds you.</p>
+
+      <p>When you run TALON, you are not a passive subscriber on someone else's system. You are a node in the mesh. Your machine can relay traffic for other nodes nearby. The network gets stronger, more resilient, and more capable of reaching further with every device that joins it. You are not consuming infrastructure. You are building it.</p>
+
+      <h3>The Operational Picture</h3>
+
+      <p>TALON gives your community a shared operational picture — live, structured, encrypted. <strong>Situation reports</strong> carry a type, a location, a time, and an operator attribution. Urgent ones surface on the dashboard immediately. They can reference assets, link to missions, carry follow-up chains. Not a group chat. A structured record that can be acted on.</p>
+
+      <p>The <strong>map</strong> carries live overlays: assets, assignments, zones, routes, waypoints, SITREP locations. Rendered on real base layers — street, topographic, satellite. When you drop a marker for a vehicle, it looks like a vehicle. Unverified assets stay unverified until a second party confirms them. The distinction between a claim and a verified fact matters when you are sending people based on it.</p>
+
+      <p><strong>Missions</strong> give purpose to work. <strong>Assignments</strong> are the work. The assignment board shows who is committed to what, where the gaps are, and whether anything is actually moving. <strong>Operators</strong> carry declared skills — medical, logistics, search, rescue, communications — because in a crisis, knowing who has what capability is the operational picture.</p>
+
+      <div class="know-more">
+        <span class="know-more-btn">★ Would You Like To Know More? ★</span>
+      </div>
+    </div>
+
+    <!-- ══ SEGMENT 4 ══════════════════════════════════════════ -->
+    <div class="segment">
+      <div class="segment-label">Segment 04 — Asset Security</div>
+      <h2>What Happens When a Device<br>Falls Into Enemy Hands.</h2>
+
+      <p>The Federal Network Authority wants you to be informed about this, because <strong>good citizens plan for failure.</strong></p>
+
+      <p>If a TALON device is seized, the adversary acquires an encrypted SQLCipher database. The key to that database is derived from your passphrase using Argon2id — a memory-hard function specifically designed to make brute-force attacks take an unacceptable amount of time and resources. The identity files on disk are separately encrypted. Without the passphrase, the adversary holds an expensive brick.</p>
+
+      <p>Meanwhile, back at command, the server operator has already initiated <strong>hard revocation.</strong> This is not a flag flip. It is a three-step irreversible destruction sequence:</p>
+
+      <p><strong>Step one:</strong> Database shred. The operator's record is marked revoked and their network identity hash is cleared from the server database entirely — not archived, not suspended. Gone. Outstanding enrollment tokens are simultaneously invalidated.</p>
+
+      <p><strong>Step two:</strong> Identity burn. The cached identity file is overwritten and deleted from disk. Even if the device comes back online, the server will not recognize it.</p>
+
+      <p><strong>Step three:</strong> Group key rotation. Every remaining active operator receives a new group encryption key on their next sync. Whatever the adversary retained from the compromised device cannot decrypt a single byte of traffic generated after rotation.</p>
+
+      <p>An operator who suspects their own device is compromised may initiate self-revocation from the client. This stops all sync, closes active network links, destroys the local identity files, clears enrollment records, and marks the outbound queue revoked. The device goes dark. Fresh enrollment from clean hardware is required to return to the network.</p>
+
+      <div class="anchor-callout">
+        "A centralized server that holds your entire operational picture is a single target. TALON gives them nothing but an encrypted brick and a network that has already moved on without them."
+      </div>
+
+      <div class="know-more">
+        <span class="know-more-btn">★ Would You Like To Know More? ★</span>
+      </div>
+    </div>
+
+    <!-- ══ SEGMENT 5 ══════════════════════════════════════════ -->
+    <div class="segment">
+      <div class="segment-label">Segment 05 — Enrollment and Civic Duty</div>
+      <h2>Joining the Network Is<br>Not a Sign-Up Form.</h2>
+
+      <p>There is no button that says "Create Account." There is no email confirmation. There is no platform that owns your identity and lends it back to you in exchange for agreeing to their terms.</p>
+
+      <p>To join a TALON network, a server operator — a neighbor, a colleague, a community member who has accepted responsibility for maintaining the infrastructure — generates a one-time enrollment token and hands it to you through a channel outside the software. You enter it once. It is consumed. It cannot be reused. It cannot be guessed. It is the digital equivalent of a handshake between people who have looked each other in the eye.</p>
+
+      <p>This is by design. A network that allows anonymous self-enrollment can be flooded and corrupted by anyone. A network that ties identity to a phone number can be disrupted by whoever controls the phone company. TALON ties identity to a cryptographic keypair generated on your device, and to the explicit decision of a human being who vouched for you.</p>
+
+      <p>Operators hold a <strong>lease</strong> — a time-bounded authorization renewed by the server authority. When it expires, the client soft-locks. You are told. There is no mystery. There is no shadow-banning. The system does not pretend you have access you no longer hold. The audit log stands. The record is clear.</p>
+
+      <p><strong>Visible authority is accountable authority.</strong> We at the Federal Network Authority believe this strongly and suggest you consider it as well.</p>
+
+      <div class="know-more">
+        <span class="know-more-btn">★ Would You Like To Know More? ★</span>
+      </div>
+    </div>
+
+    <!-- ══ SEGMENT 6 ══════════════════════════════════════════ -->
+    <div class="segment">
+      <div class="segment-label">Segment 06 — A Message From the Field</div>
+      <h2>They're Doing Their Part.<br>Are You?</h2>
+
+      <p>Somewhere right now, a community emergency response team is running a tabletop exercise. They are updating their skills profiles, testing the mesh, validating that their nodes can reach each other over LoRa from across the district. They are not waiting to be told to prepare. They are building the habit of coordination before it is needed, so that when it is needed, it is not new.</p>
+
+      <p>Somewhere, a server operator is running a Raspberry Pi in the corner of their living room on a five-watt draw, maintaining the enrollment records, renewing the leases, watching the audit logs. They accepted responsibility for the network. They show up.</p>
+
+      <p>Somewhere, a mutual aid network is filing structured SITREPs into a shared operational picture that their entire team can see, over a mesh that uses no commercial infrastructure and costs them nothing beyond the hardware they pooled to buy.</p>
+
+      <p>These people are your neighbors. This is civic infrastructure. It is not paranoia. It is not survivalism. It is what communities have always done when they could not afford to wait for someone else to show up and do it for them.</p>
+
+      <p>The Linux client is packaged and running. The server is operational. The mesh connects. The Android client is coming. Windows packaging is coming. The day a response team deploys TALON from solar-powered hardware over long-range radio, coordinating operators across a region with no functioning internet — that day is nearly here.</p>
+
+      <p>You are not waiting for a product. You are building infrastructure.</p>
+
+      <p><strong>And it is free.</strong></p>
+    </div>
+
+    <!-- ══ CTA ══════════════════════════════════════════════ -->
+    <div class="cta-block">
+      <h2>Service Guarantees Connectivity.</h2>
+      <p>Run a node. Enroll your team. Build the mesh before the towers go dark.</p>
+      <p>T.A.L.O.N. — Tactical Awareness &amp; Linked Operations Network</p>
+      <p>Free. Encrypted. Yours.</p>
+      <span class="service-line">★ &nbsp; Would You Like To Know More? &nbsp; ★</span>
+    </div>
+
+  </div>
+
+  <div class="footer-bar">
+    FEDERAL NETWORK AUTHORITY &nbsp;|&nbsp; CIVIC READINESS DIVISION &nbsp;|&nbsp; PUBLIC BROADCAST FNA-CIV-7741 &nbsp;|&nbsp;
+    THIS TRANSMISSION IS APPROVED FOR GENERAL DISTRIBUTION &nbsp;|&nbsp;
+    THE FEDERAL NETWORK AUTHORITY DOES NOT ENDORSE WAITING FOR SOMEONE ELSE TO BUILD YOUR INFRASTRUCTURE &nbsp;|&nbsp;
+    cudafish-maker, 2026
+  </div>
+
+</body>
+</html>

@@ -9,6 +9,7 @@ from talon_core.network.rns_config import (
     default_reticulum_config,
     i2pd_client_config,
     i2pd_server_config,
+    merge_reticulum_interface_template,
     tcp_client_config,
     tcp_server_config,
     yggdrasil_client_config,
@@ -204,7 +205,7 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         self.editor.setPlainText(default_reticulum_config(self._core.mode))
 
     def _use_auto_template(self) -> None:
-        self.editor.setPlainText(auto_interface_config(self._core.mode))
+        self._add_interface_template(auto_interface_config(self._core.mode))
 
     def _use_tcp_server_template(self) -> None:
         port, ok = QtWidgets.QInputDialog.getInt(
@@ -217,7 +218,9 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         )
         if not ok:
             return
-        self.editor.setPlainText(tcp_server_config(listen_ip="0.0.0.0", port=port))
+        self._add_interface_template(
+            tcp_server_config(listen_ip="0.0.0.0", port=port)
+        )
 
     def _use_tcp_client_template(self) -> None:
         host, ok = QtWidgets.QInputDialog.getText(
@@ -238,7 +241,7 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         )
         if not ok:
             return
-        self.editor.setPlainText(tcp_client_config(host, port=port))
+        self._add_interface_template(tcp_client_config(host, port=port))
 
     def _use_yggdrasil_server_template(self) -> None:
         device, ok = QtWidgets.QInputDialog.getText(
@@ -261,7 +264,9 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         )
         if not ok:
             return
-        self.editor.setPlainText(yggdrasil_server_config(device=device, port=port))
+        self._add_interface_template(
+            yggdrasil_server_config(device=device, port=port)
+        )
 
     def _use_yggdrasil_client_template(self) -> None:
         address, ok = QtWidgets.QInputDialog.getText(
@@ -282,10 +287,10 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         )
         if not ok:
             return
-        self.editor.setPlainText(yggdrasil_client_config(address, port=port))
+        self._add_interface_template(yggdrasil_client_config(address, port=port))
 
     def _use_i2pd_server_template(self) -> None:
-        self.editor.setPlainText(i2pd_server_config())
+        self._add_interface_template(i2pd_server_config())
 
     def _use_i2pd_client_template(self) -> None:
         peer, ok = QtWidgets.QInputDialog.getText(
@@ -296,4 +301,13 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         peer = peer.strip()
         if not ok or not peer:
             return
-        self.editor.setPlainText(i2pd_client_config(peer))
+        self._add_interface_template(i2pd_client_config(peer))
+
+    def _add_interface_template(self, template_text: str) -> None:
+        self.editor.setPlainText(
+            merge_reticulum_interface_template(
+                self.editor.toPlainText(),
+                template_text,
+                mode=self._core.mode,
+            )
+        )

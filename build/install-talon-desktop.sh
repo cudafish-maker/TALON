@@ -4,6 +4,9 @@ set -Eeuo pipefail
 APP_NAME="talon-desktop"
 ROLE_MARKER=".talon-artifact-role"
 DELETE_CONFIRMATION="DELETE TALON DATA"
+I2PD_SERVICE_NAME="i2pd.service"
+I2PD_SAM_ADDRESS="127.0.0.1"
+I2PD_SAM_PORT="7656"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)
 
 log() {
@@ -34,6 +37,8 @@ Options:
   --data-dir DIR       TALON data directory. Default follows artifact role.
   --rns-dir DIR        Reticulum config/key directory. Default: <data-dir>/reticulum
   --documents-dir DIR  Document storage/cache directory. Default: <data-dir>/documents
+  --i2p-peer ADDR      Client artifact only. Enable the i2pd Reticulum client
+                       stanza with the server .b32.i2p peer address.
   --confirm-delete TXT Required exact phrase for destructive role switches.
                        Also required for full uninstall cleanup.
   --uninstall          Remove local TALON desktop/legacy installs and data, then exit.
@@ -129,6 +134,7 @@ runtime_dependency_gaps() {
     local missing=()
 
     command -v xdg-open >/dev/null 2>&1 || missing+=("xdg-open")
+    command -v i2pd >/dev/null 2>&1 || missing+=("i2pd")
     have_library "libGL.so.1" || missing+=("libGL.so.1")
     have_library "libEGL.so.1" || missing+=("libEGL.so.1")
     have_library "libxkbcommon.so.0" || missing+=("libxkbcommon.so.0")
@@ -181,6 +187,7 @@ install_deps_apt() {
         libdbus-1-3
         libfontconfig1
         libfreetype6
+        i2pd
     )
 
     append_first_available_apt_package packages libmagic1t64 libmagic1 file || warn "No apt package found for libmagic."
@@ -205,6 +212,7 @@ install_deps_dnf() {
         xcb-util-renderutil
         file-libs
         sqlcipher
+        i2pd
     )
     local yes_args=()
     [[ $ASSUME_YES == "1" ]] && yes_args=(-y)
@@ -224,10 +232,203 @@ install_deps_pacman() {
         xcb-util-renderutil
         file
         sqlcipher
+        i2pd
     )
     local yes_args=()
     [[ $ASSUME_YES == "1" ]] && yes_args=(--noconfirm)
     run_as_root pacman -S --needed "${yes_args[@]}" "${packages[@]}"
+}
+
+i2pd_config_path() {
+    local path
+    if [[ -n ${TALON_I2PD_CONFIG_PATH:-} ]]; then
+        make_abs_path "$TALON_I2PD_CONFIG_PATH"
+        return 0
+    fi
+    for path in /etc/i2pd/i2pd.conf /var/lib/i2pd/i2pd.conf; do
+        if [[ -f $path ]]; then
+            printf '%s\n' "$path"
+            return 0
+        fi
+    done
+    if [[ -d /etc/i2pd ]]; then
+        printf '%s\n' /etc/i2pd/i2pd.conf
+    elif [[ -d /var/lib/i2pd ]]; then
+        printf '%s\n' /var/lib/i2pd/i2pd.conf
+    else
+        printf '%s\n' /etc/i2pd/i2pd.conf
+    fi
+}
+
+render_i2pd_sam_config() {
+    local source_path=$1
+    awk -v address="$I2PD_SAM_ADDRESS" -v port="$I2PD_SAM_PORT" '
+function emit_sam_defaults() {
+    if (in_sam) {
+        if (!saw_enabled) print "enabled = true"
+        if (!saw_address) print "address = " address
+        if (!saw_port) print "port = " port
+    }
+}
+/^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+    emit_sam_defaults()
+    in_sam = ($0 ~ /^[[:space:]]*\[sam\][[:space:]]*$/)
+    if (in_sam) saw_sam = 1
+    saw_enabled = 0
+    saw_address = 0
+    saw_port = 0
+    print
+    next
+}
+in_sam && /^[[:space:]]*enabled[[:space:]]*=/ {
+    print "enabled = true"
+    saw_enabled = 1
+    next
+}
+in_sam && /^[[:space:]]*address[[:space:]]*=/ {
+    print "address = " address
+    saw_address = 1
+    next
+}
+in_sam && /^[[:space:]]*port[[:space:]]*=/ {
+    print "port = " port
+    saw_port = 1
+    next
+}
+{
+    print
+}
+END {
+    emit_sam_defaults()
+    if (!saw_sam) {
+        print ""
+        print "# TALON requires SAM for Reticulum I2PInterface."
+        print "[sam]"
+        print "enabled = true"
+        print "address = " address
+        print "port = " port
+    }
+}
+' "$source_path"
+}
+
+write_new_i2pd_sam_config() {
+    cat <<EOF
+# TALON requires SAM for Reticulum I2PInterface.
+[sam]
+enabled = true
+address = $I2PD_SAM_ADDRESS
+port = $I2PD_SAM_PORT
+EOF
+}
+
+path_parent_writable() {
+    local path=$1
+    local dir
+    local parent
+
+    dir=$(dirname "$path")
+    if [[ -d $dir ]]; then
+        [[ -w $dir ]]
+        return
+    fi
+    parent=$(dirname "$dir")
+    [[ -d $parent && -w $parent ]]
+}
+
+install_i2pd_config_file() {
+    local tmp=$1
+    local config_path=$2
+    local config_dir
+
+    config_dir=$(dirname "$config_path")
+    if path_parent_writable "$config_path"; then
+        mkdir -p "$config_dir"
+        install -m 0644 "$tmp" "$config_path"
+    else
+        run_as_root mkdir -p "$config_dir"
+        run_as_root install -m 0644 "$tmp" "$config_path"
+    fi
+}
+
+backup_i2pd_config_file() {
+    local config_path=$1
+    local backup_path=$2
+
+    if path_parent_writable "$backup_path"; then
+        cp -p "$config_path" "$backup_path" || warn "Could not create i2pd config backup at $backup_path."
+    else
+        run_as_root cp -p "$config_path" "$backup_path" || warn "Could not create i2pd config backup at $backup_path."
+    fi
+}
+
+configure_i2pd_sam() {
+    local config_path
+    local tmp
+    local backup_path
+
+    if ! command -v i2pd >/dev/null 2>&1; then
+        warn "i2pd is not installed; Reticulum I2PInterface will not work until i2pd is installed."
+        return 0
+    fi
+
+    config_path=$(i2pd_config_path)
+    tmp=$(mktemp)
+    if [[ -f $config_path ]]; then
+        if ! render_i2pd_sam_config "$config_path" > "$tmp"; then
+            rm -f "$tmp"
+            warn "Could not render updated i2pd SAM configuration from $config_path."
+            return 0
+        fi
+        if [[ -r $config_path ]] && cmp -s "$tmp" "$config_path"; then
+            rm -f "$tmp"
+            log "i2pd SAM config already enables $I2PD_SAM_ADDRESS:$I2PD_SAM_PORT."
+            return 0
+        fi
+        backup_path="$config_path.talon-backup.$(date +%Y%m%d%H%M%S)"
+        backup_i2pd_config_file "$config_path" "$backup_path"
+    else
+        write_new_i2pd_sam_config > "$tmp"
+    fi
+
+    install_i2pd_config_file "$tmp" "$config_path"
+    rm -f "$tmp"
+    log "Configured i2pd SAM at $I2PD_SAM_ADDRESS:$I2PD_SAM_PORT in $config_path."
+}
+
+start_i2pd_daemon() {
+    if ! command -v i2pd >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if command -v systemctl >/dev/null 2>&1; then
+        if [[ -f /etc/systemd/system/$I2PD_SERVICE_NAME || -f /lib/systemd/system/$I2PD_SERVICE_NAME || -f /usr/lib/systemd/system/$I2PD_SERVICE_NAME ]] ||
+            systemctl list-unit-files "$I2PD_SERVICE_NAME" >/dev/null 2>&1; then
+            if run_as_root systemctl enable "$I2PD_SERVICE_NAME" >/dev/null 2>&1 &&
+                run_as_root systemctl restart "$I2PD_SERVICE_NAME" >/dev/null 2>&1; then
+                log "i2pd service enabled and restarted."
+            else
+                warn "Could not enable or restart i2pd with systemctl. Start i2pd manually before using I2P."
+            fi
+            return 0
+        fi
+    fi
+
+    if command -v service >/dev/null 2>&1; then
+        if run_as_root service i2pd restart >/dev/null 2>&1; then
+            log "i2pd service restarted."
+        else
+            warn "Could not restart i2pd with service. Start i2pd manually before using I2P."
+        fi
+        return 0
+    fi
+
+    warn "No supported service manager was found for i2pd. Start i2pd manually before using I2P."
+}
+
+setup_i2pd_daemon() {
+    configure_i2pd_sam
+    start_i2pd_daemon
 }
 
 install_runtime_dependencies() {
@@ -235,6 +436,7 @@ install_runtime_dependencies() {
     mapfile -t gaps < <(runtime_dependency_gaps || true)
     if ((${#gaps[@]} == 0)); then
         log "Runtime dependency check passed."
+        setup_i2pd_daemon
         return 0
     fi
 
@@ -253,6 +455,8 @@ install_runtime_dependencies() {
     if ! runtime_dependency_gaps >/dev/null; then
         warn "Some dependencies still appear missing after package installation. Continuing, but TALON may not start."
     fi
+
+    setup_i2pd_daemon
 }
 
 canonical_dir() {
@@ -271,6 +475,13 @@ read_artifact_role() {
         client|server) printf '%s\n' "$role" ;;
         *) die "Invalid TALON desktop artifact role: $role" ;;
     esac
+}
+
+normalize_i2p_peer() {
+    local peer=${1,,}
+    peer=${peer%/}
+    [[ $peer =~ ^[a-z2-7]+\.b32\.i2p$ ]] || die "--i2p-peer must be a server .b32.i2p address."
+    printf '%s\n' "$peer"
 }
 
 validate_bundle() {
@@ -372,6 +583,7 @@ EOF
 write_default_rns_config() {
     local rns_dir=$1
     local role=$2
+    local i2p_peer=${3:-}
     local config_path=$rns_dir/config
     local enable_transport="False"
 
@@ -398,6 +610,37 @@ write_default_rns_config() {
   [[TALON AutoInterface]]
     type = AutoInterface
     enabled = Yes
+EOF
+
+    if [[ $role == "server" ]]; then
+        cat >> "$config_path" <<EOF
+
+  [[TALON i2pd Server]]
+    type = I2PInterface
+    enabled = Yes
+    connectable = Yes
+EOF
+    elif [[ -n $i2p_peer ]]; then
+        cat >> "$config_path" <<EOF
+
+  [[TALON i2pd Client]]
+    type = I2PInterface
+    enabled = Yes
+    connectable = No
+    peers = $i2p_peer
+EOF
+    else
+        cat >> "$config_path" <<EOF
+
+  [[TALON i2pd Client]]
+    type = I2PInterface
+    enabled = No
+    connectable = No
+    # Set peers to the server .b32.i2p address, then enable this stanza.
+EOF
+    fi
+
+    cat >> "$config_path" <<EOF
 
 # TCP, Yggdrasil, I2P, and RNode interfaces are deployment-specific.
 # Add matching TCPServerInterface/TCPClientInterface stanzas here when needed.
@@ -794,6 +1037,7 @@ INSTALL_DESKTOP="1"
 INSTALL_BIN="1"
 SMOKE_TEST="0"
 UNINSTALL="0"
+I2P_PEER=""
 
 positionals=()
 while (($#)); do
@@ -845,6 +1089,15 @@ while (($#)); do
             ;;
         --documents-dir=*)
             DOCUMENTS_DIR=${1#*=}
+            ;;
+        --i2p-peer)
+            shift || die "--i2p-peer requires a server .b32.i2p address"
+            I2P_PEER=${1:-}
+            [[ -n $I2P_PEER ]] || die "--i2p-peer requires a server .b32.i2p address"
+            ;;
+        --i2p-peer=*)
+            I2P_PEER=${1#*=}
+            [[ -n $I2P_PEER ]] || die "--i2p-peer requires a server .b32.i2p address"
             ;;
         --mode)
             die "--mode is not supported. Install a client or server artifact instead."
@@ -952,6 +1205,10 @@ if [[ $ARTIFACT_ROLE == "server" ]]; then
 else
     DESKTOP_DISPLAY_NAME="T.A.L.O.N. Client"
 fi
+if [[ -n $I2P_PEER ]]; then
+    [[ $ARTIFACT_ROLE == "client" ]] || die "--i2p-peer is only supported for client artifacts."
+    I2P_PEER=$(normalize_i2p_peer "$I2P_PEER")
+fi
 
 if [[ -z $DATA_DIR ]]; then
     if [[ $ARTIFACT_ROLE == "server" ]]; then
@@ -997,7 +1254,7 @@ fi
 
 TARGET_DIR=$(install_bundle "$SOURCE_BUNDLE_DIR" "$INSTALL_ROOT")
 write_default_config "$CONFIG_PATH" "$ARTIFACT_ROLE" "$DATA_DIR" "$RNS_DIR" "$DOCUMENTS_DIR"
-write_default_rns_config "$RNS_DIR" "$ARTIFACT_ROLE"
+write_default_rns_config "$RNS_DIR" "$ARTIFACT_ROLE" "$I2P_PEER"
 
 if [[ $INSTALL_BIN == "1" ]]; then
     write_launcher_wrapper "$TARGET_DIR" "$BIN_DIR" "$CONFIG_PATH" "$STATE_DIR" "$LAUNCHER_NAME" "$ARTIFACT_ROLE"
@@ -1033,8 +1290,15 @@ log "Role:    $ARTIFACT_ROLE"
 log "Config:  $CONFIG_PATH"
 log "Data:    $DATA_DIR"
 log "RNS:     $RNS_DIR"
+if [[ $ARTIFACT_ROLE == "server" ]]; then
+    log "I2P:     i2pd SAM is configured locally; the server I2P address appears in Reticulum logs after first network start."
+elif [[ -n $I2P_PEER ]]; then
+    log "I2P:     i2pd SAM is configured locally; client peer is $I2P_PEER."
+else
+    log "I2P:     i2pd SAM is configured locally; add the server .b32.i2p peer in Network Setup or reinstall with --i2p-peer."
+fi
 if [[ $INSTALL_BIN == "1" ]]; then
     log "Launcher: $LAUNCHER_PATH"
 fi
 log ""
-log "Reticulum interface setup is deployment-specific. First networked launch will ask you to review and accept $RNS_DIR/config before sync starts."
+log "First networked launch will ask you to review and accept $RNS_DIR/config before sync starts."

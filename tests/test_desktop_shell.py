@@ -772,6 +772,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtWidgets
 
 from talon_core import TalonCoreSession
+from talon_core.network.rns_config import tcp_server_config
 from talon_desktop.reticulum_config_dialog import ReticulumConfigDialog
 
 config_path = sys.argv[1]
@@ -785,6 +786,10 @@ try:
     texts = sorted(
         button.text() for button in dialog.findChildren(QtWidgets.QPushButton)
     )
+    dialog._add_interface_template(tcp_server_config(listen_ip="0.0.0.0", port=4242))
+    editor_text = dialog.editor.toPlainText()
+    assert "TALON AutoInterface" in editor_text
+    assert "TALON TCP Server" in editor_text
     print("|".join(texts))
 finally:
     if dialog is not None:

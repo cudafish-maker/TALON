@@ -1,0 +1,49 @@
+#!/bin/sh
+set -eu
+
+zero_sha=0000000000000000000000000000000000000000
+blocked_paths_file=$(mktemp)
+trap 'rm -f "$blocked_paths_file"' EXIT HUP INT TERM
+
+while read -r local_ref local_sha remote_ref remote_sha
+do
+    if [ -z "${local_ref:-}" ] || [ "$local_sha" = "$zero_sha" ]; then
+        continue
+    fi
+
+    local_commit=$(git rev-parse -q --verify "$local_sha^{commit}" 2>/dev/null || true)
+    if [ -z "$local_commit" ]; then
+        continue
+    fi
+
+    if [ "$remote_sha" = "$zero_sha" ]; then
+        commits=$(git rev-list "$local_commit" --not --remotes)
+    else
+        remote_commit=$(git rev-parse -q --verify "$remote_sha^{commit}" 2>/dev/null || true)
+        if [ -z "$remote_commit" ]; then
+            commits=$(git rev-list "$local_commit" --not --remotes)
+        else
+            commits=$(git rev-list "$remote_commit..$local_commit")
+        fi
+    fi
+
+    for commit in $commits
+    do
+        git diff-tree --root --no-commit-id --name-only -r "$commit" |
+            awk 'tolower($0) ~ /\.md$/ { print }' >> "$blocked_paths_file"
+    done
+done
+
+if [ -s "$blocked_paths_file" ]; then
+    {
+        echo "TALON policy: Markdown files may be committed locally, but must not be pushed to a remote."
+        echo
+        echo "This push contains Markdown paths:"
+        sort -u "$blocked_paths_file" | sed 's/^/  - /'
+        echo
+        echo "Split or amend the pushed commits so Markdown changes stay local."
+    } >&2
+    exit 1
+fi
+
+exit 0

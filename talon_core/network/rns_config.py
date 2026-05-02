@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import os
 import pathlib
+import re
 import shutil
 import time
 import typing
@@ -81,6 +82,7 @@ _METHOD_LABELS = {
     "tcp": "TCP",
     "lora": "LoRa",
     "auto": "AutoInterface",
+    "mixed": "Multiple",
     "unknown": "Unknown",
 }
 _METHOD_PRIORITY = ("yggdrasil", "i2p", "tcp", "lora", "auto")
@@ -91,6 +93,12 @@ _LORA_INTERFACE_TYPES = frozenset({
     "AX25KISSInterface",
     "SerialInterface",
 })
+_TOP_LEVEL_SECTION_RE = re.compile(
+    r"^\s*\[(?!\[)\s*([^\]]+?)\s*\]\s*(?:[#;].*)?$"
+)
+_INTERFACE_SECTION_RE = re.compile(
+    r"^\s*\[\[\s*([^\]]+?)\s*\]\]\s*(?:[#;].*)?$"
+)
 
 
 def reticulum_config_path(config_dir: pathlib.Path) -> pathlib.Path:
@@ -322,6 +330,56 @@ def reticulum_transport_summary_from_text(
     )
 
 
+def reticulum_transport_summary_from_runtime(
+    interfaces: typing.Iterable[object],
+) -> ReticulumTransportSummary:
+    """Classify live Reticulum interfaces selected for active traffic."""
+    methods: list[str] = []
+    for interface in interfaces:
+        method = _classify_runtime_interface_method(interface)
+        if method is not None:
+            methods.append(method)
+    unique_methods = tuple(dict.fromkeys(methods))
+    if len(unique_methods) > 1:
+        return ReticulumTransportSummary(
+            method="mixed",
+            label=_METHOD_LABELS["mixed"],
+            direct_tcp_warning=("tcp" in unique_methods),
+            enabled_methods=unique_methods,
+        )
+    selected = _select_method(unique_methods)
+    return ReticulumTransportSummary(
+        method=selected,
+        label=_METHOD_LABELS.get(selected, _METHOD_LABELS["unknown"]),
+        direct_tcp_warning=(selected == "tcp"),
+        enabled_methods=unique_methods,
+    )
+
+
+def merge_reticulum_interface_template(
+    existing_text: str,
+    template_text: str,
+    *,
+    mode: Mode,
+) -> str:
+    """Append interface stanzas from a generated template to existing config."""
+    del mode  # Validation is performed by the caller after the merge.
+    if not existing_text.strip():
+        return _normalise_text(template_text)
+
+    interface_blocks = _extract_interface_blocks(template_text)
+    if not interface_blocks:
+        return _normalise_text(template_text)
+
+    existing_names = _interface_section_names(existing_text)
+    merged_blocks: list[str] = []
+    for interface_name, block in interface_blocks:
+        unique_name = _unique_interface_name(interface_name, existing_names)
+        existing_names.add(unique_name)
+        merged_blocks.append(_rename_interface_block(block, unique_name))
+    return _append_interface_blocks(existing_text, tuple(merged_blocks))
+
+
 def save_reticulum_config_text(
     config_dir: pathlib.Path,
     text: str,
@@ -545,6 +603,128 @@ def _iter_interface_sections(
             yield str(name), typing.cast(typing.Mapping[str, typing.Any], value)
 
 
+def _extract_interface_blocks(text: str) -> tuple[tuple[str, str], ...]:
+    lines = text.splitlines()
+    blocks: list[tuple[str, str]] = []
+    in_interfaces = False
+    index = 0
+    while index < len(lines):
+        section_name = _top_level_section_name(lines[index])
+        if section_name is not None:
+            if in_interfaces:
+                break
+            in_interfaces = section_name.lower() == "interfaces"
+            index += 1
+            continue
+        if not in_interfaces:
+            index += 1
+            continue
+
+        match = _INTERFACE_SECTION_RE.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        start = index
+        index += 1
+        while index < len(lines):
+            if (
+                _INTERFACE_SECTION_RE.match(lines[index]) is not None
+                or _top_level_section_name(lines[index]) is not None
+            ):
+                break
+            index += 1
+        name = match.group(1).strip()
+        block_lines = lines[start:index]
+        while block_lines and (
+            not block_lines[-1].strip()
+            or block_lines[-1].lstrip().startswith(("#", ";"))
+        ):
+            block_lines.pop()
+        block = "\n".join(block_lines).rstrip()
+        blocks.append((name, block))
+    return tuple(blocks)
+
+
+def _interface_section_names(text: str) -> set[str]:
+    try:
+        from RNS.vendor.configobj import ConfigObj
+
+        parsed = ConfigObj(text.splitlines())
+        interfaces = _section(parsed, "interfaces")
+        if interfaces is not None:
+            return {name for name, _interface in _iter_interface_sections(interfaces)}
+    except Exception:
+        pass
+    return {name for name, _block in _extract_interface_blocks(text)}
+
+
+def _unique_interface_name(interface_name: str, existing_names: set[str]) -> str:
+    if interface_name not in existing_names:
+        return interface_name
+    counter = 2
+    while f"{interface_name} {counter}" in existing_names:
+        counter += 1
+    return f"{interface_name} {counter}"
+
+
+def _rename_interface_block(block: str, interface_name: str) -> str:
+    lines = block.splitlines()
+    if not lines:
+        return block
+    indentation = lines[0][: len(lines[0]) - len(lines[0].lstrip())]
+    lines[0] = f"{indentation}[[{interface_name}]]"
+    return "\n".join(lines).rstrip()
+
+
+def _append_interface_blocks(existing_text: str, blocks: tuple[str, ...]) -> str:
+    lines = _normalise_text(existing_text).rstrip("\n").splitlines()
+    interfaces_index: int | None = None
+    for index, line in enumerate(lines):
+        section_name = _top_level_section_name(line)
+        if section_name is not None and section_name.lower() == "interfaces":
+            interfaces_index = index
+            break
+
+    block_lines = _joined_interface_block_lines(blocks)
+    if interfaces_index is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append("[interfaces]")
+        lines.extend(block_lines)
+        return "\n".join(lines).rstrip() + "\n"
+
+    insert_index = len(lines)
+    for index in range(interfaces_index + 1, len(lines)):
+        if _top_level_section_name(lines[index]) is not None:
+            insert_index = index
+            break
+
+    insertion: list[str] = []
+    if insert_index > interfaces_index + 1 and lines[insert_index - 1].strip():
+        insertion.append("")
+    insertion.extend(block_lines)
+    if insert_index < len(lines) and lines[insert_index].strip():
+        insertion.append("")
+    merged = lines[:insert_index] + insertion + lines[insert_index:]
+    return "\n".join(merged).rstrip() + "\n"
+
+
+def _joined_interface_block_lines(blocks: tuple[str, ...]) -> list[str]:
+    lines: list[str] = []
+    for block in blocks:
+        if lines:
+            lines.append("")
+        lines.extend(block.splitlines())
+    return lines
+
+
+def _top_level_section_name(line: str) -> str | None:
+    match = _TOP_LEVEL_SECTION_RE.match(line)
+    if match is None:
+        return None
+    return match.group(1).strip()
+
+
 def _classify_interface_method(
     interface_name: str,
     interface: typing.Mapping[str, typing.Any],
@@ -562,6 +742,45 @@ def _classify_interface_method(
             return "yggdrasil"
         return "tcp"
     return None
+
+
+def _classify_runtime_interface_method(interface: object) -> str | None:
+    interface_chain = tuple(_runtime_interface_chain(interface))
+    type_names = tuple(type(item).__name__ for item in interface_chain)
+    names = tuple(str(getattr(item, "name", "") or "") for item in interface_chain)
+
+    if any(
+        getattr(item, "i2p_tunneled", False) or type_name.startswith("I2PInterface")
+        for item, type_name in zip(interface_chain, type_names)
+    ):
+        return "i2p"
+    if any(type_name in _LORA_INTERFACE_TYPES for type_name in type_names):
+        return "lora"
+    if any("AutoInterface" in type_name for type_name in type_names):
+        return "auto"
+    if any(
+        type_name in {"TCPServerInterface", "TCPClientInterface"}
+        for type_name in type_names
+    ):
+        if any("yggdrasil" in name.lower() for name in names):
+            return "yggdrasil"
+        if any(
+            _is_yggdrasil_address(getattr(item, attr, None))
+            for item in interface_chain
+            for attr in ("target_ip", "target_host", "bind_ip", "listen_ip")
+        ):
+            return "yggdrasil"
+        return "tcp"
+    return None
+
+
+def _runtime_interface_chain(interface: object) -> typing.Iterator[object]:
+    seen: set[int] = set()
+    current = interface
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = getattr(current, "parent_interface", None)
 
 
 def _is_yggdrasil_tcp_interface(
