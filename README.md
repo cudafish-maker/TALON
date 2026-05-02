@@ -30,6 +30,7 @@ Client with a known server I2P peer:
 ```bash
 bash ./install.sh --yes --i2p-peer SERVER_ADDRESS.b32.i2p
 ```
+This can also be configured from within Talon, and is how I recommend doing it.
 
 Server:
 
