@@ -13,6 +13,7 @@ from talon_core.missions import (
     create_mission,
     delete_mission,
     reject_mission,
+    update_mission,
 )
 from talon_core.services.events import (
     DomainEvent,
@@ -143,6 +144,78 @@ def approve_mission_command(
         for aid in sorted(before_asset_ids | requested_asset_ids)
     )
     return MissionCommandResult(mission_id, tuple(events), channel_name=channel_name)
+
+
+def update_mission_command(
+    conn: Connection,
+    mission_id: int,
+    *,
+    title: str,
+    asset_ids: typing.Optional[list[int]] = None,
+    ao_polygon: typing.Optional[list[list[float]]] = None,
+    route: typing.Optional[list[tuple[float, float]]] = None,
+    replace_ao: bool = False,
+    replace_route: bool = False,
+    created_by: int,
+    **fields: typing.Any,
+) -> MissionCommandResult:
+    before_asset_ids = set(_asset_ids_for_mission(conn, mission_id))
+    before_ao_ids = _ids(
+        conn,
+        "SELECT id FROM zones WHERE mission_id = ? AND zone_type = 'AO' ORDER BY id ASC",
+        mission_id,
+    )
+    before_waypoint_ids = _ids(
+        conn,
+        "SELECT id FROM waypoints WHERE mission_id = ? ORDER BY id ASC",
+        mission_id,
+    )
+
+    update_mission(
+        conn,
+        mission_id,
+        title=title,
+        asset_ids=asset_ids,
+        **fields,
+    )
+
+    events: list[DomainEvent] = [record_changed("missions", mission_id)]
+    after_asset_ids = set(_asset_ids_for_mission(conn, mission_id))
+    events.extend(record_changed("assets", aid) for aid in sorted(before_asset_ids | after_asset_ids))
+
+    if replace_ao:
+        conn.execute(
+            "DELETE FROM zones WHERE mission_id = ? AND zone_type = 'AO'",
+            (mission_id,),
+        )
+        conn.commit()
+        events.extend(record_deleted("zones", zone_id) for zone_id in before_ao_ids)
+        if ao_polygon:
+            try:
+                zone = create_zone(
+                    conn,
+                    label=f"AO - {title}",
+                    zone_type="AO",
+                    polygon=ao_polygon,
+                    mission_id=mission_id,
+                    created_by=created_by,
+                )
+                events.append(record_changed("zones", zone.id))
+            except Exception as exc:
+                _log.warning("update_mission_command: AO zone update failed: %s", exc)
+
+    if replace_route:
+        conn.execute("DELETE FROM waypoints WHERE mission_id = ?", (mission_id,))
+        conn.commit()
+        events.extend(record_deleted("waypoints", waypoint_id) for waypoint_id in before_waypoint_ids)
+        if route:
+            try:
+                waypoints = create_waypoints_for_mission(conn, mission_id, route)
+                events.extend(record_changed("waypoints", wp.id) for wp in waypoints)
+            except Exception as exc:
+                _log.warning("update_mission_command: waypoint update failed: %s", exc)
+
+    return MissionCommandResult(mission_id, tuple(events))
 
 
 def reject_mission_command(conn: Connection, mission_id: int) -> MissionCommandResult:

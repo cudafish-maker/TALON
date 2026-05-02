@@ -359,6 +359,7 @@ def available_operator_items(
     sitreps: typing.Iterable[object] = (),
     missions: typing.Iterable[object] = (),
     current_sitrep_id: int | None = None,
+    current_mission_id: int | None = None,
 ) -> list[AvailableOperatorItem]:
     """Return operators not already committed to active work."""
     assigned_operator_ids: set[int] = set()
@@ -383,6 +384,9 @@ def available_operator_items(
             busy_callsigns.add(assigned_to.casefold())
 
     for mission in missions:
+        mission_id = _optional_int(_field(mission, "id", default=None))
+        if current_mission_id is not None and mission_id == int(current_mission_id):
+            continue
         status = str(_field(mission, "status", default="") or "")
         if status in {"completed", "aborted", "rejected"}:
             continue

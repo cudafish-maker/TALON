@@ -315,8 +315,6 @@ class DesktopPage(QtWidgets.QWidget):
             return "Secure document repository.", rows
         if key == "operators":
             return "Known operators.", _operator_rows(self._core)
-        if key == "clients":
-            return "Server client roster.", _operator_rows(self._core)
         if key == "enrollment":
             rows = [str(token) for token in self._core.read_model("enrollment.pending_tokens")]
             return "Pending one-time enrollment tokens.", rows
@@ -485,8 +483,6 @@ class DesktopNavRail(QtWidgets.QWidget):
 
     def increment_badge(self, section_key: str) -> None:
         if section_key in self._UNBADGED_SECTIONS:
-            return
-        if self.currentItem() is not None and self.currentItem().data(QtCore.Qt.UserRole) == section_key:
             return
         self._badges[section_key] = self._badges.get(section_key, 0) + 1
         self._sync_button_labels()
@@ -702,6 +698,106 @@ class AssignmentNotificationOverlay(QtWidgets.QFrame):
             self.openRequested.emit(notification.kind, notification.target_id)
 
 
+@dataclasses.dataclass(frozen=True)
+class ServerReviewNotification:
+    section_key: str
+    target_id: int
+    title: str
+    body: str
+    tag: str
+
+
+class ServerReviewNotificationOverlay(QtWidgets.QFrame):
+    """Global server review popup hosted by the main shell."""
+
+    openRequested = QtCore.Signal(str, int)
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("assignmentNotificationOverlay")
+        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self._notification: ServerReviewNotification | None = None
+        self._queue: list[ServerReviewNotification] = []
+
+        self.title = QtWidgets.QLabel("")
+        self.title.setObjectName("sitrepAlertTitle")
+        self.title.setWordWrap(True)
+        self.tag = QtWidgets.QLabel("")
+        self.tag.setObjectName("sitrepTag")
+        self.body = QtWidgets.QLabel("")
+        self.body.setObjectName("sitrepAlertBody")
+        self.body.setWordWrap(True)
+        self.dismiss_button = QtWidgets.QPushButton("Dismiss")
+        self.open_button = QtWidgets.QPushButton("Open")
+        self.dismiss_button.clicked.connect(self._dismiss_current)
+        self.open_button.clicked.connect(self._open_current)
+
+        header = QtWidgets.QHBoxLayout()
+        header.addWidget(self.title, stretch=1)
+        header.addWidget(self.tag)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.addStretch(1)
+        actions.addWidget(self.dismiss_button)
+        actions.addWidget(self.open_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        layout.addLayout(header)
+        layout.addWidget(self.body)
+        layout.addLayout(actions)
+        self.hide()
+
+    def show_notification(self, notification: ServerReviewNotification) -> None:
+        if self.isVisible() and self._notification is not None:
+            self._queue.append(notification)
+            return
+        self._display(notification)
+
+    def reposition(self) -> None:
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        margin = 18
+        width = min(420, max(340, parent.width() - (margin * 2)))
+        hint_height = max(146, self.sizeHint().height())
+        y = margin
+        sibling = parent.findChild(AssignmentNotificationOverlay)
+        if sibling is not None and sibling.isVisible():
+            y = sibling.geometry().bottom() + 12
+        self.setGeometry(
+            max(margin, parent.width() - width - margin),
+            y,
+            width,
+            hint_height,
+        )
+
+    def _display(self, notification: ServerReviewNotification) -> None:
+        self._notification = notification
+        self.title.setText(notification.title)
+        self.body.setText(notification.body)
+        self.tag.setText(notification.tag)
+        self.open_button.setText("Open")
+        self.reposition()
+        self.show()
+        self.raise_()
+
+    def _dismiss_current(self) -> None:
+        if self._queue:
+            self._display(self._queue.pop(0))
+            return
+        self._notification = None
+        self.hide()
+
+    def _open_current(self) -> None:
+        notification = self._notification
+        self._dismiss_current()
+        if notification is not None:
+            self.openRequested.emit(notification.section_key, notification.target_id)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     networkSetupRequested = QtCore.Signal()
 
@@ -725,6 +821,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_direct_tcp_warning_session_id: int | None = None
         self._assignment_notification_seen: set[tuple[object, ...]] = set()
         self._assignment_notifications_primed = False
+        self._server_review_notification_seen: set[tuple[object, ...]] = set()
+        self._server_review_notifications_primed = False
         self._settings_prefix = f"{core.mode}/main_window"
         self._theme_key = str(self._settings.value(self._setting_key("theme"), "dark"))
         self._font_scale = self._read_font_scale()
@@ -753,8 +851,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 page = DocumentPage(core)
             elif section.key == "operators":
                 page = OperatorPage(core)
-            elif section.key == "clients":
-                page = OperatorPage(core, title="Clients", admin=True)
             elif section.key == "enrollment":
                 page = EnrollmentPage(core)
             elif section.key == "audit":
@@ -777,6 +873,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._assignment_notification_overlay = AssignmentNotificationOverlay(self.stack)
         self._assignment_notification_overlay.openRequested.connect(
             self._open_assignment_notification_target
+        )
+        self._server_review_notification_overlay = ServerReviewNotificationOverlay(self.stack)
+        self._server_review_notification_overlay.openRequested.connect(
+            self._open_server_review_notification_target
         )
         self.statusBar().showMessage("Core unlocked.")
         self.network_method_badge = QtWidgets.QLabel("Network method unknown")
@@ -813,6 +913,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.nav.setCurrentRow(self._initial_nav_row())
         self.refresh_all()
         self._prime_assignment_notifications()
+        self._prime_server_review_notifications()
         self._refresh_network_method_status()
         self._refresh_log_button()
 
@@ -831,6 +932,11 @@ class MainWindow(QtWidgets.QMainWindow):
             and section_key in {"sitreps", "missions", "assignments"}
         ):
             self._scan_assignment_notifications()
+        if (
+            self._server_review_notifications_primed
+            and section_key in {"sitreps", "missions", "assets"}
+        ):
+            self._scan_server_review_notifications()
 
     def set_network_setup_busy(self, busy: bool) -> None:
         self.network_setup_button.setDisabled(busy)
@@ -859,6 +965,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sitrep_alert_overlay.reposition()
         if hasattr(self, "_assignment_notification_overlay"):
             self._assignment_notification_overlay.reposition()
+        if hasattr(self, "_server_review_notification_overlay"):
+            self._server_review_notification_overlay.reposition()
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
@@ -1150,11 +1258,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_record_mutated(self, action: str, table: str, record_id: int) -> None:
         self.statusBar().showMessage(f"{table} {action}: #{record_id}", 5000)
-        self._mark_badges_for_mutation(table)
+        self._mark_badges_for_mutation(action, table)
         if table == "sitreps":
             page = self._pages.get("sitreps")
             if isinstance(page, SitrepPage):
                 page.handle_record_mutation(action, table, record_id)
+            assignment_page = self._pages.get("assignments")
+            if isinstance(assignment_page, AssignmentPage):
+                assignment_page.handle_record_mutation(action, table, record_id)
             if action == "changed":
                 self._show_sitrep_overlay(record_id)
             map_page = self._pages.get("map")
@@ -1164,6 +1275,10 @@ class MainWindow(QtWidgets.QMainWindow):
             page = self._pages.get("sitreps")
             if isinstance(page, SitrepPage):
                 page.handle_record_mutation(action, table, record_id)
+            if table == "sitrep_followups":
+                assignment_page = self._pages.get("assignments")
+                if isinstance(assignment_page, AssignmentPage):
+                    assignment_page.handle_record_mutation(action, table, record_id)
             map_page = self._pages.get("map")
             if isinstance(map_page, MapPage):
                 map_page.handle_record_mutation(action, table, record_id)
@@ -1195,6 +1310,10 @@ class MainWindow(QtWidgets.QMainWindow):
             mission_page = self._pages.get("missions")
             if isinstance(mission_page, MissionPage):
                 mission_page.handle_record_mutation(action, table, record_id)
+            if table == "missions":
+                assignment_page = self._pages.get("assignments")
+                if isinstance(assignment_page, AssignmentPage):
+                    assignment_page.handle_record_mutation(action, table, record_id)
         elif table in {"channels", "messages"}:
             chat_page = self._pages.get("chat")
             if isinstance(chat_page, ChatPage):
@@ -1207,10 +1326,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if isinstance(document_page, DocumentPage):
                 document_page.handle_record_mutation(action, table, record_id)
         elif table == "operators":
-            for key in ("operators", "clients"):
-                operator_page = self._pages.get(key)
-                if isinstance(operator_page, OperatorPage):
-                    operator_page.handle_record_mutation(action, table, record_id)
+            operator_page = self._pages.get("operators")
+            if isinstance(operator_page, OperatorPage):
+                operator_page.handle_record_mutation(action, table, record_id)
             keys_page = self._pages.get("keys")
             if isinstance(keys_page, KeysPage):
                 keys_page.handle_record_mutation(action, table, record_id)
@@ -1228,6 +1346,122 @@ class MainWindow(QtWidgets.QMainWindow):
             and table in {"sitreps", "sitrep_followups", "missions", "assignments"}
         ):
             self._scan_assignment_notifications()
+        if (
+            self._server_review_notifications_primed
+            and action == "changed"
+            and table in {"sitreps", "missions", "assets"}
+        ):
+            self._scan_server_review_notifications()
+
+    def _prime_server_review_notifications(self) -> None:
+        if self._core.mode != "server":
+            self._server_review_notifications_primed = True
+            return
+        try:
+            self._server_review_notification_seen = {
+                key for key, _notification in self._server_review_notification_entries()
+            }
+        except Exception as exc:
+            _log.debug("Could not prime server review notifications: %s", exc)
+            self._server_review_notification_seen = set()
+        self._server_review_notifications_primed = True
+
+    def _scan_server_review_notifications(self) -> None:
+        if self._core.mode != "server":
+            return
+        try:
+            entries = self._server_review_notification_entries()
+        except Exception as exc:
+            _log.debug("Could not scan server review notifications: %s", exc)
+            return
+        for key, notification in entries:
+            if key in self._server_review_notification_seen:
+                continue
+            self._server_review_notification_seen.add(key)
+            self._server_review_notification_overlay.show_notification(notification)
+
+    def _server_review_notification_entries(
+        self,
+    ) -> list[tuple[tuple[object, ...], ServerReviewNotification]]:
+        entries: list[tuple[tuple[object, ...], ServerReviewNotification]] = []
+        try:
+            missions = self._core.read_model(
+                "missions.list",
+                {"status_filter": "pending_approval", "limit": 200},
+            )
+        except Exception:
+            missions = []
+        for mission in missions:
+            mission_id = int(getattr(mission, "id"))
+            title = str(getattr(mission, "title", "") or f"Mission #{mission_id}")
+            entries.append(
+                (
+                    ("mission-review", mission_id),
+                    ServerReviewNotification(
+                        section_key="missions",
+                        target_id=mission_id,
+                        title="Mission Approval Needed",
+                        body=f"{title} is pending server review.",
+                        tag="MISSION",
+                    ),
+                )
+            )
+
+        try:
+            sitreps = self._core.read_model("sitreps.list", {"limit": 200})
+        except Exception:
+            sitreps = []
+        for entry in sitreps:
+            item = feed_item_from_entry(entry)
+            body = item.body.splitlines()[0].strip() if item.body.strip() else ""
+            target = body or f"{item.level} SITREP #{item.id}"
+            entries.append(
+                (
+                    ("sitrep-review", item.id),
+                    ServerReviewNotification(
+                        section_key="sitreps",
+                        target_id=item.id,
+                        title="New SITREP",
+                        body=target,
+                        tag=item.level,
+                    ),
+                )
+            )
+
+        try:
+            assets = self._core.read_model("assets.list", {"limit": 500})
+        except Exception:
+            assets = []
+        for asset in assets:
+            asset_id = int(getattr(asset, "id"))
+            label = str(getattr(asset, "label", "") or f"Asset #{asset_id}")
+            if bool(getattr(asset, "deletion_requested", False)):
+                entries.append(
+                    (
+                        ("asset-delete-review", asset_id),
+                        ServerReviewNotification(
+                            section_key="assets",
+                            target_id=asset_id,
+                            title="Asset Deletion Request",
+                            body=f"{label} has a client deletion request.",
+                            tag="ASSET",
+                        ),
+                    )
+                )
+            elif not bool(getattr(asset, "verified", False)):
+                entries.append(
+                    (
+                        ("asset-verify-review", asset_id),
+                        ServerReviewNotification(
+                            section_key="assets",
+                            target_id=asset_id,
+                            title="Asset Verification Needed",
+                            body=f"{label} is unverified.",
+                            tag="ASSET",
+                        ),
+                    )
+                )
+        return entries
 
     def _prime_assignment_notifications(self) -> None:
         try:
@@ -1374,22 +1608,42 @@ class MainWindow(QtWidgets.QMainWindow):
         elif kind == "mission" and isinstance(page, MissionPage):
             page.select_mission(target_id)
 
-    def _mark_badges_for_mutation(self, table: str) -> None:
+    @QtCore.Slot(str, int)
+    def _open_server_review_notification_target(
+        self,
+        section_key: str,
+        target_id: int,
+    ) -> None:
+        for row in range(self.nav.count()):
+            if self.nav.item(row).data(QtCore.Qt.UserRole) == section_key:
+                self.nav.setCurrentRow(row)
+                break
+        page = self._pages.get(section_key)
+        if section_key == "sitreps" and isinstance(page, SitrepPage):
+            page.select_sitrep(target_id)
+        elif section_key == "missions" and isinstance(page, MissionPage):
+            page.select_mission(target_id)
+        elif section_key == "assets" and isinstance(page, AssetPage):
+            page.select_asset(target_id)
+
+    def _mark_badges_for_mutation(self, action: str, table: str) -> None:
+        if action != "changed":
+            return
         sections_by_table = {
             "assets": ("assets", "map", "dashboard"),
-            "missions": ("missions", "map", "dashboard"),
+            "missions": ("missions", "assignments", "map", "dashboard"),
             "operator_location_pings": ("map", "dashboard"),
             "zones": ("map", "dashboard"),
             "waypoints": ("map", "dashboard"),
-            "sitreps": ("sitreps", "map", "dashboard"),
-            "sitrep_followups": ("sitreps", "map", "dashboard"),
+            "sitreps": ("sitreps", "assignments", "map", "dashboard"),
+            "sitrep_followups": ("sitreps", "assignments", "map", "dashboard"),
             "sitrep_documents": ("sitreps", "documents", "map", "dashboard"),
             "assignments": ("assignments", "map", "missions", "dashboard"),
             "checkins": ("assignments", "map", "dashboard"),
             "channels": ("chat",),
             "messages": ("chat", "dashboard"),
             "documents": ("documents",),
-            "operators": ("operators", "clients", "keys", "chat"),
+            "operators": ("operators", "keys", "chat"),
         }
         for section in sections_by_table.get(table, ()):
             if section in self._pages:

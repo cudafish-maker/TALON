@@ -78,6 +78,13 @@ class DesktopOperatorStatusItem:
     sort_key: tuple[int, str]
 
 
+@dataclasses.dataclass(frozen=True)
+class _OperatorCommitment:
+    status_label: str
+    assignment_title: str
+    severity_rank: int
+
+
 def assignment_items_from_board(
     board: typing.Mapping[str, typing.Any],
     *,
@@ -144,49 +151,145 @@ def operator_status_items_from_board(
     board: typing.Mapping[str, typing.Any],
     assignments: typing.Sequence[DesktopAssignmentItem],
 ) -> list[DesktopOperatorStatusItem]:
-    assignment_by_operator: dict[int, DesktopAssignmentItem] = {}
+    commitments_by_operator: dict[int, _OperatorCommitment] = {}
+    commitments_by_callsign: dict[str, _OperatorCommitment] = {}
     for assignment in assignments:
         if assignment.status not in ACTIVE_ASSIGNMENT_STATUSES:
             continue
+        commitment = _commitment_from_assignment(assignment)
         for operator_id in assignment.assigned_operator_ids:
-            assignment_by_operator.setdefault(operator_id, assignment)
+            _remember_commitment(commitments_by_operator, operator_id, commitment)
+
+    for mission in board.get("missions", []) or []:
+        status = str(_field(mission, "status", default="") or "")
+        if status in {"completed", "aborted", "rejected"}:
+            continue
+        title = str(_field(mission, "title", default="") or "")
+        mission_id = _optional_int(_field(mission, "id", default=None))
+        mission_label = title or (
+            f"#{mission_id}" if mission_id is not None else "mission"
+        )
+        commitment = _OperatorCommitment(
+            status_label="Assigned",
+            assignment_title=f"Mission: {mission_label}",
+            severity_rank=2,
+        )
+        for callsign in _mission_operator_callsigns(mission):
+            _remember_commitment(
+                commitments_by_callsign,
+                callsign.casefold(),
+                commitment,
+            )
+
+    for entry in board.get("sitreps", []) or []:
+        sitrep = entry[0] if isinstance(entry, tuple) else entry
+        status = str(_field(sitrep, "status", default="open") or "open")
+        if status in {"resolved", "closed"}:
+            continue
+        assigned_to = str(_field(sitrep, "assigned_to", default="") or "").strip()
+        if not assigned_to:
+            continue
+        commitment = _OperatorCommitment(
+            status_label="Assigned",
+            assignment_title=_sitrep_assignment_title(sitrep),
+            severity_rank=2,
+        )
+        _remember_commitment(
+            commitments_by_callsign,
+            assigned_to.casefold(),
+            commitment,
+        )
 
     items: list[DesktopOperatorStatusItem] = []
     for operator in board.get("operators", []):
         if bool(getattr(operator, "revoked", False)):
             continue
         operator_id = int(getattr(operator, "id"))
-        assignment = assignment_by_operator.get(operator_id)
+        callsign = str(getattr(operator, "callsign", "") or f"#{operator_id}")
+        commitment = commitments_by_operator.get(operator_id)
+        callsign_commitment = commitments_by_callsign.get(callsign.casefold())
+        if (
+            callsign_commitment is not None
+            and (
+                commitment is None
+                or callsign_commitment.severity_rank < commitment.severity_rank
+            )
+        ):
+            commitment = callsign_commitment
         profile = getattr(operator, "profile", {}) or {}
         role = str(profile.get("role", "")) if isinstance(profile, dict) else ""
         skills = ", ".join(str(skill) for skill in getattr(operator, "skills", [])[:3])
-        if assignment is None:
+        if commitment is None:
             status_label = "Available"
             assignment_title = role
             severity_rank = 3
-        elif assignment.needs_support:
-            status_label = "Needs support"
-            assignment_title = assignment.title
-            severity_rank = 0
-        elif assignment.overdue:
-            status_label = "Overdue"
-            assignment_title = assignment.title
-            severity_rank = 1
         else:
-            status_label = "Assigned"
-            assignment_title = assignment.title
-            severity_rank = 2
+            status_label = commitment.status_label
+            assignment_title = commitment.assignment_title
+            severity_rank = commitment.severity_rank
         items.append(
             DesktopOperatorStatusItem(
                 id=operator_id,
-                callsign=str(getattr(operator, "callsign", "")),
+                callsign=callsign,
                 status_label=status_label,
                 assignment_title=assignment_title,
                 skills_label=skills,
-                sort_key=(severity_rank, str(getattr(operator, "callsign", "")).lower()),
+                sort_key=(severity_rank, callsign.lower()),
             )
         )
     return sorted(items, key=lambda item: item.sort_key)
+
+
+def _commitment_from_assignment(assignment: DesktopAssignmentItem) -> _OperatorCommitment:
+    if assignment.needs_support:
+        return _OperatorCommitment("Needs support", assignment.title, 0)
+    if assignment.overdue:
+        return _OperatorCommitment("Overdue", assignment.title, 1)
+    return _OperatorCommitment("Assigned", assignment.title, 2)
+
+
+def _remember_commitment(
+    commitments: dict[typing.Any, _OperatorCommitment],
+    key: typing.Any,
+    commitment: _OperatorCommitment,
+) -> None:
+    existing = commitments.get(key)
+    if existing is None or commitment.severity_rank < existing.severity_rank:
+        commitments[key] = commitment
+
+
+def _mission_operator_callsigns(mission: object) -> tuple[str, ...]:
+    values: list[str] = []
+    lead = str(_field(mission, "lead_coordinator", default="") or "").strip()
+    if lead:
+        values.append(lead)
+    members = str(_field(mission, "organization", default="") or "").strip()
+    for piece in members.replace("\n", ",").replace(";", ",").split(","):
+        callsign = piece.strip()
+        if callsign:
+            values.append(callsign)
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for callsign in values:
+        folded = callsign.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        unique.append(callsign)
+    return tuple(unique)
+
+
+def _sitrep_assignment_title(sitrep: object) -> str:
+    sitrep_id = _optional_int(_field(sitrep, "id", default=None))
+    body = _as_text(_field(sitrep, "body", default="")).strip()
+    first_line = body.splitlines()[0].strip() if body else ""
+    if len(first_line) > 60:
+        first_line = first_line[:57].rstrip() + "..."
+    sitrep_label = f"SITREP #{sitrep_id}" if sitrep_id is not None else "SITREP"
+    if first_line:
+        return f"{sitrep_label}: {first_line}"
+    return sitrep_label
 
 
 def build_assignment_payload(
@@ -267,6 +370,26 @@ def build_checkin_payload(
         "state": state,
         "note": note.strip(),
     }
+
+
+def _field(obj: object, name: str, *, default: object = "") -> object:
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _optional_int(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def _as_text(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if value is None:
+        return ""
+    return str(value)
 
 
 def _optional_coordinate(

@@ -50,8 +50,10 @@ TABLES: dict[str, SyncedTable] = {
     "operators": SyncedTable(
         name="operators",
         sync_order=0,
+        client_pushable=True,
+        offline_creatable=True,
         tombstone_order=13,
-        ui_refresh_targets=_fields("operators", "clients"),
+        ui_refresh_targets=_fields("operators"),
     ),
     "assets": SyncedTable(
         name="assets",
@@ -75,7 +77,7 @@ TABLES: dict[str, SyncedTable] = {
         tombstone_order=8,
         encrypted_fields=_fields("body"),
         ownership_fields=("author_id",),
-        ui_refresh_targets=_fields("sitrep", "map", "main"),
+        ui_refresh_targets=_fields("sitrep", "assignments", "map", "main"),
         predelete_sql=(
             "DELETE FROM sitrep_documents WHERE sitrep_id = ?",
             "DELETE FROM sitrep_followups WHERE sitrep_id = ?",
@@ -88,7 +90,7 @@ TABLES: dict[str, SyncedTable] = {
         offline_creatable=True,
         tombstone_order=12,
         ownership_fields=("created_by",),
-        ui_refresh_targets=_fields("mission", "main"),
+        ui_refresh_targets=_fields("mission", "assignments", "main"),
         predelete_sql=(
             "UPDATE sitreps SET mission_id = NULL WHERE mission_id = ?",
             "UPDATE assignments SET mission_id = NULL WHERE mission_id = ?",
@@ -181,7 +183,7 @@ TABLES: dict[str, SyncedTable] = {
         offline_creatable=True,
         tombstone_order=6,
         ownership_fields=("author_id",),
-        ui_refresh_targets=_fields("sitrep", "map", "main"),
+        ui_refresh_targets=_fields("sitrep", "assignments", "map", "main"),
     ),
     "sitrep_documents": SyncedTable(
         name="sitrep_documents",

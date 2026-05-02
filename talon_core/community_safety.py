@@ -276,7 +276,7 @@ def list_assignments(
     active_only: bool = False,
     limit: int = 200,
 ) -> list[CommunityAssignment]:
-    clauses: list[str] = []
+    clauses: list[str] = ["sync_status != 'rejected'"]
     params: list[object] = []
     if status_filter:
         clauses.append("status = ?")
@@ -298,7 +298,8 @@ def get_assignment(
     assignment_id: int,
 ) -> typing.Optional[CommunityAssignment]:
     row = conn.execute(
-        f"SELECT {_ASSIGNMENT_COLS} FROM assignments WHERE id = ?",
+        f"SELECT {_ASSIGNMENT_COLS} FROM assignments "
+        "WHERE id = ? AND sync_status != 'rejected'",
         (int(assignment_id),),
     ).fetchone()
     return _row_to_assignment(row) if row else None
@@ -311,10 +312,11 @@ def list_checkins(
     limit: int = 100,
 ) -> list[AssignmentCheckIn]:
     params: list[object] = []
-    where = ""
+    clauses: list[str] = ["sync_status != 'rejected'"]
     if assignment_id is not None:
-        where = "WHERE assignment_id = ?"
+        clauses.append("assignment_id = ?")
         params.append(int(assignment_id))
+    where = "WHERE " + " AND ".join(clauses)
     params.append(int(limit))
     rows = conn.execute(
         f"SELECT {_CHECKIN_COLS} FROM checkins {where} "
@@ -326,7 +328,8 @@ def list_checkins(
 
 def get_checkin(conn: Connection, checkin_id: int) -> typing.Optional[AssignmentCheckIn]:
     row = conn.execute(
-        f"SELECT {_CHECKIN_COLS} FROM checkins WHERE id = ?",
+        f"SELECT {_CHECKIN_COLS} FROM checkins "
+        "WHERE id = ? AND sync_status != 'rejected'",
         (int(checkin_id),),
     ).fetchone()
     return _row_to_checkin(row) if row else None

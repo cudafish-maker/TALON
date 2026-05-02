@@ -15,6 +15,7 @@ Each token can only be consumed once.
 import hashlib
 import os
 import time
+import uuid as _uuid_mod
 
 from talon_core.constants import ENROLLMENT_TOKEN_EXPIRY_S, LEASE_DURATION_S
 from talon_core.db.connection import Connection
@@ -103,9 +104,9 @@ def create_operator(
 
         cursor = conn.execute(
             "INSERT INTO operators "
-            "(callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
-            "VALUES (?, ?, '[]', '{}', ?, ?, 0)",
-            (callsign, rns_hash, now, lease_expires),
+            "(callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked, uuid) "
+            "VALUES (?, ?, '[]', '{}', ?, ?, 0, ?)",
+            (callsign, rns_hash, now, lease_expires, _uuid_mod.uuid4().hex),
         )
         operator_id = cursor.lastrowid
         conn.execute(

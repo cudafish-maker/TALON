@@ -207,7 +207,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
         self._minimum_points = minimum_points or (3 if mode == "polygon" else 1)
         self._points = [(_clamp_lat(lat), _clamp_lon(lon)) for lat, lon in initial_points]
         self._draft_overlays = _normalise_draft_overlays(draft_overlays)
-        self._selection_icon_key = mission_location_icon_key(selection_icon_key or title)
+        self._selection_icon_key = _selection_icon_key(selection_icon_key, title)
         self._context: object | None = None
         self._sitrep_entries: list[object] = []
         self._bounds = DEFAULT_MAP_BOUNDS
@@ -314,7 +314,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             for lat, lon in initial_points
         ]
         self._draft_overlays = _normalise_draft_overlays(draft_overlays)
-        self._selection_icon_key = mission_location_icon_key(selection_icon_key or title)
+        self._selection_icon_key = _selection_icon_key(selection_icon_key, title)
         self.setWindowTitle(title)
         self.use_button.setText(_use_button_label(mode))
         if refit:
@@ -511,28 +511,23 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             )
             item.setToolTip(f"{location.label}: {location.mission_label}")
         for asset in bundle.assets:
-            color = QtGui.QColor("#2ecc71") if asset.verified else QtGui.QColor("#e67e22")
-            item = self._scene.addEllipse(
-                asset.point.x - 7,
-                asset.point.y - 7,
-                14,
-                14,
-                QtGui.QPen(QtGui.QColor("#ecf0f1"), 1),
-                QtGui.QBrush(color),
+            item = _draw_selection_icon(
+                self._scene,
+                f"asset:{asset.category}",
+                asset.point.x,
+                asset.point.y,
+                z=8,
             )
             item.setToolTip(asset.label)
-            item.setZValue(8)
         for sitrep in bundle.sitreps:
-            item = self._scene.addRect(
-                sitrep.point.x - 5,
-                sitrep.point.y - 24,
-                10,
-                10,
-                QtGui.QPen(QtGui.QColor("#ecf0f1"), 1),
-                QtGui.QBrush(QtGui.QColor("#e74c3c")),
+            item = _draw_selection_icon(
+                self._scene,
+                "sitrep",
+                sitrep.point.x,
+                sitrep.point.y,
+                z=9,
             )
             item.setToolTip(f"{sitrep.level} SITREP #{sitrep.id}")
-            item.setZValue(9)
 
     def _draw_draft_overlays(self) -> None:
         for overlay in self._draft_overlays:
@@ -574,7 +569,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
             else:
                 point = scene_points[0]
                 if overlay.icon_key:
-                    item = draw_mission_location_icon(
+                    item = _draw_selection_icon(
                         self._scene,
                         overlay.icon_key,
                         point.x(),
@@ -647,7 +642,7 @@ class MapCoordinateDialog(QtWidgets.QDialog):
 
         for index, point in enumerate(scene_points, start=1):
             if self._mode == "point" and self._selection_icon_key:
-                draw_mission_location_icon(
+                _draw_selection_icon(
                     self._scene,
                     self._selection_icon_key,
                     point.x(),
@@ -777,10 +772,10 @@ def pick_point_on_map(
         title=title,
         mode="point",
         initial_points=initial,
-        draft_overlays=draft_overlays,
-        selection_icon_key=selection_icon_key,
-        parent=parent,
-    )
+            draft_overlays=draft_overlays,
+            selection_icon_key=selection_icon_key,
+            parent=parent,
+        )
     if dialog.exec() != QtWidgets.QDialog.Accepted:
         return None
     return dialog.selected_points[0] if dialog.selected_points else None
@@ -834,11 +829,101 @@ def _normalise_draft_overlays(
                 label=str(overlay.get("label", "Draft")),
                 mode=typing.cast(typing.Literal["point", "polygon", "route"], mode),
                 points=points,
-                icon_key=mission_location_icon_key(str(overlay.get("icon_key", ""))),
+                icon_key=_selection_icon_key(str(overlay.get("icon_key", "")), ""),
             )
         if candidate.points:
             result.append(candidate)
     return tuple(result)
+
+
+def _selection_icon_key(icon_key: str, title: str) -> str:
+    raw = str(icon_key or "").strip()
+    if raw.startswith("asset:"):
+        return raw
+    if raw in {"assignment", "sitrep", "operator_ping"}:
+        return raw
+    mission_key = mission_location_icon_key(raw or title)
+    if mission_key:
+        return mission_key
+    return raw
+
+
+def _draw_selection_icon(
+    scene: QtWidgets.QGraphicsScene,
+    icon_key: str,
+    x: float,
+    y: float,
+    *,
+    z: float,
+    size: float = 12.0,
+) -> QtWidgets.QGraphicsItem:
+    key = _selection_icon_key(icon_key, "")
+    if key.startswith("asset:"):
+        from talon_desktop.icons import asset_marker_pixmap
+
+        category = key.split(":", 1)[1] or "custom"
+        pixmap = asset_marker_pixmap(category, verified=False, selected=True, size=30)
+        item = scene.addPixmap(pixmap)
+        item.setOffset(-pixmap.width() / 2, -pixmap.height() / 2)
+        item.setPos(float(x), float(y))
+        item.setZValue(z)
+        return item
+    if key == "assignment":
+        point_size = float(size)
+        item = scene.addPolygon(
+            QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(x, y - point_size),
+                    QtCore.QPointF(x + point_size, y),
+                    QtCore.QPointF(x, y + point_size),
+                    QtCore.QPointF(x - point_size, y),
+                ]
+            ),
+            QtGui.QPen(QtGui.QColor("#ecf0f1"), 2),
+            QtGui.QBrush(QtGui.QColor("#8fbcbb")),
+        )
+        item.setZValue(z)
+        return item
+    if key == "sitrep":
+        point_size = float(size)
+        item = scene.addRect(
+            x - point_size,
+            y - point_size,
+            point_size * 2,
+            point_size * 2,
+            QtGui.QPen(QtGui.QColor("#ecf0f1"), 2),
+            QtGui.QBrush(QtGui.QColor("#e74c3c")),
+        )
+        item.setRotation(45)
+        item.setTransformOriginPoint(x, y)
+        item.setZValue(z)
+        return item
+    if key == "operator_ping":
+        radius = float(size)
+        item = scene.addEllipse(
+            x - radius,
+            y - radius,
+            radius * 2,
+            radius * 2,
+            QtGui.QPen(QtGui.QColor("#7fb069"), 2),
+            QtGui.QBrush(QtGui.QColor(127, 176, 105, 130)),
+        )
+        item.setZValue(z)
+        return item
+    mission_key = mission_location_icon_key(key)
+    if mission_key:
+        return draw_mission_location_icon(scene, mission_key, x, y, z=z, size=size)
+    radius = float(size)
+    item = scene.addEllipse(
+        x - radius,
+        y - radius,
+        radius * 2,
+        radius * 2,
+        QtGui.QPen(QtGui.QColor("#f6fbfb"), 2),
+        QtGui.QBrush(QtGui.QColor("#3498db")),
+    )
+    item.setZValue(z)
+    return item
 
 
 def _expand_bounds(bounds: MapBounds, points: typing.Iterable[tuple[float, float]]) -> MapBounds:

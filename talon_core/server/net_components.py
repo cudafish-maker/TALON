@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import json
 import threading
 import time
 import typing
@@ -134,7 +135,7 @@ class ServerSyncRepository:
         if table == "operators":
             cursor = handler._conn.execute(
                 "SELECT id, callsign, rns_hash, skills, profile, enrolled_at, "
-                "lease_expires_at, revoked, version FROM operators WHERE id != 1"
+                "lease_expires_at, revoked, version, uuid FROM operators WHERE id != 1"
             )
         else:
             cursor = handler._conn.execute(
@@ -159,7 +160,7 @@ class ServerSyncRepository:
             if table == "operators":
                 cursor = handler._conn.execute(
                     "SELECT id, callsign, rns_hash, skills, profile, enrolled_at, "
-                    "lease_expires_at, revoked, version FROM operators "
+                    "lease_expires_at, revoked, version, uuid FROM operators "
                     "WHERE id = ? AND id != 1",
                     (record_id,),
                 )
@@ -1080,6 +1081,14 @@ class ServerMessageHandlers:
                                 uuid_val,
                                 exc,
                             )
+                    elif table == "operators" and self._apply_existing_operator_profile_update(
+                        uuid_val,
+                        server_id,
+                        record,
+                        server_record,
+                        pushing_operator_id,
+                    ):
+                        accepted_uuids.append(uuid_val)
                     elif table == "assets" and self._apply_existing_asset_verification(
                         uuid_val,
                         server_id,
@@ -1118,6 +1127,64 @@ class ServerMessageHandlers:
             len(accepted_uuids),
             len(rejected_items),
         )
+
+    def _apply_existing_operator_profile_update(
+        self,
+        uuid_val: str,
+        server_id: int,
+        record: dict,
+        server_record: typing.Optional[dict],
+        pushing_operator_id: typing.Optional[int],
+    ) -> bool:
+        if pushing_operator_id is None or int(server_id) != int(pushing_operator_id):
+            return False
+        if not isinstance(server_record, dict):
+            return False
+
+        protected_fields = {
+            "callsign",
+            "rns_hash",
+            "enrolled_at",
+            "lease_expires_at",
+            "revoked",
+        }
+        for field in protected_fields:
+            if record.get(field) != server_record.get(field):
+                self._log.warning(
+                    "Client push rejected protected operator field table=operators uuid=%s field=%s",
+                    uuid_val,
+                    field,
+                )
+                return False
+
+        try:
+            skills = _operator_json_value(record.get("skills"), list, "skills")
+            profile = _operator_json_value(record.get("profile"), dict, "profile")
+            from talon_core.services.operators import update_operator_command
+
+            with self._handler._lock:
+                update_operator_command(
+                    self._handler._conn,
+                    int(server_id),
+                    skills=[str(skill) for skill in skills],
+                    profile=typing.cast(dict, profile),
+                )
+            self._log.info(
+                "Client push: operator profile updated uuid=%s id=%s",
+                uuid_val,
+                server_id,
+            )
+            self._handler.notify_change("operators", server_id)
+            self._ui_dispatcher.notify("operators")
+            return True
+        except Exception as exc:
+            self._log.warning(
+                "Client push: operator profile update failed uuid=%s id=%s: %s",
+                uuid_val,
+                server_id,
+                exc,
+            )
+            return False
 
     def _apply_existing_asset_verification(
         self,
@@ -1216,3 +1283,15 @@ class ServerMessageHandlers:
             if client_value != server_value:
                 return False
         return saw_verification_change
+
+
+def _operator_json_value(value: object, expected_type: type, field: str) -> object:
+    if isinstance(value, str):
+        loaded = json.loads(value or ("{}" if expected_type is dict else "[]"))
+    else:
+        loaded = value
+    if loaded is None:
+        loaded = {} if expected_type is dict else []
+    if not isinstance(loaded, expected_type):
+        raise ValueError(f"{field} must be {expected_type.__name__} JSON")
+    return loaded

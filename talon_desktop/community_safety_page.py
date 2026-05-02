@@ -184,7 +184,19 @@ class AssignmentPage(QtWidgets.QWidget):
     def refresh(self) -> None:
         try:
             board = self._core.read_model("assignments.board")
-            items = assignment_items_from_board(board)
+            all_items = assignment_items_from_board(board)
+            active_rows = board.get("active_assignments")
+            if active_rows is None:
+                active_status_items = [
+                    item
+                    for item in all_items
+                    if item.status not in {"completed", "aborted"}
+                ]
+            else:
+                active_status_items = assignment_items_from_board(
+                    {"assignments": active_rows}
+                )
+            items = all_items
             selected_filter = str(self.status_filter.currentData() or "")
             if selected_filter == "__active__":
                 items = [
@@ -193,7 +205,7 @@ class AssignmentPage(QtWidgets.QWidget):
             elif selected_filter:
                 items = [item for item in items if item.status == selected_filter]
             self._items = items
-            operator_items = operator_status_items_from_board(board, items)
+            operator_items = operator_status_items_from_board(board, active_status_items)
         except Exception as exc:
             _log.warning("Could not refresh assignments: %s", exc)
             self.summary.setText(f"Unable to load assignments: {exc}")
@@ -215,7 +227,14 @@ class AssignmentPage(QtWidgets.QWidget):
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
         _ = action, record_id
-        if table in {"assignments", "checkins", "operators", "missions"}:
+        if table in {
+            "assignments",
+            "checkins",
+            "operators",
+            "missions",
+            "sitreps",
+            "sitrep_followups",
+        }:
             self.refresh()
 
     def _populate_assignment_table(self) -> None:
@@ -988,6 +1007,7 @@ class AssignmentCreateDialog(QtWidgets.QDialog):
             title=self.location_field.text().strip() or "Assignment Location",
             initial_lat=initial_lat,
             initial_lon=initial_lon,
+            selection_icon_key="assignment",
             parent=self,
         )
         if selected is None:

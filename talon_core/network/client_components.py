@@ -946,18 +946,28 @@ class ClientOutbox:
     def apply_push_ack(self, accepted: list, rejected: list) -> None:
         manager = self._manager
         now = int(time.time())
+        affected_tables: set[str] = set()
 
         if accepted:
             with manager._lock:
                 for table in OFFLINE_TABLES:
                     try:
                         placeholders = ",".join("?" * len(accepted))
-                        manager._conn.execute(
-                            f"DELETE FROM {_validated_table(table)} "
-                            f"WHERE uuid IN ({placeholders}) "
-                            "AND sync_status = 'pending'",
-                            accepted,
-                        )
+                        if table == "operators":
+                            manager._conn.execute(
+                                f"UPDATE {_validated_table(table)} "
+                                "SET sync_status = 'synced' "
+                                f"WHERE uuid IN ({placeholders}) "
+                                "AND sync_status = 'pending'",
+                                accepted,
+                            )
+                        else:
+                            manager._conn.execute(
+                                f"DELETE FROM {_validated_table(table)} "
+                                f"WHERE uuid IN ({placeholders}) "
+                                "AND sync_status = 'pending'",
+                                accepted,
+                            )
                         manager._conn.commit()
                     except Exception as exc:
                         self._log.warning(
@@ -996,12 +1006,86 @@ class ClientOutbox:
                         exc,
                     )
             self._ui_dispatcher.notify("amendments")
+            table = self._resolve_rejected_pending(item)
+            if table:
+                affected_tables.add(table)
 
         if rejected:
             self._log.info(
                 "push_ack: %d record(s) rejected - stored in amendments",
                 len(rejected),
             )
+            for table in sorted(affected_tables):
+                self._ui_dispatcher.notify(table)
+
+    def _resolve_rejected_pending(self, item: dict) -> str:
+        manager = self._manager
+        uuid_val = item.get("uuid")
+        table = item.get("table", "")
+        if (
+            not uuid_val
+            or not isinstance(table, str)
+            or not is_offline_creatable(table)
+        ):
+            return ""
+
+        server_record = item.get("server_record")
+        if isinstance(server_record, dict) and server_record:
+            try:
+                record = prepare_server_record_for_client_store(
+                    table,
+                    server_record,
+                    manager._db_key,
+                    logger=self._log,
+                )
+                if record is None:
+                    raise ValueError("server record could not be prepared")
+                with manager._lock:
+                    SyncEngine._upsert_record(manager._conn, table, record)
+                    manager._conn.execute(
+                        f"UPDATE {_validated_table(table)} "
+                        "SET sync_status = 'synced' WHERE uuid = ?",
+                        (uuid_val,),
+                    )
+                    manager._conn.commit()
+                self._log.info(
+                    "push_ack: server copy restored for rejected pending row table=%s uuid=%s",
+                    table,
+                    uuid_val,
+                )
+                return table
+            except Exception as exc:
+                self._log.warning(
+                    "push_ack: could not restore server copy table=%s uuid=%s: %s",
+                    table,
+                    uuid_val,
+                    exc,
+                )
+
+        with manager._lock:
+            try:
+                cursor = manager._conn.execute(
+                    f"UPDATE {_validated_table(table)} "
+                    "SET sync_status = 'rejected' "
+                    "WHERE uuid = ? AND sync_status = 'pending'",
+                    (uuid_val,),
+                )
+                manager._conn.commit()
+                if cursor.rowcount:
+                    self._log.info(
+                        "push_ack: rejected pending row parked table=%s uuid=%s",
+                        table,
+                        uuid_val,
+                    )
+                    return table
+            except Exception as exc:
+                self._log.warning(
+                    "push_ack: mark rejected failed table=%s uuid=%s: %s",
+                    table,
+                    uuid_val,
+                    exc,
+                )
+        return ""
 
     def push_pending_to_server(self, table: str, record_id: int) -> None:
         threading.Thread(

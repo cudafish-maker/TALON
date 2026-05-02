@@ -140,6 +140,7 @@ class AssetDialog(QtWidgets.QDialog):
             title="Asset Location",
             initial_lat=initial_lat,
             initial_lon=initial_lon,
+            selection_icon_key=f"asset:{self.category_combo.currentData()}",
             parent=self,
         )
         if selected is None:
@@ -262,6 +263,13 @@ class AssetPage(QtWidgets.QWidget):
         else:
             self.detail.clear()
         self._selection_changed()
+
+    def select_asset(self, asset_id: int) -> None:
+        self.refresh()
+        for row, item in enumerate(self._items):
+            if item.id == int(asset_id):
+                self.table.selectRow(row)
+                break
 
     def handle_record_mutation(self, action: str, table: str, record_id: int) -> None:
         _ = action, record_id

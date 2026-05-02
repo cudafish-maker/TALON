@@ -587,6 +587,16 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_operator_location_pings_sync_status
         ON operator_location_pings(sync_status);
     """,
+    # 0023 — Client-pushable operator profile updates.
+    #
+    # Operator rows already sync server-to-client. Adding sync_status lets an
+    # enrolled client push its own profile/skills updates through the existing
+    # outbox path while the server continues to own enrollment, lease,
+    # revocation, callsign, and RNS hash fields.
+    """
+    ALTER TABLE operators ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'synced';
+    CREATE INDEX idx_operators_sync_status ON operators(sync_status);
+    """,
 ]
 
 

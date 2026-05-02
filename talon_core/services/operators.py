@@ -62,7 +62,7 @@ def update_operator_command(
     )
     return OperatorCommandResult(
         operator_id,
-        events=(record_changed("operators", operator_id, ui_targets=("clients",)),),
+        events=(record_changed("operators", operator_id, ui_targets=("operators",)),),
     )
 
 
@@ -76,7 +76,7 @@ def renew_operator_lease_command(
     new_expiry = renew_lease(conn, operator_id, duration_s)
     return OperatorCommandResult(
         operator_id,
-        events=(lease_renewed(operator_id, new_expiry, ui_targets=("clients",)),),
+        events=(lease_renewed(operator_id, new_expiry, ui_targets=("operators",)),),
         lease_expires_at=new_expiry,
     )
 
@@ -98,5 +98,5 @@ def revoke_operator_command(
     )
     return OperatorCommandResult(
         operator_id,
-        events=(operator_revoked(operator_id, ui_targets=("clients", "keys")),),
+        events=(operator_revoked(operator_id, ui_targets=("operators", "keys")),),
     )

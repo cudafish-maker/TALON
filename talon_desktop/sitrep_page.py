@@ -743,6 +743,7 @@ class SitrepCreateDialog(QtWidgets.QDialog):
             core=self._core,
             title="SITREP Location",
             mode="point",
+            selection_icon_key="sitrep",
             parent=self,
         )
         self.map_picker.setWindowFlags(QtCore.Qt.Widget)
@@ -877,6 +878,7 @@ class SitrepCreateDialog(QtWidgets.QDialog):
             mode="point",
             initial_points=initial,
             minimum_points=1,
+            selection_icon_key="sitrep",
         )
         self.map_picker.use_button.setText("Use Selected")
         self._sync_map_apply_state()

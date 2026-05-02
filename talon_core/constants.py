@@ -28,7 +28,7 @@ OPERATOR_LOCATION_PING_TTL_S: Final = 86400
 TRANSPORT_PRIORITY: Final = ("yggdrasil", "i2p", "tcp", "rnode")
 
 # Database schema version
-DB_SCHEMA_VERSION: Final = 22
+DB_SCHEMA_VERSION: Final = 23
 
 # ---------------------------------------------------------------------------
 # Reticulum network aspects

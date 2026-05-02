@@ -685,13 +685,12 @@ class TalonCoreSession:
             )
         if name == "chat.channels":
             self._require_unlocked()
-            from talon_core.chat import load_channels
-
-            return load_channels(self._conn)
+            return self._chat_channels()
         if name == "chat.messages":
             self._require_unlocked()
             from talon_core.chat import load_messages
 
+            self._ensure_chat_channel_access(int(filters["channel_id"]))
             return load_messages(
                 self._conn,
                 int(filters["channel_id"]),
@@ -1057,6 +1056,10 @@ class TalonCoreSession:
         if isinstance(table, str) and record_id is not None:
             records.add((table, int(record_id)))
 
+        checkin = getattr(result, "checkin", None)
+        checkin_id = getattr(result, "checkin_id", None)
+        has_checkin_record = checkin is not None or checkin_id is not None
+
         asset_id = getattr(result, "asset_id", None)
         if asset_id is not None:
             records.add(("assets", int(asset_id)))
@@ -1068,15 +1071,18 @@ class TalonCoreSession:
         elif mission_id is not None:
             records.add(("missions", int(mission_id)))
 
+        operator_id = getattr(result, "operator_id", None)
+        if operator_id is not None:
+            records.add(("operators", int(operator_id)))
+
         assignment = getattr(result, "assignment", None)
         assignment_id = getattr(result, "assignment_id", None)
-        if assignment is not None and getattr(assignment, "id", None) is not None:
-            records.add(("assignments", int(assignment.id)))
-        elif assignment_id is not None:
-            records.add(("assignments", int(assignment_id)))
+        if not has_checkin_record:
+            if assignment is not None and getattr(assignment, "id", None) is not None:
+                records.add(("assignments", int(assignment.id)))
+            elif assignment_id is not None:
+                records.add(("assignments", int(assignment_id)))
 
-        checkin = getattr(result, "checkin", None)
-        checkin_id = getattr(result, "checkin_id", None)
         if checkin is not None and getattr(checkin, "id", None) is not None:
             records.add(("checkins", int(checkin.id)))
         elif checkin_id is not None:
@@ -1151,6 +1157,13 @@ class TalonCoreSession:
         if name == "operators.update":
             from talon_core.services.operators import update_operator_command
 
+            if self.mode == "client":
+                requested_operator_id = int(payload.get("operator_id", 0) or 0)
+                local_operator_id = self.require_local_operator_id()
+                if requested_operator_id != int(local_operator_id):
+                    raise CoreSessionError(
+                        "Client operator updates can only edit the local operator."
+                    )
             return update_operator_command(self._conn, **payload)
         if name == "operators.renew_lease":
             self._require_server_mode("Operator lease renewal")
@@ -1227,6 +1240,12 @@ class TalonCoreSession:
             from talon_core.services.missions import approve_mission_command
 
             return approve_mission_command(self._conn, **payload)
+        if name == "missions.update":
+            self._require_server_mode("Mission edit")
+            from talon_core.services.missions import update_mission_command
+
+            payload.setdefault("created_by", self.require_local_operator_id())
+            return update_mission_command(self._conn, **payload)
         if name == "missions.reject":
             self._require_server_mode("Mission rejection")
             from talon_core.services.missions import reject_mission_command
@@ -1835,6 +1854,8 @@ class TalonCoreSession:
             list_assignments,
             list_checkins,
         )
+        from talon_core.missions import load_missions
+        from talon_core.sitrep import load_sitreps
 
         return {
             "generated_at": self._now(),
@@ -1845,6 +1866,13 @@ class TalonCoreSession:
                 limit=limit,
             ),
             "operators": list_operators(self._conn, include_sentinel=True),
+            "missions": load_missions(self._conn, status_filter=None, limit=limit),
+            "sitreps": load_sitreps(
+                self._conn,
+                self._require_db_key(),
+                unresolved_only=True,
+                limit=limit,
+            ),
             "recent_checkins": list_checkins(self._conn, limit=50),
             "sync": self._sync_status(),
         }
@@ -1885,6 +1913,69 @@ class TalonCoreSession:
             (int(mission_id),),
         ).fetchone()
         return str(row[0]) if row else ""
+
+    def _chat_channels(self) -> list[object]:
+        from talon_core.chat import load_channels
+
+        channels = load_channels(self._conn)
+        if self.mode != "client":
+            return channels
+        assigned_mission_ids = self._assigned_mission_ids_for_local_operator()
+        return [
+            channel for channel in channels
+            if getattr(channel, "mission_id", None) is None
+            or int(getattr(channel, "mission_id")) in assigned_mission_ids
+        ]
+
+    def _ensure_chat_channel_access(self, channel_id: int) -> None:
+        if self.mode != "client":
+            return
+        row = self._conn.execute(
+            "SELECT mission_id FROM channels WHERE id = ?",
+            (int(channel_id),),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Channel {channel_id} not found.")
+        mission_id = row[0]
+        if mission_id is None:
+            return
+        if int(mission_id) not in self._assigned_mission_ids_for_local_operator():
+            raise CoreSessionError("This operator is not assigned to that mission chat.")
+
+    def _assigned_mission_ids_for_local_operator(self) -> set[int]:
+        operator_id = self.require_local_operator_id()
+        row = self._conn.execute(
+            "SELECT callsign FROM operators WHERE id = ?",
+            (operator_id,),
+        ).fetchone()
+        callsign = str(row[0] if row else "").strip().casefold()
+        assigned: set[int] = set()
+        if callsign:
+            for row in self._conn.execute(
+                "SELECT id, lead_coordinator, organization FROM missions "
+                "WHERE status NOT IN ('completed', 'aborted', 'rejected')"
+            ).fetchall():
+                mission_id = int(row[0])
+                values = [str(row[1] or "")]
+                values.extend(str(row[2] or "").replace(";", ",").split(","))
+                if any(value.strip().casefold() == callsign for value in values):
+                    assigned.add(mission_id)
+
+        for row in self._conn.execute(
+            "SELECT mission_id, assigned_operator_ids FROM assignments "
+            "WHERE mission_id IS NOT NULL AND status NOT IN ('completed', 'aborted')"
+        ).fetchall():
+            try:
+                import json
+
+                operator_ids = {
+                    int(value) for value in json.loads(row[1] or "[]")
+                }
+            except (TypeError, ValueError):
+                operator_ids = set()
+            if operator_id in operator_ids:
+                assigned.add(int(row[0]))
+        return assigned
 
     def _asset_label(self, asset_id: typing.Optional[int]) -> str:
         if asset_id is None:
@@ -1961,6 +2052,7 @@ class TalonCoreSession:
 
         if sender_id is None:
             sender_id = self.require_local_operator_id()
+        self._ensure_chat_channel_access(int(channel_id))
         message = send_message(
             self._conn,
             int(channel_id),

@@ -362,6 +362,37 @@ def test_core_session_phase1_domain_boundary(tmp_path: pathlib.Path) -> None:
     assert approval["requested_ids"] == {asset_result.asset_id}
 
     session.command(
+        "missions.update",
+        mission_id=mission_result.mission.id,
+        title="Cache Sweep Updated",
+        description="Check and restock medical cache",
+        asset_ids=[asset_result.asset_id],
+        mission_type="Logistics",
+        priority="FLASH",
+        lead_coordinator="SERVER",
+        organization="",
+        activation_time="",
+        operation_window="",
+        max_duration="",
+        staging_area="40.100000, -75.100000",
+        demob_point="",
+        standdown_criteria="",
+        phases=[],
+        constraints=[],
+        support_medical="",
+        support_logistics="",
+        support_comms="",
+        support_equipment="",
+        custom_resources=[],
+        objectives=[],
+        key_locations={"command_post": "40.100000, -75.100000"},
+        replace_ao=True,
+        ao_polygon=[[40.0, -75.0], [40.0, -74.9], [40.1, -75.0]],
+        replace_route=True,
+        route=[(40.1, -75.1)],
+    )
+
+    session.command(
         "missions.approve",
         mission_id=mission_result.mission.id,
         asset_ids=[asset_result.asset_id],
@@ -370,9 +401,12 @@ def test_core_session_phase1_domain_boundary(tmp_path: pathlib.Path) -> None:
         "missions.detail",
         {"mission_id": mission_result.mission.id},
     )
-    assert detail["mission"].title == "Cache Sweep"
-    assert detail["channel_name"].startswith("#mission-cache-sweep")
+    assert detail["mission"].title == "Cache Sweep Updated"
+    assert detail["mission"].priority == "FLASH"
+    assert detail["channel_name"].startswith("#mission-cache-sweep-updated")
     assert [asset.id for asset in detail["assets"]] == [asset_result.asset_id]
+    assert len(detail["ao_zones"]) == 1
+    assert [point.label for point in detail["waypoints"]] == ["WP-1"]
     assert detail["sitreps"] == []
 
     map_context = session.read_model("map.context")
@@ -498,6 +532,7 @@ def test_core_session_community_safety_commands_and_read_models(
     assignments_by_id = {assignment.id: assignment for assignment in board["assignments"]}
     assert assignments_by_id[assignment_result.assignment_id].title == "North Shelter evening support"
     assert assignments_by_id[assignment_result.assignment_id].status == "needs_support"
+    assert {mission.id for mission in board["missions"]} == {mission_result.mission.id}
     assert board["recent_checkins"][0].id == checkin_result.checkin_id
 
     detail = session.read_model(
@@ -513,6 +548,61 @@ def test_core_session_community_safety_commands_and_read_models(
 
     tables = {mutation.table for event in received for mutation in event.iter_records()}
     assert {"assignments", "checkins"}.issubset(tables)
+
+    session.close()
+
+
+def test_client_assignment_checkin_marks_only_checkin_pending(
+    tmp_path: pathlib.Path,
+) -> None:
+    from talon_core.community_safety import create_assignment
+
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    session.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, lease_expires_at, revoked) "
+        "VALUES (8, 'ASTER', 'aster-hash', '[\"medic\"]', '{}', 0, 9999999999, 0)"
+    )
+    session.conn.commit()
+    session._operator_id = 8
+    assignment = create_assignment(
+        session.conn,
+        assignment_type="fixed_post",
+        title="North Gate watch",
+        status="active",
+        priority="ROUTINE",
+        assigned_operator_ids=[8],
+        team_lead="ASTER",
+        created_by=8,
+    )
+
+    checkin = session.command(
+        "assignments.checkin",
+        {
+            "assignment_id": assignment.id,
+            "state": "ok",
+            "note": "Checked in locally.",
+        },
+    )
+
+    assignment_row = session.conn.execute(
+        "SELECT sync_status FROM assignments WHERE id = ?",
+        (assignment.id,),
+    ).fetchone()
+    checkin_row = session.conn.execute(
+        "SELECT sync_status FROM checkins WHERE id = ?",
+        (checkin.checkin_id,),
+    ).fetchone()
+    assert assignment_row == ("synced",)
+    assert checkin_row == ("pending",)
+
+    sync = session.read_model("sync.status")
+    assert sync.pending_outbox_by_table["assignments"] == 0
+    assert sync.pending_outbox_by_table["checkins"] == 1
+    assert sync.pending_outbox_count == 1
 
     session.close()
 
@@ -575,6 +665,12 @@ def test_core_session_sitrep_followups_locations_and_documents(
         "sitreps.assign_followup",
         {"sitrep_id": sitrep_id, "assigned_to": "Team Bravo"},
     )
+    assignment_board = session.read_model("assignments.board")
+    board_sitreps = {
+        sitrep.id: sitrep
+        for sitrep, _author_callsign, _asset_label in assignment_board["sitreps"]
+    }
+    assert board_sitreps[sitrep_id].assigned_to == "Team Bravo"
     session.command(
         "sitreps.link_document",
         {
@@ -763,6 +859,107 @@ def test_core_session_client_chat_message_enters_outbox(
     session.close()
 
 
+def test_core_session_client_operator_update_enters_outbox(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, "
+        "lease_expires_at, revoked, version, uuid, sync_status) "
+        "VALUES (8, 'LOCAL', 'local-rns', '[]', '{}', 1000, 9999999999, 0, 1, "
+        "'11111111111111111111111111111111', 'synced')"
+    )
+    session.conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('my_operator_id', '8')"
+    )
+    session.conn.commit()
+    session._operator_id = 8
+    pushed: list[tuple[str, int]] = []
+
+    class _ClientSync:
+        def push_record_pending(self, table: str, record_id: int) -> None:
+            pushed.append((table, record_id))
+
+        def stop(self) -> None:
+            return None
+
+    session._client_sync = _ClientSync()
+
+    session.command(
+        "operators.update",
+        operator_id=8,
+        skills=["medic"],
+        profile={"role": "field"},
+    )
+
+    row = session.conn.execute(
+        "SELECT skills, profile, sync_status FROM operators WHERE id = 8"
+    ).fetchone()
+    assert row == ('["medic"]', '{"role": "field"}', "pending")
+    assert pushed == [("operators", 8)]
+
+    session.close()
+
+
+def test_core_session_client_filters_unassigned_mission_chat(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, "
+        "lease_expires_at, revoked, version, uuid, sync_status) "
+        "VALUES (8, 'LOCAL', 'local-rns', '[]', '{}', 1000, 9999999999, 0, 1, "
+        "'21111111111111111111111111111111', 'synced')"
+    )
+    session.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, "
+        "lease_expires_at, revoked, version, uuid, sync_status) "
+        "VALUES (9, 'OTHER', 'other-rns', '[]', '{}', 1000, 9999999999, 0, 1, "
+        "'31111111111111111111111111111111', 'synced')"
+    )
+    session.conn.execute(
+        "INSERT INTO missions "
+        "(id, title, status, created_by, created_at, uuid, lead_coordinator) "
+        "VALUES (20, 'Assigned Mission', 'active', 8, 1000, "
+        "'41111111111111111111111111111111', 'LOCAL')"
+    )
+    session.conn.execute(
+        "INSERT INTO missions "
+        "(id, title, status, created_by, created_at, uuid, lead_coordinator) "
+        "VALUES (21, 'Hidden Mission', 'active', 9, 1000, "
+        "'51111111111111111111111111111111', 'OTHER')"
+    )
+    session.conn.execute(
+        "INSERT INTO channels (id, name, mission_id, is_dm, version, group_type, uuid) "
+        "VALUES (30, '#mission-assigned-20', 20, 0, 1, 'mission', "
+        "'61111111111111111111111111111111')"
+    )
+    session.conn.execute(
+        "INSERT INTO channels (id, name, mission_id, is_dm, version, group_type, uuid) "
+        "VALUES (31, '#mission-hidden-21', 21, 0, 1, 'mission', "
+        "'71111111111111111111111111111111')"
+    )
+    session.conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('my_operator_id', '8')"
+    )
+    session.conn.commit()
+    session._operator_id = 8
+
+    channels = session.read_model("chat.channels")
+    assert [channel.id for channel in channels] == [30]
+    with pytest.raises(CoreSessionError):
+        session.read_model("chat.messages", {"channel_id": 31})
+
+    session.close()
+
+
 def test_core_session_network_client_notify_publishes_refresh_event(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -794,7 +991,7 @@ def test_core_session_network_operator_notify_refreshes_chat(
 
     assert len(received) == 1
     assert received[0].kind == "ui_refresh_requested"
-    assert received[0].ui_targets == frozenset({"operators", "clients", "chat"})
+    assert received[0].ui_targets == frozenset({"operators", "chat"})
 
     session.close()
 

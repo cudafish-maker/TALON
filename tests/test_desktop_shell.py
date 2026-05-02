@@ -34,6 +34,7 @@ from talon_desktop.community_safety import (
     assignment_item_from_assignment,
     build_assignment_payload,
     build_checkin_payload,
+    operator_status_items_from_board,
 )
 from talon_desktop.documents import (
     build_upload_payload as build_document_upload_payload,
@@ -1717,7 +1718,6 @@ def test_desktop_navigation_includes_documents_for_client_and_server() -> None:
         "documents",
         "operators",
         "enrollment",
-        "clients",
         "audit",
         "keys",
         "dashboard",
@@ -1769,8 +1769,9 @@ def test_desktop_navigation_keeps_admin_sections_server_only() -> None:
     client_keys = {item.key for item in navigation_items("client")}
     server_keys = {item.key for item in navigation_items("server")}
 
-    assert {"enrollment", "clients", "audit", "keys"}.isdisjoint(client_keys)
-    assert {"enrollment", "clients", "audit", "keys"}.issubset(server_keys)
+    assert {"enrollment", "audit", "keys"}.isdisjoint(client_keys)
+    assert {"enrollment", "audit", "keys"}.issubset(server_keys)
+    assert "clients" not in client_keys | server_keys
 
 
 def test_desktop_custom_icons_cover_navigation_and_asset_categories() -> None:
@@ -1810,11 +1811,15 @@ def test_desktop_event_mapping_refreshes_documents_section() -> None:
 
 
 def test_desktop_event_mapping_refreshes_sitrep_workflow_surfaces() -> None:
+    sitrep_update = desktop_update_from_event(record_changed("sitreps", 41))
     followup_update = desktop_update_from_event(record_changed("sitrep_followups", 42))
     document_update = desktop_update_from_event(record_changed("sitrep_documents", 43))
 
+    assert sitrep_update.refresh_sections == frozenset(
+        {"assignments", "dashboard", "map", "sitreps"}
+    )
     assert followup_update.refresh_sections == frozenset(
-        {"dashboard", "map", "sitreps"}
+        {"assignments", "dashboard", "map", "sitreps"}
     )
     assert document_update.refresh_sections == frozenset(
         {"dashboard", "documents", "map", "sitreps"}
@@ -1874,6 +1879,69 @@ def test_desktop_community_safety_helpers() -> None:
         "state": "ok",
         "note": "All clear",
     }
+
+
+def test_desktop_operator_status_includes_mission_and_sitrep_commitments() -> None:
+    operators = [
+        types.SimpleNamespace(
+            id=2,
+            callsign="ALPHA",
+            revoked=False,
+            skills=["medic"],
+            profile={},
+        ),
+        types.SimpleNamespace(
+            id=3,
+            callsign="BRAVO",
+            revoked=False,
+            skills=["comms"],
+            profile={},
+        ),
+        types.SimpleNamespace(
+            id=4,
+            callsign="CHARLIE",
+            revoked=False,
+            skills=[],
+            profile={"role": "Logistics"},
+        ),
+    ]
+    board = {
+        "operators": operators,
+        "missions": [
+            types.SimpleNamespace(
+                id=20,
+                title="Storm Patrol",
+                status="active",
+                lead_coordinator="ALPHA",
+                organization="",
+            )
+        ],
+        "sitreps": [
+            (
+                types.SimpleNamespace(
+                    id=30,
+                    status="assigned",
+                    assigned_to="BRAVO",
+                    body=b"Fence down near north gate",
+                ),
+                "DISPATCH",
+                None,
+            )
+        ],
+    }
+
+    statuses = {
+        item.callsign: item
+        for item in operator_status_items_from_board(board, assignments=[])
+    }
+
+    assert statuses["ALPHA"].status_label == "Assigned"
+    assert statuses["ALPHA"].assignment_title == "Mission: Storm Patrol"
+    assert statuses["BRAVO"].status_label == "Assigned"
+    assert statuses["BRAVO"].assignment_title == "SITREP #30: Fence down near north gate"
+    assert statuses["CHARLIE"].status_label == "Available"
+    assert statuses["CHARLIE"].assignment_title == "Logistics"
+
 
 def test_desktop_event_mapping_refreshes_asset_surfaces() -> None:
     update = desktop_update_from_event(record_changed("assets", 42))
@@ -2345,7 +2413,9 @@ def test_desktop_event_mapping_expands_linked_records() -> None:
 
     update = desktop_update_from_event(event)
 
-    assert update.refresh_sections == frozenset({"assets", "dashboard", "map", "missions"})
+    assert update.refresh_sections == frozenset(
+        {"assets", "assignments", "dashboard", "map", "missions"}
+    )
 
 
 def test_desktop_event_mapping_requests_lock_on_revocation() -> None:

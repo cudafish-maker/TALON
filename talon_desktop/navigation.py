@@ -37,13 +37,6 @@ _SERVER_NAV: tuple[DesktopNavItem, ...] = (
         server_only=True,
     ),
     DesktopNavItem(
-        "clients",
-        "Clients",
-        "operators.list",
-        frozenset({"clients"}),
-        server_only=True,
-    ),
-    DesktopNavItem(
         "audit",
         "Audit",
         "audit.list",

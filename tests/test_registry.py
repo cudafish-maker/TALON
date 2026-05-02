@@ -42,6 +42,7 @@ def test_registry_exposes_current_sync_sets():
         "operator_location_pings",
     )
     assert registry.CLIENT_PUSH_TABLES == {
+        "operators",
         "assets",
         "sitreps",
         "missions",
@@ -54,6 +55,7 @@ def test_registry_exposes_current_sync_sets():
         "sitrep_documents",
     }
     assert registry.OFFLINE_TABLES == (
+        "operators",
         "missions",
         "assignments",
         "assets",
@@ -105,15 +107,29 @@ def test_registry_captures_table_metadata():
     assert sitrep_followups.ownership_fields == ("author_id",)
     assert sitrep_documents.ownership_fields == ("created_by",)
     assert assets.client_push_forced_fields == {"verified": 0, "confirmed_by": None}
-    assert registry.ui_refresh_targets("sitreps") == {"sitrep", "map", "main"}
-    assert registry.ui_refresh_targets("missions") == {"mission", "main"}
+    assert registry.ui_refresh_targets("sitreps") == {
+        "sitrep",
+        "assignments",
+        "map",
+        "main",
+    }
+    assert registry.ui_refresh_targets("missions") == {
+        "mission",
+        "assignments",
+        "main",
+    }
     assert registry.ui_refresh_targets("assignments") == {
         "assignments",
         "mission",
         "map",
         "main",
     }
-    assert registry.ui_refresh_targets("sitrep_followups") == {"sitrep", "map", "main"}
+    assert registry.ui_refresh_targets("sitrep_followups") == {
+        "sitrep",
+        "assignments",
+        "map",
+        "main",
+    }
     assert registry.ui_refresh_targets("operator_location_pings") == {"map", "main"}
     assert registry.ui_refresh_targets("sitrep_documents") == {
         "sitrep",

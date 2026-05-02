@@ -223,10 +223,22 @@ class MissionCreateDialog(QtWidgets.QDialog):
         self,
         core: TalonCoreSession,
         *,
+        mission_detail: dict[str, object] | None = None,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._core = core
+        self._mission_detail = mission_detail or {}
+        self._mission = self._mission_detail.get("mission")
+        self._mission_id = (
+            int(getattr(self._mission, "id"))
+            if self._mission is not None and getattr(self._mission, "id", None) is not None
+            else None
+        )
+        self._initial_asset_ids = {
+            int(getattr(asset, "id"))
+            for asset in self._mission_detail.get("assets", []) or []
+        }
         self._updating_map_field = False
         self._map_target: (
             tuple[
@@ -238,7 +250,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         ) = None
         self._key_location_fields: dict[str, QtWidgets.QLineEdit] = {}
         self._constraint_checks: dict[str, QtWidgets.QCheckBox] = {}
-        self.setWindowTitle("Mission")
+        self.setWindowTitle("Edit Mission" if self._mission_id is not None else "Mission")
         self.setMinimumSize(1160, 760)
 
         self.title_field = QtWidgets.QLineEdit()
@@ -354,11 +366,17 @@ class MissionCreateDialog(QtWidgets.QDialog):
             3,
         )
 
-        self.save_button = QtWidgets.QPushButton("Create")
+        self._populate_initial_values()
+
+        self.save_button = QtWidgets.QPushButton(
+            "Save Changes" if self._mission_id is not None else "Create"
+        )
         self.cancel_button = QtWidgets.QPushButton("Cancel")
         self.save_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
-        heading = QtWidgets.QLabel("Create Mission")
+        heading = QtWidgets.QLabel(
+            "Edit Mission" if self._mission_id is not None else "Create Mission"
+        )
         heading.setObjectName("pageHeading")
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.addWidget(heading)
@@ -379,7 +397,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
         QtCore.QTimer.singleShot(0, self._refresh_embedded_map_drafts)
 
     def payload(self) -> dict[str, object]:
-        return build_create_payload(
+        payload = build_create_payload(
             title=self.title_field.text(),
             description=self.description_field.toPlainText(),
             asset_ids=self.selected_asset_ids(),
@@ -411,6 +429,11 @@ class MissionCreateDialog(QtWidgets.QDialog):
                 for key, field in self._key_location_fields.items()
             },
         )
+        if self._mission_id is not None:
+            payload["mission_id"] = self._mission_id
+            payload["replace_ao"] = True
+            payload["replace_route"] = True
+        return payload
 
     def selected_asset_ids(self) -> list[int]:
         selected = []
@@ -430,17 +453,31 @@ class MissionCreateDialog(QtWidgets.QDialog):
 
     def _load_assets(self) -> None:
         try:
-            assets = self._core.read_model("assets.list", {"available_only": True})
+            assets = self._core.read_model(
+                "assets.list",
+                {"available_only": self._mission_id is None},
+            )
         except Exception as exc:
             _log.warning("Could not load assets for mission dialog: %s", exc)
             assets = []
         for asset in assets:
+            asset_id = int(getattr(asset, "id"))
+            mission_id = getattr(asset, "mission_id", None)
+            if (
+                self._mission_id is not None
+                and mission_id is not None
+                and int(mission_id) != self._mission_id
+                and asset_id not in self._initial_asset_ids
+            ):
+                continue
             item = QtWidgets.QListWidgetItem(
                 f"#{getattr(asset, 'id')} {getattr(asset, 'label')}"
             )
-            item.setData(QtCore.Qt.UserRole, int(getattr(asset, "id")))
+            item.setData(QtCore.Qt.UserRole, asset_id)
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Unchecked)
+            item.setCheckState(
+                QtCore.Qt.Checked if asset_id in self._initial_asset_ids else QtCore.Qt.Unchecked
+            )
             self.assets_list.addItem(item)
 
     def _load_team_operators(self) -> None:
@@ -473,6 +510,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
             assignments=assignments,
             sitreps=sitreps,
             missions=missions,
+            current_mission_id=self._mission_id,
         )
         for item in self._team_operators:
             self.lead_combo.addItem(item.callsign, item.id)
@@ -485,8 +523,12 @@ class MissionCreateDialog(QtWidgets.QDialog):
         form.addRow("Description", self.description_field)
         form.addRow("Type", self.type_combo)
         form.addRow("Priority", self.priority_combo)
-        form.addRow("Team Lead", self.lead_combo)
-        form.addRow("Team Members", self._team_member_widget())
+        lead_label = "Request Team Lead" if self._core.mode == "client" else "Team Lead"
+        members_label = (
+            "Request Team Members" if self._core.mode == "client" else "Team Members"
+        )
+        form.addRow(lead_label, self.lead_combo)
+        form.addRow(members_label, self._team_member_widget())
         return page
 
     def _team_member_widget(self) -> QtWidgets.QWidget:
@@ -515,7 +557,7 @@ class MissionCreateDialog(QtWidgets.QDialog):
                     self.team_member_list.takeItem(row)
         selected_ids = self._selected_team_member_ids()
         self.team_member_combo.clear()
-        self.team_member_combo.addItem("Add unassigned operator", None)
+        self.team_member_combo.addItem("Select unassigned operator", None)
         for item in self._team_operators:
             if item.id in selected_ids or item.id == lead_id:
                 continue
@@ -564,6 +606,160 @@ class MissionCreateDialog(QtWidgets.QDialog):
             if callsign:
                 callsigns.append(callsign)
         return callsigns
+
+    def _populate_initial_values(self) -> None:
+        mission = self._mission
+        if mission is None:
+            return
+
+        self.title_field.setText(str(getattr(mission, "title", "") or ""))
+        self.description_field.setPlainText(str(getattr(mission, "description", "") or ""))
+        self._set_combo_value(self.type_combo, str(getattr(mission, "mission_type", "") or ""))
+        self._set_combo_value(self.priority_combo, str(getattr(mission, "priority", "") or "ROUTINE"))
+
+        lead = str(getattr(mission, "lead_coordinator", "") or "").strip()
+        if lead:
+            lead_index = self.lead_combo.findText(lead)
+            if lead_index < 0:
+                self.lead_combo.addItem(lead, None)
+                lead_index = self.lead_combo.findText(lead)
+            self.lead_combo.setCurrentIndex(lead_index)
+
+        members = str(getattr(mission, "organization", "") or "")
+        for callsign in [piece.strip() for piece in members.replace(";", ",").split(",")]:
+            if not callsign:
+                continue
+            operator = next(
+                (
+                    item for item in self._team_operators
+                    if item.callsign.casefold() == callsign.casefold()
+                ),
+                None,
+            )
+            row = QtWidgets.QListWidgetItem(callsign)
+            row.setData(QtCore.Qt.UserRole, operator.id if operator is not None else None)
+            row.setData(QtCore.Qt.UserRole + 1, callsign)
+            self.team_member_list.addItem(row)
+        self._refresh_member_combo()
+
+        self._set_datetime(self.activation_enabled, self.activation_time, getattr(mission, "activation_time", ""))
+        self._set_operation_window(str(getattr(mission, "operation_window", "") or ""))
+        self.max_duration_field.setText(str(getattr(mission, "max_duration", "") or ""))
+        self.staging_area_field.setText(str(getattr(mission, "staging_area", "") or ""))
+        self.demob_point_field.setText(str(getattr(mission, "demob_point", "") or ""))
+        self.standdown_field.setPlainText(str(getattr(mission, "standdown_criteria", "") or ""))
+
+        self._set_table_rows(
+            self.phase_table,
+            getattr(mission, "phases", []) or [],
+            ("name", "objective", "duration"),
+        )
+        self._set_table_rows(
+            self.objective_table,
+            getattr(mission, "objectives", []) or [],
+            ("label", "criteria"),
+        )
+        self._set_table_rows(
+            self.custom_resource_table,
+            getattr(mission, "custom_resources", []) or [],
+            ("label", "details"),
+        )
+
+        known_constraints = set(self._constraint_checks)
+        custom_constraints: list[str] = []
+        for constraint in getattr(mission, "constraints", []) or []:
+            text = str(constraint).strip()
+            if not text:
+                continue
+            if text in self._constraint_checks:
+                self._constraint_checks[text].setChecked(True)
+            elif text not in known_constraints:
+                custom_constraints.append(text)
+        self.custom_constraints.setPlainText("\n".join(custom_constraints))
+
+        self.support_medical.setPlainText(str(getattr(mission, "support_medical", "") or ""))
+        self.support_logistics.setPlainText(str(getattr(mission, "support_logistics", "") or ""))
+        self.support_comms.setPlainText(str(getattr(mission, "support_comms", "") or ""))
+        self.support_equipment.setPlainText(str(getattr(mission, "support_equipment", "") or ""))
+
+        ao_zones = self._mission_detail.get("ao_zones", []) or []
+        if ao_zones:
+            polygon = getattr(ao_zones[0], "polygon", []) or []
+            self.ao_field.setPlainText(format_coordinate_lines(tuple(map(tuple, polygon))))
+        waypoints = sorted(
+            self._mission_detail.get("waypoints", []) or [],
+            key=lambda point: int(getattr(point, "sequence", 0) or 0),
+        )
+        if waypoints:
+            self.route_field.setPlainText(
+                format_coordinate_lines(
+                    (
+                        (float(getattr(point, "lat")), float(getattr(point, "lon")))
+                        for point in waypoints
+                    )
+                )
+            )
+        key_locations = getattr(mission, "key_locations", {}) or {}
+        if isinstance(key_locations, dict):
+            for key, field in self._key_location_fields.items():
+                field.setText(str(key_locations.get(key, "") or ""))
+
+    @staticmethod
+    def _set_combo_value(combo: QtWidgets.QComboBox, value: str) -> None:
+        if not value:
+            return
+        index = combo.findData(value)
+        if index < 0:
+            index = combo.findText(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+    @staticmethod
+    def _set_datetime(
+        checkbox: QtWidgets.QCheckBox,
+        editor: QtWidgets.QDateTimeEdit,
+        value: object,
+    ) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+        parsed = QtCore.QDateTime.fromString(text, "yyyy-MM-dd HH:mm")
+        if not parsed.isValid():
+            return
+        checkbox.setChecked(True)
+        editor.setDateTime(parsed)
+
+    def _set_operation_window(self, value: str) -> None:
+        text = value.strip()
+        if not text or " - " not in text:
+            return
+        start_text, end_text = text.split(" - ", 1)
+        start = QtCore.QDateTime.fromString(start_text, "yyyy-MM-dd HH:mm")
+        end = QtCore.QDateTime.fromString(end_text, "yyyy-MM-dd HH:mm")
+        if not start.isValid() or not end.isValid():
+            return
+        self.operation_window_enabled.setChecked(True)
+        self.operation_start_time.setDateTime(start)
+        self.operation_end_time.setDateTime(end)
+
+    @staticmethod
+    def _set_table_rows(
+        table: QtWidgets.QTableWidget,
+        rows: typing.Iterable[object],
+        keys: tuple[str, ...],
+    ) -> None:
+        table.setRowCount(0)
+        for row_data in rows:
+            if isinstance(row_data, dict):
+                values = [str(row_data.get(key, "") or "") for key in keys]
+            else:
+                values = [str(row_data), *("" for _key in keys[1:])]
+            if not any(value.strip() for value in values):
+                continue
+            row = table.rowCount()
+            table.insertRow(row)
+            for column, value in enumerate(values):
+                table.setItem(row, column, QtWidgets.QTableWidgetItem(value))
 
     def _timing_tab(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
@@ -1193,6 +1389,13 @@ class MissionPage(QtWidgets.QWidget):
         self.refresh_button.clicked.connect(self.refresh)
         self.new_button = QtWidgets.QPushButton("New")
         self.new_button.clicked.connect(self._create_mission)
+        if self._core.mode == "client":
+            self.new_button.setText("Request New Mission")
+        else:
+            self.new_button.setText("New Mission")
+        self.edit_button = QtWidgets.QPushButton("Edit Mission")
+        self.edit_button.clicked.connect(self._edit_mission)
+        self.edit_button.setVisible(self._core.mode == "server")
 
         self.approve_button = QtWidgets.QPushButton("Approve")
         self.reject_button = QtWidgets.QPushButton("Reject")
@@ -1218,6 +1421,7 @@ class MissionPage(QtWidgets.QWidget):
         top_row.addWidget(self.status_filter)
         top_row.addWidget(self.refresh_button)
         top_row.addWidget(self.new_button)
+        top_row.addWidget(self.edit_button)
         for button in self._server_buttons.values():
             top_row.addWidget(button)
             button.setVisible(self._core.mode == "server")
@@ -1306,11 +1510,13 @@ class MissionPage(QtWidgets.QWidget):
 
     def _selection_changed(self) -> None:
         item = self._selected_item()
+        self.edit_button.setEnabled(False)
         for button in self._server_buttons.values():
             button.setEnabled(False)
         if item is None:
             return
         if self._core.mode == "server":
+            self.edit_button.setEnabled(True)
             actions = set(server_actions_for_status(item.status))
             for action, button in self._server_buttons.items():
                 button.setEnabled(action in actions)
@@ -1325,6 +1531,27 @@ class MissionPage(QtWidgets.QWidget):
             self.refresh()
         except Exception as exc:
             _log.warning("Mission create failed: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Mission", str(exc))
+
+    def _edit_mission(self) -> None:
+        item = self._selected_item()
+        if item is None or self._core.mode != "server":
+            return
+        try:
+            detail = self._core.read_model("missions.detail", {"mission_id": item.id})
+        except Exception as exc:
+            _log.warning("Mission detail load failed: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Mission", str(exc))
+            return
+        dialog = MissionCreateDialog(self._core, mission_detail=detail, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        try:
+            self._core.command("missions.update", dialog.payload())
+            self.refresh()
+            self.select_mission(item.id)
+        except Exception as exc:
+            _log.warning("Mission update failed: %s", exc)
             QtWidgets.QMessageBox.warning(self, "Mission", str(exc))
 
     def _run_server_action(self, action: str) -> None:

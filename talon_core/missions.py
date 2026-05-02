@@ -257,6 +257,135 @@ def approve_mission(
     return channel_name  # set inside the try block before any raises
 
 
+def update_mission(
+    conn: Connection,
+    mission_id: int,
+    *,
+    title: str,
+    description: str = "",
+    asset_ids: typing.Optional[list[int]] = None,
+    mission_type: str = "",
+    priority: str = "ROUTINE",
+    lead_coordinator: str = "",
+    organization: str = "",
+    activation_time: str = "",
+    operation_window: str = "",
+    max_duration: str = "",
+    staging_area: str = "",
+    demob_point: str = "",
+    standdown_criteria: str = "",
+    phases: typing.Optional[list] = None,
+    constraints: typing.Optional[list] = None,
+    support_medical: str = "",
+    support_logistics: str = "",
+    support_comms: str = "",
+    support_equipment: str = "",
+    custom_resources: typing.Optional[list] = None,
+    objectives: typing.Optional[list] = None,
+    key_locations: typing.Optional[dict] = None,
+) -> Mission:
+    """Update server-controlled mission parameters without changing lifecycle state."""
+    if not title.strip():
+        raise ValueError("Mission title is required.")
+    selected_asset_ids = list(asset_ids) if asset_ids is not None else None
+    phases_json = json.dumps(phases or [])
+    constraints_json = json.dumps(constraints or [])
+    custom_resources_json = json.dumps(custom_resources or [])
+    objectives_json = json.dumps(objectives or [])
+    key_locations_json = json.dumps(key_locations or {})
+
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT id FROM missions WHERE id = ?",
+            (mission_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Mission {mission_id} not found.")
+
+        if selected_asset_ids is not None:
+            current_ids = {
+                r[0] for r in conn.execute(
+                    "SELECT id FROM assets WHERE mission_id = ?",
+                    (mission_id,),
+                ).fetchall()
+            }
+            requested_ids = set(selected_asset_ids)
+            if requested_ids:
+                placeholders = ",".join("?" * len(requested_ids))
+                taken = conn.execute(
+                    f"SELECT id, label FROM assets "
+                    f"WHERE id IN ({placeholders}) "
+                    f"AND mission_id IS NOT NULL AND mission_id != ?",
+                    [*requested_ids, mission_id],
+                ).fetchall()
+                if taken:
+                    labels = ", ".join(r[1] for r in taken)
+                    raise ValueError(
+                        f"Assets already allocated to another mission: {labels}"
+                    )
+            release_ids = sorted(current_ids - requested_ids)
+            assign_ids = sorted(requested_ids - current_ids)
+            if release_ids:
+                conn.executemany(
+                    "UPDATE assets SET mission_id = NULL, version = version + 1 WHERE id = ?",
+                    [(aid,) for aid in release_ids],
+                )
+            if assign_ids:
+                conn.executemany(
+                    "UPDATE assets SET mission_id = ?, version = version + 1 WHERE id = ?",
+                    [(mission_id, aid) for aid in assign_ids],
+                )
+
+        conn.execute(
+            "UPDATE missions SET "
+            "title = ?, description = ?, mission_type = ?, priority = ?, "
+            "lead_coordinator = ?, organization = ?, activation_time = ?, "
+            "operation_window = ?, max_duration = ?, staging_area = ?, "
+            "demob_point = ?, standdown_criteria = ?, phases = ?, constraints = ?, "
+            "support_medical = ?, support_logistics = ?, support_comms = ?, "
+            "support_equipment = ?, custom_resources = ?, objectives = ?, "
+            "key_locations = ?, version = version + 1 "
+            "WHERE id = ?",
+            (
+                title.strip(),
+                description.strip(),
+                mission_type,
+                priority,
+                lead_coordinator,
+                organization,
+                activation_time,
+                operation_window,
+                max_duration,
+                staging_area,
+                demob_point,
+                standdown_criteria,
+                phases_json,
+                constraints_json,
+                support_medical,
+                support_logistics,
+                support_comms,
+                support_equipment,
+                custom_resources_json,
+                objectives_json,
+                key_locations_json,
+                mission_id,
+            ),
+        )
+        conn.commit()
+    except ValueError:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise ValueError(f"Could not update mission: {exc}") from exc
+
+    mission = get_mission(conn, mission_id)
+    if mission is None:
+        raise ValueError(f"Mission {mission_id} not found.")
+    return mission
+
+
 def reject_mission(conn: Connection, mission_id: int) -> None:
     """Reject a pending mission.  Server operator only.  Releases asset allocations."""
     _transition(conn, mission_id, "rejected",

@@ -49,7 +49,14 @@ def test_core_event_bridge_expands_linked_record_notifications() -> None:
         ("changed", "missions", 12),
         ("changed", "sitreps", 13),
     ]
-    assert set(refreshes) == {"chat", "dashboard", "map", "missions", "sitreps"}
+    assert set(refreshes) == {
+        "assignments",
+        "chat",
+        "dashboard",
+        "map",
+        "missions",
+        "sitreps",
+    }
     assert locks == []
 
 
@@ -65,14 +72,14 @@ def test_core_event_bridge_routes_operator_events_to_server_sections() -> None:
     bridge.refreshRequested.connect(refreshes.append)
     bridge.lockRequested.connect(locks.append)
 
-    bridge.handle_core_event(lease_renewed(7, 9999, ui_targets=("clients",)))
-    bridge.handle_core_event(operator_revoked(8, ui_targets=("clients", "keys")))
+    bridge.handle_core_event(lease_renewed(7, 9999, ui_targets=("operators",)))
+    bridge.handle_core_event(operator_revoked(8, ui_targets=("operators", "keys")))
 
     assert mutations == [
         ("changed", "operators", 7),
         ("changed", "operators", 8),
     ]
-    assert set(refreshes) == {"clients", "dashboard", "keys", "operators"}
+    assert set(refreshes) == {"dashboard", "keys", "operators"}
     assert locks == ["revoked"]
 
 
@@ -97,4 +104,4 @@ def test_core_event_bridge_refreshes_current_record_surfaces_once() -> None:
         ("changed", "missions", 20),
         ("changed", "waypoints", 21),
     ]
-    assert set(refreshes) == {"dashboard", "map", "missions"}
+    assert set(refreshes) == {"assignments", "dashboard", "map", "missions"}

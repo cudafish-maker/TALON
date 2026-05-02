@@ -18,7 +18,7 @@ from talon.network.sync import SyncEngine, _validated_table
 from talon.server import net_components, net_handler
 from talon.services.assets import request_asset_deletion_command, verify_asset_command
 from talon.services.operators import revoke_operator_command
-from talon_core.community_safety import create_assignment
+from talon_core.community_safety import create_assignment, list_assignments
 from talon.constants import (
     HEARTBEAT_BROADBAND_S,
     HEARTBEAT_LORA_S,
@@ -994,6 +994,122 @@ class TestClientServerPushIntegration:
         finally:
             close_db(client_conn)
 
+    def test_rejected_existing_pending_assignment_restores_server_copy(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_rejected_existing.db", test_key)
+        try:
+            _insert_operator(client_conn, 20, "ASTER", "a" * 64)
+            assignment = create_assignment(
+                client_conn,
+                assignment_type="fixed_post",
+                title="North Gate",
+                status="needs_support",
+                priority="ROUTINE",
+                assigned_operator_ids=[20],
+                team_lead="ASTER",
+                created_by=20,
+                sync_status="pending",
+            )
+            client_conn.execute(
+                "UPDATE assignments SET version = 2 WHERE id = ?",
+                (assignment.id,),
+            )
+            pending_uuid = client_conn.execute(
+                "SELECT uuid FROM assignments WHERE id = ?",
+                (assignment.id,),
+            ).fetchone()[0]
+            client_conn.commit()
+            notifications = []
+            manager = _make_client_manager(client_conn, test_key, operator_id=20)
+            manager._ui_dispatcher._notify_ui = (
+                lambda table, *, badge=True: notifications.append((table, badge))
+            )
+            cursor = client_conn.execute(
+                "SELECT * FROM assignments WHERE id = ?",
+                (assignment.id,),
+            )
+            cols = [desc[0] for desc in cursor.description]
+            server_record = dict(zip(cols, cursor.fetchone()))
+            server_record.update(
+                {
+                    "status": "active",
+                    "version": 1,
+                    "sync_status": "synced",
+                }
+            )
+
+            manager._apply_push_ack(
+                [],
+                [
+                    {
+                        "uuid": pending_uuid,
+                        "table": "assignments",
+                        "client_record": {"uuid": pending_uuid},
+                        "server_record": server_record,
+                    }
+                ],
+            )
+
+            row = client_conn.execute(
+                "SELECT status, version, sync_status FROM assignments WHERE id = ?",
+                (assignment.id,),
+            ).fetchone()
+            assert row == ("active", 1, "synced")
+            assert client_conn.execute(
+                "SELECT count(*) FROM amendments WHERE record_uuid = ?",
+                (pending_uuid,),
+            ).fetchone() == (1,)
+            assert ("amendments", True) in notifications
+            assert ("assignments", True) in notifications
+            assert manager._collect_outbox() == {}
+        finally:
+            close_db(client_conn)
+
+    def test_rejected_new_assignment_is_removed_from_board_outbox(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_rejected_new.db", test_key)
+        try:
+            _insert_operator(client_conn, 20, "ASTER", "a" * 64)
+            assignment = create_assignment(
+                client_conn,
+                assignment_type="fixed_post",
+                title="Old local assignment",
+                status="active",
+                priority="ROUTINE",
+                assigned_operator_ids=[20],
+                team_lead="ASTER",
+                created_by=20,
+                sync_status="pending",
+            )
+            pending_uuid = client_conn.execute(
+                "SELECT uuid FROM assignments WHERE id = ?",
+                (assignment.id,),
+            ).fetchone()[0]
+            manager = _make_client_manager(client_conn, test_key, operator_id=20)
+
+            manager._apply_push_ack(
+                [],
+                [
+                    {
+                        "uuid": pending_uuid,
+                        "table": "assignments",
+                        "client_record": {"uuid": pending_uuid},
+                        "server_record": None,
+                    }
+                ],
+            )
+
+            assert client_conn.execute(
+                "SELECT sync_status FROM assignments WHERE id = ?",
+                (assignment.id,),
+            ).fetchone() == ("rejected",)
+            assert list_assignments(client_conn) == []
+            assert manager._collect_outbox() == {}
+        finally:
+            close_db(client_conn)
+
     def test_client_accepts_only_pending_document_resources(
         self, tmp_path, test_key
     ):
@@ -1312,6 +1428,62 @@ class TestClientServerPushIntegration:
             assert ack["accepted"] == [asset_uuid]
             assert server_row == (1, 30, 2)
             assert client_row == (1, 30, 2, "synced")
+        finally:
+            close_db(client_conn)
+            close_db(server_conn)
+
+    def test_client_operator_profile_update_round_trips_to_server(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(tmp_path, "server_operator_profile.db", test_key)
+        client_conn = _open_test_db(tmp_path, "client_operator_profile.db", test_key)
+        try:
+            operator_hash = "8" * 64
+            operator_uuid = uuid.uuid4().hex
+            _insert_operator(server_conn, 40, "PROFILE", operator_hash)
+            _insert_operator(client_conn, 40, "PROFILE", operator_hash)
+            server_conn.execute(
+                "UPDATE operators SET uuid = ? WHERE id = 40",
+                (operator_uuid,),
+            )
+            client_conn.execute(
+                "UPDATE operators SET uuid = ?, skills = ?, profile = ?, "
+                "version = version + 1, sync_status = 'pending' WHERE id = 40",
+                (operator_uuid, '["medic"]', '{"role": "field"}'),
+            )
+            server_conn.commit()
+            client_conn.commit()
+
+            sent = []
+            fake_link = _FakeLink(operator_hash)
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler.notify_change = lambda _table, _record_id: None
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=40)
+            outbox = manager._collect_outbox()
+            assert list(outbox) == ["operators"]
+            handler._handle_client_push(fake_link, {"records": outbox})
+
+            ack = sent[-1]
+            manager._handle_incoming(ack, threading.Event())
+            server_row = server_conn.execute(
+                "SELECT skills, profile, version FROM operators WHERE id = 40"
+            ).fetchone()
+            client_status = client_conn.execute(
+                "SELECT sync_status FROM operators WHERE id = 40"
+            ).fetchone()[0]
+            assert ack["accepted"] == [operator_uuid]
+            assert server_row == ('["medic"]', '{"role": "field"}', 2)
+            assert client_status == "synced"
         finally:
             close_db(client_conn)
             close_db(server_conn)
