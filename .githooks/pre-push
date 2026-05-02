@@ -26,7 +26,8 @@ do
                     status = substr($1, 1, 1)
                     for (i = 2; i <= NF; i++) {
                         path = tolower($i)
-                        if (path ~ /\.(md|html)$/ && status != "D") {
+                        allowed = (path == "readme-install.md")
+                        if (path ~ /\.(md|html)$/ && status != "D" && !allowed) {
                             print $i
                         }
                     }
