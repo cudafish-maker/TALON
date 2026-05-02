@@ -1488,6 +1488,136 @@ class TestClientServerPushIntegration:
             close_db(client_conn)
             close_db(server_conn)
 
+    def test_client_operator_profile_update_during_initial_sync_flushes_after_sync_done(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(
+            tmp_path,
+            "client_operator_profile_startup_outbox.db",
+            test_key,
+        )
+        try:
+            operator_hash = "8" * 64
+            operator_uuid = uuid.uuid4().hex
+            _insert_operator(client_conn, 40, "PROFILE", operator_hash)
+            client_conn.execute(
+                "UPDATE operators SET uuid = ?, skills = ?, profile = ?, "
+                "version = version + 1, sync_status = 'pending' WHERE id = 40",
+                (operator_uuid, '["medic"]', '{"role": "field"}'),
+            )
+            client_conn.commit()
+
+            sent = []
+            fake_link = object()
+            manager = _make_client_manager(client_conn, test_key, operator_id=40)
+            manager._link = fake_link
+            manager._initial_sync_done = False
+            manager._link_lifecycle._smart_send = (
+                lambda link, data: sent.append((link, proto.decode(data)))
+            )
+
+            sync_done_event = threading.Event()
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_SYNC_DONE,
+                    "tombstones": [],
+                    "server_id_sets": {"operators": [40]},
+                },
+                sync_done_event,
+            )
+
+            assert sync_done_event.is_set()
+            assert manager._initial_sync_done is True
+            assert len(sent) == 1
+            assert sent[0][0] is fake_link
+            assert sent[0][1]["type"] == proto.MSG_CLIENT_PUSH_RECORDS
+            operator_records = sent[0][1]["records"]["operators"]
+            assert operator_records[0]["uuid"] == operator_uuid
+            assert operator_records[0]["skills"] == '["medic"]'
+            assert operator_records[0]["profile"] == '{"role": "field"}'
+        finally:
+            close_db(client_conn)
+
+    def test_startup_sync_preserves_pending_operator_profile_with_newer_server_version(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(
+            tmp_path,
+            "client_operator_profile_startup_conflict.db",
+            test_key,
+        )
+        try:
+            operator_hash = "8" * 64
+            operator_uuid = uuid.uuid4().hex
+            _insert_operator(client_conn, 40, "PROFILE", operator_hash)
+            client_conn.execute(
+                "UPDATE operators SET uuid = ?, skills = ?, profile = ?, "
+                "version = 2, sync_status = 'pending' WHERE id = 40",
+                (operator_uuid, '["medic"]', '{"role": "field"}'),
+            )
+            client_conn.commit()
+
+            sent = []
+            fake_link = object()
+            manager = _make_client_manager(client_conn, test_key, operator_id=40)
+            manager._link = fake_link
+            manager._initial_sync_done = False
+            manager._link_lifecycle._smart_send = (
+                lambda link, data: sent.append((link, proto.decode(data)))
+            )
+
+            sync_done_event = threading.Event()
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_SYNC_RESPONSE,
+                    "table": "operators",
+                    "record": {
+                        "id": 40,
+                        "callsign": "PROFILE",
+                        "rns_hash": operator_hash,
+                        "skills": '["stale-server-skill"]',
+                        "profile": '{"role": "server"}',
+                        "enrolled_at": 1000,
+                        "lease_expires_at": 8888888888,
+                        "revoked": 0,
+                        "version": 5,
+                        "uuid": operator_uuid,
+                    },
+                },
+                sync_done_event,
+            )
+            row = client_conn.execute(
+                "SELECT skills, profile, lease_expires_at, version, sync_status "
+                "FROM operators WHERE id = 40"
+            ).fetchone()
+            assert row == (
+                '["medic"]',
+                '{"role": "field"}',
+                8888888888,
+                5,
+                "pending",
+            )
+
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_SYNC_DONE,
+                    "tombstones": [],
+                    "server_id_sets": {"operators": [40]},
+                },
+                sync_done_event,
+            )
+
+            operator_records = sent[0][1]["records"]["operators"]
+            assert operator_records[0]["uuid"] == operator_uuid
+            assert operator_records[0]["skills"] == '["medic"]'
+            assert operator_records[0]["profile"] == '{"role": "field"}'
+            assert operator_records[0]["version"] == 5
+        finally:
+            close_db(client_conn)
+
     def test_client_operator_profile_update_falls_back_to_authenticated_operator_id(
         self, tmp_path, test_key, monkeypatch
     ):

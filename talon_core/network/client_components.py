@@ -706,10 +706,14 @@ class ClientRecordApplier:
             if table == "operators" and record.get("id") == manager._operator_id:
                 try:
                     row = manager._conn.execute(
-                        "SELECT revoked FROM operators WHERE id = ?",
+                        "SELECT revoked, sync_status, skills, profile "
+                        "FROM operators WHERE id = ?",
                         (manager._operator_id,),
                     ).fetchone()
                     local_operator_was_revoked = bool(row[0]) if row else False
+                    if row and str(row[1]) == "pending":
+                        record["skills"] = row[2]
+                        record["profile"] = row[3]
                 except Exception:
                     local_operator_was_revoked = False
 
@@ -1872,6 +1876,7 @@ class ClientLinkLifecycle:
                 )
 
         elif msg_type == proto.MSG_SYNC_DONE:
+            was_initial_sync_done = manager._initial_sync_done
             tombstones = msg.get("tombstones") or []
             notify_badge = not manager._suppress_startup_sync_badges
             manager._apply_tombstones(tombstones, badge=notify_badge)
@@ -1887,6 +1892,8 @@ class ClientLinkLifecycle:
                 len(tombstones),
                 manager._last_sync_at,
             )
+            if not was_initial_sync_done and manager._link is not None:
+                self._push_queued_outbox_after_initial_sync(manager._link)
             sync_done_event.set()
 
         elif msg_type == proto.MSG_PUSH_UPDATE:
@@ -1959,3 +1966,22 @@ class ClientLinkLifecycle:
                 manager._handle_lease_expired(msg.get("lease_expires_at"))
                 if manager._link is not None:
                     self._teardown(manager._link)
+
+    def _push_queued_outbox_after_initial_sync(self, link: RNS.Link) -> None:
+        manager = self._manager
+        outbox = manager._collect_outbox()
+        if not outbox:
+            return
+        self._log.info(
+            "Initial sync complete - pushing queued outbox (%d table(s))",
+            len(outbox),
+        )
+        self._smart_send(
+            link,
+            proto.encode(
+                {
+                    "type": proto.MSG_CLIENT_PUSH_RECORDS,
+                    "records": outbox,
+                }
+            ),
+        )
