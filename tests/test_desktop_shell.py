@@ -32,6 +32,7 @@ from talon_desktop.chat import (
 )
 from talon_desktop.community_safety import (
     assignment_item_from_assignment,
+    assigned_work_items_from_board,
     build_assignment_payload,
     build_checkin_payload,
     operator_status_items_from_board,
@@ -1555,7 +1556,7 @@ finally:
     app.processEvents()
 """
 
-_QT_ASSIGNMENT_CLOSEOUT_SCRIPT = r"""
+_QT_ASSIGNMENT_BOARD_SCRIPT = r"""
 import os
 import pathlib
 import sys
@@ -1565,7 +1566,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtWidgets
 
-from talon_desktop.community_safety_page import AssignmentPage, CheckInDialog
+from talon_desktop.community_safety_page import AssignmentPage
 
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
@@ -1579,16 +1580,44 @@ class FakeCore:
         self.operators = [
             types.SimpleNamespace(id=8, callsign="ASTER", revoked=False, skills=["medic"], profile={}),
             types.SimpleNamespace(id=9, callsign="BRAVO", revoked=False, skills=["comms"], profile={}),
+            types.SimpleNamespace(id=10, callsign="NOVA", revoked=False, skills=["logistics"], profile={}),
         ]
+        self.mission = types.SimpleNamespace(
+            id=42,
+            title="Shelter supply run",
+            description="Move supplies to the north shelter.",
+            status="active",
+            priority="IMMEDIATE",
+            mission_type="Logistics",
+            lead_coordinator="ASTER",
+            organization="",
+            staging_area="North Shelter loading area",
+            demob_point="",
+            key_locations={},
+            operation_window="",
+            objectives=[],
+            created_at=1_700_000_000,
+        )
+        self.sitrep = types.SimpleNamespace(
+            id=77,
+            level="FLASH",
+            body=b"Medical request near Gate 3",
+            status="assigned",
+            assigned_to="BRAVO",
+            location_label="Gate 3",
+            mission_id=None,
+            assignment_id=None,
+            created_at=1_700_000_100,
+        )
         self.assignments = [
             types.SimpleNamespace(
-                id=42,
-                title="North Shelter patrol",
-                assignment_type="foot_patrol",
-                status="active",
-                priority="ROUTINE",
-                team_lead="Aster",
-                backup_operator="Sol",
+                id=55,
+                title="Shelter supply run",
+                assignment_type="custom",
+                status="planned",
+                priority="IMMEDIATE",
+                team_lead="ASTER",
+                backup_operator="",
                 assigned_operator_ids=[8],
                 last_checkin_at=None,
                 last_checkin_state="",
@@ -1596,10 +1625,10 @@ class FakeCore:
                 overdue_threshold_min=5,
                 created_at=1_700_000_000,
                 support_reason="",
-                location_label="North Shelter",
+                location_label="",
                 lat=None,
                 lon=None,
-                mission_id=None,
+                mission_id=42,
                 protected_label="",
                 escalation_contact="",
                 handoff_notes="",
@@ -1610,15 +1639,19 @@ class FakeCore:
         if name == "assignments.board":
             return {
                 "assignments": self.assignments,
+                "active_assignments": self.assignments,
                 "operators": self.operators,
+                "missions": [self.mission],
+                "sitreps": [(self.sitrep, "DISPATCH", None)],
                 "sync": types.SimpleNamespace(pending_outbox_count=0),
             }
-        if name == "assignments.detail":
+        if name == "missions.detail":
             return {
-                "assignment": self.assignments[0],
-                "checkins": [],
-                "mission_title": "",
+                "mission": self.mission,
+                "channel": types.SimpleNamespace(id=3, name="#mission-shelter-supply-run-42"),
             }
+        if name == "sitreps.detail":
+            return {"sitrep": self.sitrep, "mission_title": "", "followups": []}
         if name == "operators.list":
             return self.operators
         raise KeyError(name)
@@ -1627,46 +1660,37 @@ class FakeCore:
         data = dict(payload or {})
         data.update(kwargs)
         self.commands.append((name, data))
-        if name == "assignments.update_status":
-            self.assignments[0].status = data["status"]
-            return types.SimpleNamespace(assignment_id=data["assignment_id"])
-        if name == "assignments.checkin":
-            return types.SimpleNamespace(checkin_id=5)
         raise KeyError(name)
 
 
 core = FakeCore()
 page = AssignmentPage(core)
 try:
+    opened = []
+    page.openRequested.connect(lambda kind, target_id: opened.append((kind, target_id)))
     page.refresh()
-    assert page.checkin_button.text() == "Server Check-In"
-    assert not page.closeout_button.isHidden()
-    assert not page.abort_button.isHidden()
+    assert page.new_button.text() == "Assign Operator"
+    assert page.assignment_table.horizontalHeaderItem(0).text() == "Target"
+    assert page.assignment_table.horizontalHeaderItem(2).text() == "Assigned To"
+    assert page.assignment_table.rowCount() == 2
+    table_titles = {
+        page.assignment_table.item(row, 0).text()
+        for row in range(page.assignment_table.rowCount())
+    }
+    assert table_titles == {"Shelter supply run", "Medical request near Gate 3"}
+    assert page.metric_missions.value.text() == "1"
+    assert page.metric_sitreps.value.text() == "1"
+    assert page.metric_available.value.text() == "1"
+    assert "Assigned mission and SITREP work" in page.summary.text()
 
-    dialog = CheckInDialog(
-        page._items[0],
-        operators=core.operators,
-        allow_operator_choice=True,
-    )
-    try:
-        assert dialog.operator_combo.count() == 2
-        dialog.operator_combo.setCurrentIndex(1)
-        payload = dialog.payload()
-        assert payload["operator_id"] == 9
-    finally:
-        dialog.close()
+    for row in range(page.assignment_table.rowCount()):
+        if page.assignment_table.item(row, 1).text() == "SITREP":
+            page.assignment_table.selectRow(row)
+            break
+    page._open_selected_work()
+    assert opened == [("sitrep", 77)]
 
-    QtWidgets.QMessageBox.question = staticmethod(
-        lambda *args, **kwargs: QtWidgets.QMessageBox.Yes
-    )
-    page._close_assignment("completed")
-    assert core.assignments[0].status == "completed"
-    assert core.commands[-1] == (
-        "assignments.update_status",
-        {"assignment_id": 42, "status": "completed"},
-    )
-
-    print("assignment-closeout-actions-ok")
+    print("assignment-board-assigned-work-ok")
 finally:
     page.close()
     app.processEvents()
@@ -1941,6 +1965,66 @@ def test_desktop_operator_status_includes_mission_and_sitrep_commitments() -> No
     assert statuses["BRAVO"].assignment_title == "SITREP #30: Fence down near north gate"
     assert statuses["CHARLIE"].status_label == "Available"
     assert statuses["CHARLIE"].assignment_title == "Logistics"
+
+
+def test_desktop_assigned_work_includes_missions_and_assigned_sitreps() -> None:
+    board = {
+        "operators": [
+            types.SimpleNamespace(id=2, callsign="ALPHA", revoked=False),
+            types.SimpleNamespace(id=3, callsign="BRAVO", revoked=False),
+        ],
+        "active_assignments": [
+            types.SimpleNamespace(
+                id=90,
+                title="Storm Patrol",
+                status="planned",
+                priority="IMMEDIATE",
+                mission_id=20,
+                team_lead="",
+                backup_operator="",
+                assigned_operator_ids=[2],
+                created_at=1_700_000_000,
+            )
+        ],
+        "missions": [
+            types.SimpleNamespace(
+                id=20,
+                title="Storm Patrol",
+                status="active",
+                priority="IMMEDIATE",
+                mission_type="Response",
+                lead_coordinator="",
+                organization="",
+                staging_area="North Gate",
+                demob_point="",
+                key_locations={},
+                created_at=1_700_000_000,
+            )
+        ],
+        "sitreps": [
+            (
+                types.SimpleNamespace(
+                    id=30,
+                    level="FLASH",
+                    status="assigned",
+                    assigned_to="BRAVO",
+                    body=b"Fence down near north gate",
+                    location_label="North Gate",
+                    created_at=1_700_000_100,
+                ),
+                "DISPATCH",
+                None,
+            )
+        ],
+    }
+
+    items = assigned_work_items_from_board(board)
+
+    assert [(item.kind, item.title, item.assigned_to) for item in items] == [
+        ("sitrep", "Fence down near north gate", "BRAVO"),
+        ("mission", "Storm Patrol", "ALPHA"),
+    ]
+    assert items[1].location_label == "North Gate"
 
 
 def test_desktop_event_mapping_refreshes_asset_surfaces() -> None:
@@ -2237,18 +2321,18 @@ def test_qt_document_page_explorer_actions(tmp_path: pathlib.Path) -> None:
     assert "document-explorer-actions-ok" in result.stdout
 
 
-def test_qt_assignment_closeout_and_server_checkin_actions(
+def test_qt_assignment_board_shows_assigned_work(
     tmp_path: pathlib.Path,
 ) -> None:
     result = _run_qt_subprocess(
-        _QT_ASSIGNMENT_CLOSEOUT_SCRIPT,
+        _QT_ASSIGNMENT_BOARD_SCRIPT,
         tmp_path,
         mode="server",
-        extra_arg="assignment-closeout",
+        extra_arg="assignment-board",
         timeout=30,
     )
 
-    assert "assignment-closeout-actions-ok" in result.stdout
+    assert "assignment-board-assigned-work-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))

@@ -1488,6 +1488,132 @@ class TestClientServerPushIntegration:
             close_db(client_conn)
             close_db(server_conn)
 
+    def test_client_operator_profile_update_falls_back_to_authenticated_operator_id(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(tmp_path, "server_operator_profile_uuid.db", test_key)
+        client_conn = _open_test_db(tmp_path, "client_operator_profile_uuid.db", test_key)
+        try:
+            operator_hash = "6" * 64
+            server_uuid = uuid.uuid4().hex
+            client_uuid = uuid.uuid4().hex
+            _insert_operator(server_conn, 42, "PROFILE", operator_hash)
+            _insert_operator(client_conn, 42, "PROFILE", operator_hash)
+            server_conn.execute(
+                "UPDATE operators SET uuid = ? WHERE id = 42",
+                (server_uuid,),
+            )
+            client_conn.execute(
+                "UPDATE operators SET uuid = ?, skills = ?, profile = ?, "
+                "version = version + 1, sync_status = 'pending' WHERE id = 42",
+                (client_uuid, '["comms"]', '{"role": "relay"}'),
+            )
+            server_conn.commit()
+            client_conn.commit()
+
+            sent = []
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler.notify_change = lambda _table, _record_id: None
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=42)
+            outbox = manager._collect_outbox()
+            assert outbox["operators"][0]["uuid"] == client_uuid
+            handler._handle_client_push(_FakeLink(operator_hash), {"records": outbox})
+
+            ack = sent[-1]
+            manager._handle_incoming(ack, threading.Event())
+            server_row = server_conn.execute(
+                "SELECT uuid, skills, profile, version FROM operators WHERE id = 42"
+            ).fetchone()
+            client_status = client_conn.execute(
+                "SELECT sync_status FROM operators WHERE id = 42"
+            ).fetchone()[0]
+            assert ack["accepted"] == [client_uuid]
+            assert ack["rejected"] == []
+            assert server_row == (server_uuid, '["comms"]', '{"role": "relay"}', 2)
+            assert client_status == "synced"
+        finally:
+            close_db(client_conn)
+            close_db(server_conn)
+
+    def test_client_operator_profile_update_ignores_stale_server_owned_fields(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(tmp_path, "server_operator_stale_profile.db", test_key)
+        try:
+            operator_hash = "4" * 64
+            operator_uuid = uuid.uuid4().hex
+            _insert_operator(server_conn, 41, "PROFILE", operator_hash)
+            server_conn.execute(
+                "UPDATE operators SET uuid = ?, lease_expires_at = ? WHERE id = 41",
+                (operator_uuid, 9999999999),
+            )
+            server_conn.commit()
+
+            sent = []
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler.notify_change = lambda _table, _record_id: None
+
+            handler._handle_client_push(
+                _FakeLink(operator_hash),
+                {
+                    "records": {
+                        "operators": [
+                            {
+                                "id": 41,
+                                "uuid": operator_uuid,
+                                "callsign": "CLIENT-STALE",
+                                "rns_hash": "5" * 64,
+                                "skills": '["medic"]',
+                                "profile": '{"role": "field"}',
+                                "enrolled_at": 1000,
+                                "lease_expires_at": 1234,
+                                "revoked": 1,
+                                "version": 99,
+                                "sync_status": "pending",
+                            }
+                        ],
+                    },
+                },
+            )
+
+            ack = sent[-1]
+            server_row = server_conn.execute(
+                "SELECT callsign, rns_hash, skills, profile, lease_expires_at, "
+                "revoked, version FROM operators WHERE id = 41"
+            ).fetchone()
+            assert ack["accepted"] == [operator_uuid]
+            assert ack["rejected"] == []
+            assert server_row == (
+                "PROFILE",
+                operator_hash,
+                '["medic"]',
+                '{"role": "field"}',
+                9999999999,
+                0,
+                2,
+            )
+        finally:
+            close_db(server_conn)
+
     def test_client_pushed_checkin_updates_assignment_status(
         self,
         tmp_path,

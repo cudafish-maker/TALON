@@ -967,6 +967,29 @@ class ServerMessageHandlers:
                         )
                         continue
 
+                if existing is None and table == "operators":
+                    try:
+                        record_operator_id = int(record.get("id", 0) or 0)
+                    except (TypeError, ValueError):
+                        record_operator_id = 0
+                    if (
+                        pushing_operator_id is not None
+                        and record_operator_id == int(pushing_operator_id)
+                    ):
+                        server_record = handler._fetch_record(
+                            table,
+                            int(pushing_operator_id),
+                        )
+                        if self._apply_existing_operator_profile_update(
+                            uuid_val,
+                            int(pushing_operator_id),
+                            record,
+                            server_record,
+                            pushing_operator_id,
+                        ):
+                            accepted_uuids.append(uuid_val)
+                            continue
+
                 if existing is None:
                     clean = prepare_client_push_record_for_server_store(
                         table,
@@ -1141,23 +1164,9 @@ class ServerMessageHandlers:
         if not isinstance(server_record, dict):
             return False
 
-        protected_fields = {
-            "callsign",
-            "rns_hash",
-            "enrolled_at",
-            "lease_expires_at",
-            "revoked",
-        }
-        for field in protected_fields:
-            if record.get(field) != server_record.get(field):
-                self._log.warning(
-                    "Client push rejected protected operator field table=operators uuid=%s field=%s",
-                    uuid_val,
-                    field,
-                )
-                return False
-
         try:
+            # Clients send their full cached operator row. Server-owned fields
+            # may be stale, so only skills/profile are read from the push.
             skills = _operator_json_value(record.get("skills"), list, "skills")
             profile = _operator_json_value(record.get("profile"), dict, "profile")
             from talon_core.services.operators import update_operator_command

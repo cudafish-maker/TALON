@@ -20,8 +20,10 @@ from talon_desktop.community_safety import (
     ASSIGNMENT_STATUS_LABELS,
     ASSIGNMENT_TYPE_LABELS,
     CHECKIN_STATE_LABELS,
+    DesktopAssignedWorkItem,
     DesktopAssignmentItem,
     assignment_items_from_board,
+    assigned_work_items_from_board,
     build_assignment_payload,
     build_checkin_payload,
     operator_status_items_from_board,
@@ -67,67 +69,59 @@ class AssignmentTargetItem:
 
 
 class AssignmentPage(QtWidgets.QWidget):
-    """Command-post assignment board for patrols and protective details."""
+    """Command-post board for mission and SITREP operator assignments."""
+
+    openRequested = QtCore.Signal(str, int)
 
     def __init__(self, core: TalonCoreSession) -> None:
         super().__init__()
         self._core = core
-        self._items: list[DesktopAssignmentItem] = []
+        self._all_items: list[DesktopAssignedWorkItem] = []
+        self._items: list[DesktopAssignedWorkItem] = []
+        self._unassigned_targets: list[AssignmentTargetItem] = []
+        self._operators_by_callsign: dict[str, object] = {}
 
         self.heading = QtWidgets.QLabel("Assignment Board")
         self.heading.setObjectName("pageHeading")
         self.summary = QtWidgets.QLabel("")
         self.summary.setWordWrap(True)
 
-        self.status_filter = QtWidgets.QComboBox()
-        self.status_filter.addItem("All active", "__active__")
-        self.status_filter.addItem("All statuses", "")
-        for status in ASSIGNMENT_STATUSES:
-            self.status_filter.addItem(ASSIGNMENT_STATUS_LABELS[status], status)
-        self.status_filter.currentIndexChanged.connect(lambda _index: self.refresh())
+        self.source_filter = QtWidgets.QComboBox()
+        self.source_filter.addItem("All assigned work", "")
+        self.source_filter.addItem("Missions", "mission")
+        self.source_filter.addItem("SITREPs", "sitrep")
+        self.source_filter.currentIndexChanged.connect(lambda _index: self.refresh())
 
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
-        self.new_button = QtWidgets.QPushButton("New Assignment")
+        self.new_button = QtWidgets.QPushButton("Assign Operator")
         self.new_button.clicked.connect(self._create_assignment)
-        self.checkin_button = QtWidgets.QPushButton(
-            "Server Check-In" if self._core.mode == "server" else "Check-In"
-        )
-        self.checkin_button.clicked.connect(self._create_checkin)
-        self.ack_button = QtWidgets.QPushButton("Acknowledge")
-        self.ack_button.clicked.connect(self._acknowledge_latest_checkin)
-        self.closeout_button = QtWidgets.QPushButton("Close Out")
-        self.closeout_button.clicked.connect(lambda: self._close_assignment("completed"))
-        self.closeout_button.setVisible(self._core.mode == "server")
-        self.abort_button = QtWidgets.QPushButton("Abort")
-        self.abort_button.clicked.connect(lambda: self._close_assignment("aborted"))
-        self.abort_button.setVisible(self._core.mode == "server")
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self.heading)
         top_row.addStretch(1)
-        top_row.addWidget(self.status_filter)
+        top_row.addWidget(self.source_filter)
         top_row.addWidget(self.refresh_button)
         top_row.addWidget(self.new_button)
 
-        self.metric_active = _MetricBox("Active Patrols", "0", "")
-        self.metric_details = _MetricBox("Protective Details", "0", "")
-        self.metric_overdue = _MetricBox("Overdue Check-ins", "0", "")
-        self.metric_support = _MetricBox("Needs Support", "0", "")
+        self.metric_missions = _MetricBox("Assigned Missions", "0", "")
+        self.metric_sitreps = _MetricBox("Assigned SITREPs", "0", "")
+        self.metric_unassigned = _MetricBox("Unassigned Work", "0", "")
+        self.metric_available = _MetricBox("Available Operators", "0", "")
         self.metric_pending = _MetricBox("Pending Sync", "0", "")
         metric_row = QtWidgets.QHBoxLayout()
         for metric in (
-            self.metric_active,
-            self.metric_details,
-            self.metric_overdue,
-            self.metric_support,
+            self.metric_missions,
+            self.metric_sitreps,
+            self.metric_unassigned,
+            self.metric_available,
             self.metric_pending,
         ):
             metric_row.addWidget(metric)
 
         self.assignment_table = QtWidgets.QTableWidget(0, 5)
         self.assignment_table.setHorizontalHeaderLabels(
-            ["Assignment", "Type", "Lead", "Next Check-in", "State"]
+            ["Target", "Type", "Assigned To", "Priority", "State"]
         )
         self.assignment_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.assignment_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -137,8 +131,8 @@ class AssignmentPage(QtWidgets.QWidget):
         configure_data_table(self.assignment_table)
         self.assignment_table.itemSelectionChanged.connect(self._selection_changed)
 
-        self.operator_table = QtWidgets.QTableWidget(0, 4)
-        self.operator_table.setHorizontalHeaderLabels(["Operator", "State", "Assignment", "Skills"])
+        self.operator_table = QtWidgets.QTableWidget(0, 3)
+        self.operator_table.setHorizontalHeaderLabels(["Operator", "State", "Current Work"])
         self.operator_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.operator_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.operator_table.verticalHeader().setVisible(False)
@@ -148,24 +142,47 @@ class AssignmentPage(QtWidgets.QWidget):
         self.detail = QtWidgets.QTextEdit()
         self.detail.setReadOnly(True)
         self.detail.setMinimumWidth(280)
-        self.detail.setPlaceholderText("Select an assignment")
+        self.detail.setPlaceholderText("Select assigned work")
 
-        self.alerts = QtWidgets.QListWidget()
-        self.alerts.setMinimumHeight(160)
+        self.unassigned_list = QtWidgets.QListWidget()
+        self.unassigned_list.setMinimumHeight(160)
+        self.unassigned_list.itemDoubleClicked.connect(
+            lambda _item: self._create_assignment()
+        )
 
-        assignment_panel = _panel("Active Assignments", self.assignment_table)
-        operator_panel = _panel("Operator Status", self.operator_table)
+        self.open_button = QtWidgets.QPushButton("Open Target")
+        self.open_button.clicked.connect(self._open_selected_work)
+        self.message_button = QtWidgets.QPushButton("Message Operator")
+        self.message_button.clicked.connect(self._message_selected_operator)
+        self.reassign_button = QtWidgets.QPushButton("Reassign")
+        self.reassign_button.clicked.connect(self._reassign_selected_work)
+
+        assignment_panel = _panel(
+            "Assigned Work",
+            self.assignment_table,
+            note="missions and SITREP follow-ups",
+        )
+        operator_panel = _panel(
+            "Operator Status",
+            self.operator_table,
+            note="busy operators are excluded from assignment picker",
+        )
         right_panel = QtWidgets.QWidget()
         right_layout = QtWidgets.QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(_panel("Selected Assignment", self.detail), stretch=2)
-        right_layout.addWidget(_panel("Gaps And Follow-up", self.alerts), stretch=1)
+        right_layout.addWidget(
+            _panel("Selected Work", self.detail, note="target details"),
+            stretch=2,
+        )
         action_row = QtWidgets.QHBoxLayout()
-        action_row.addWidget(self.checkin_button)
-        action_row.addWidget(self.ack_button)
-        action_row.addWidget(self.closeout_button)
-        action_row.addWidget(self.abort_button)
+        action_row.addWidget(self.open_button)
+        action_row.addWidget(self.message_button)
+        action_row.addWidget(self.reassign_button)
         right_layout.addLayout(action_row)
+        right_layout.addWidget(
+            _panel("Unassigned Work", self.unassigned_list, note="next assignment candidates"),
+            stretch=1,
+        )
 
         body = QtWidgets.QSplitter()
         body.addWidget(assignment_panel)
@@ -196,16 +213,25 @@ class AssignmentPage(QtWidgets.QWidget):
                 active_status_items = assignment_items_from_board(
                     {"assignments": active_rows}
                 )
-            items = all_items
-            selected_filter = str(self.status_filter.currentData() or "")
-            if selected_filter == "__active__":
-                items = [
-                    item for item in items if item.status not in {"completed", "aborted"}
+            work_items = assigned_work_items_from_board(board)
+            self._all_items = work_items
+            selected_filter = str(self.source_filter.currentData() or "")
+            if selected_filter:
+                work_items = [
+                    item for item in work_items if item.kind == selected_filter
                 ]
-            elif selected_filter:
-                items = [item for item in items if item.status == selected_filter]
-            self._items = items
+            self._items = work_items
+            self._unassigned_targets = _assignment_targets(
+                board.get("missions", []) or [],
+                board.get("sitreps", []) or [],
+                active_rows if active_rows is not None else board.get("assignments", []) or [],
+            )
             operator_items = operator_status_items_from_board(board, active_status_items)
+            self._operators_by_callsign = {
+                str(getattr(operator, "callsign", "") or "").casefold(): operator
+                for operator in board.get("operators", []) or []
+                if str(getattr(operator, "callsign", "") or "").strip()
+            }
         except Exception as exc:
             _log.warning("Could not refresh assignments: %s", exc)
             self.summary.setText(f"Unable to load assignments: {exc}")
@@ -213,11 +239,12 @@ class AssignmentPage(QtWidgets.QWidget):
 
         self._populate_assignment_table()
         self._populate_operator_table(operator_items)
-        self._populate_metrics(board)
-        self._populate_alerts()
+        self._populate_metrics(board, operator_items)
+        self._populate_unassigned_work()
         self.summary.setText(
-            f"{len(self._items)} assignment(s). The board shows responsibility, "
-            "check-in state, and follow-up work; map location remains on the Map page."
+            f"{len(self._items)} assigned work item(s). Assigned mission and SITREP "
+            "work is shown here; mission planning, SITREP resolution, and map "
+            "placement remain on their dedicated pages."
         )
         if self._items:
             self.assignment_table.selectRow(0)
@@ -245,21 +272,26 @@ class AssignmentPage(QtWidgets.QWidget):
             values = [
                 item.title,
                 item.type_label,
-                item.team_lead,
-                item.next_checkin_label,
-                item.status_label,
+                item.assigned_to,
+                item.priority,
+                item.state_label,
             ]
             for column, value in enumerate(values):
                 cell = QtWidgets.QTableWidgetItem(value)
                 if column == 0:
                     cell.setData(QtCore.Qt.UserRole, item.id)
-                if item.needs_support or item.overdue:
-                    warning_color = "#ffb4b4" if item.needs_support else "#f28c28"
-                    cell.setForeground(QtGui.QBrush(QtGui.QColor(warning_color)))
+                    cell.setData(QtCore.Qt.UserRole + 1, item.kind)
+                    cell.setToolTip(item.subtitle)
+                if column == 1:
+                    cell.setForeground(
+                        QtGui.QBrush(
+                            QtGui.QColor("#6aa3d8" if item.kind == "mission" else "#d6b85a")
+                        )
+                    )
+                elif column == 3:
+                    cell.setForeground(QtGui.QBrush(_priority_color(item.priority)))
                 elif column == 4:
-                    color = _STATUS_COLORS.get(item.status)
-                    if color is not None:
-                        cell.setForeground(QtGui.QBrush(color))
+                    cell.setForeground(QtGui.QBrush(_state_color(item.state)))
                 self.assignment_table.setItem(row, column, cell)
         self.assignment_table.resizeColumnsToContents()
 
@@ -273,109 +305,88 @@ class AssignmentPage(QtWidgets.QWidget):
                     item.callsign,
                     item.status_label,
                     item.assignment_title,
-                    item.skills_label,
                 ]
             ):
                 cell = QtWidgets.QTableWidgetItem(value)
                 if item.status_label in {"Needs support", "Overdue"}:
                     cell.setForeground(QtGui.QBrush(QtGui.QColor("#ffb4b4")))
+                elif item.status_label == "Available" and column == 1:
+                    cell.setForeground(QtGui.QBrush(QtGui.QColor("#7fb069")))
+                elif item.status_label == "Assigned" and column == 1:
+                    cell.setForeground(QtGui.QBrush(QtGui.QColor("#6aa3d8")))
                 self.operator_table.setItem(row, column, cell)
         self.operator_table.resizeColumnsToContents()
 
-    def _populate_metrics(self, board: typing.Mapping[str, typing.Any]) -> None:
-        active = [item for item in self._items if item.status not in {"completed", "aborted"}]
-        patrols = [
-            item
-            for item in active
-            if item.assignment_type
-            in {
-                "foot_patrol",
-                "vehicle_patrol",
-                "escort",
-                "welfare_check",
-                "supply_run",
-                "event_support",
-            }
+    def _populate_metrics(
+        self,
+        board: typing.Mapping[str, typing.Any],
+        operator_items: typing.Iterable[object],
+    ) -> None:
+        assigned_missions = [item for item in self._all_items if item.kind == "mission"]
+        assigned_sitreps = [item for item in self._all_items if item.kind == "sitrep"]
+        available = [
+            item for item in operator_items
+            if getattr(item, "status_label", "") == "Available"
         ]
-        details = [
-            item for item in active
-            if item.assignment_type in {"protective_detail", "fixed_post"}
-        ]
-        overdue = [item for item in active if item.overdue]
-        support = [item for item in active if item.needs_support]
         pending = int(getattr(board.get("sync"), "pending_outbox_count", 0) or 0)
-        self.metric_active.set_values(str(len(patrols)), "patrol, escort, welfare, supply")
-        self.metric_details.set_values(str(len(details)), "fixed posts and details")
-        self.metric_overdue.set_values(str(len(overdue)), "check-ins past threshold")
-        self.metric_support.set_values(str(len(support)), "support or duress states")
-        self.metric_pending.set_values(str(pending), "local records awaiting sync")
+        self.metric_missions.set_values(
+            str(len(assigned_missions)),
+            "active or pending approval",
+        )
+        self.metric_sitreps.set_values(
+            str(len(assigned_sitreps)),
+            "unresolved follow-ups",
+        )
+        self.metric_unassigned.set_values(
+            str(len(self._unassigned_targets)),
+            "needs an operator",
+        )
+        self.metric_available.set_values(
+            str(len(available)),
+            "not committed elsewhere",
+        )
+        self.metric_pending.set_values(str(pending), "local assignment changes")
 
-    def _populate_alerts(self) -> None:
-        self.alerts.clear()
-        for item in self._items:
-            if item.needs_support:
-                self.alerts.addItem(f"{item.title}: {item.last_checkin_label}")
-            elif item.overdue:
-                self.alerts.addItem(f"{item.title}: {item.next_checkin_label}")
-        if self.alerts.count() == 0:
-            self.alerts.addItem("No overdue or support alerts.")
+    def _populate_unassigned_work(self) -> None:
+        self.unassigned_list.clear()
+        for target in sorted(
+            self._unassigned_targets,
+            key=lambda item: (
+                _PRIORITY_RANK.get(item.priority, 99),
+                item.created_at,
+                item.id,
+            ),
+        ):
+            kind_label = "Mission" if target.kind == "mission" else "SITREP"
+            list_item = QtWidgets.QListWidgetItem(
+                f"{target.title}\n{target.priority} - {kind_label} - {target.subtitle}"
+            )
+            list_item.setData(QtCore.Qt.UserRole, target.id)
+            list_item.setData(QtCore.Qt.UserRole + 1, target.kind)
+            self.unassigned_list.addItem(list_item)
+        if self.unassigned_list.count() == 0:
+            self.unassigned_list.addItem("No unassigned mission or SITREP work.")
 
     def _selection_changed(self) -> None:
         item = self._selected_item()
         has_selection = item is not None
-        is_open = bool(item is not None and item.status not in {"completed", "aborted"})
-        self.checkin_button.setEnabled(has_selection)
-        self.ack_button.setEnabled(has_selection)
-        self.closeout_button.setEnabled(self._core.mode == "server" and is_open)
-        self.abort_button.setEnabled(self._core.mode == "server" and is_open)
+        self.open_button.setEnabled(has_selection)
+        self.message_button.setEnabled(
+            bool(item is not None and item.assigned_callsigns)
+        )
+        self.reassign_button.setEnabled(has_selection)
         if item is None:
+            self.detail.clear()
             return
+        self.open_button.setText("Open Mission" if item.kind == "mission" else "Open SITREP")
         try:
-            detail = self._core.read_model("assignments.detail", {"assignment_id": item.id})
+            lines = self._detail_lines(item)
         except Exception as exc:
-            self.detail.setPlainText(f"Unable to load assignment detail: {exc}")
+            self.detail.setPlainText(f"Unable to load assigned work detail: {exc}")
             return
-        assignment = detail["assignment"]
-        checkins = detail.get("checkins", [])
-        lines = [
-            f"#{assignment.id} {assignment.title}",
-            f"Type: {item.type_label}",
-            f"Status: {item.status_label}",
-            f"Priority: {assignment.priority}",
-            f"Mission: {detail.get('mission_title', '') or 'None'}",
-            f"Location: {assignment.location_label or 'Not set'}",
-            "Map point: "
-            + (
-                f"{assignment.lat:.6f}, {assignment.lon:.6f}"
-                if assignment.lat is not None and assignment.lon is not None
-                else "Not set"
-            ),
-            f"Protected label: {assignment.protected_label or 'None'}",
-            f"Lead: {assignment.team_lead or 'Unassigned'}",
-            f"Backup: {assignment.backup_operator or 'Open'}",
-            f"Escalation: {assignment.escalation_contact or 'Not set'}",
-            "Check-in: "
-            f"every {assignment.checkin_interval_min} min, "
-            f"overdue after {assignment.overdue_threshold_min} min",
-            f"Next: {item.next_checkin_label}",
-            "",
-            "Support reason:",
-            assignment.support_reason or "None",
-            "",
-            "Handoff notes:",
-            assignment.handoff_notes or "None",
-            "",
-            f"Recent check-ins: {len(checkins)}",
-            *[
-                "  "
-                f"{format_ts(checkin.created_at)} - "
-                f"{CHECKIN_STATE_LABELS.get(checkin.state, checkin.state)}"
-                for checkin in checkins[:5]
-            ],
-        ]
         self.detail.setPlainText("\n".join(lines))
 
-    def _selected_item(self) -> DesktopAssignmentItem | None:
+    def _selected_item(self) -> DesktopAssignedWorkItem | None:
         rows = self.assignment_table.selectionModel().selectedRows()
         if not rows:
             return None
@@ -383,6 +394,135 @@ class AssignmentPage(QtWidgets.QWidget):
         if row < 0 or row >= len(self._items):
             return None
         return self._items[row]
+
+    def _detail_lines(self, item: DesktopAssignedWorkItem) -> list[str]:
+        if item.kind == "mission":
+            detail = self._core.read_model("missions.detail", {"mission_id": item.id})
+            mission = detail["mission"]
+            return [
+                item.title,
+                "Type: Mission",
+                f"Mission: #{item.id}",
+                f"Status: {item.state_label}",
+                f"Priority: {item.priority}",
+                f"Assigned: {item.assigned_to}",
+                f"Mission type: {getattr(mission, 'mission_type', '') or 'Mission'}",
+                f"Location: {item.location_label or 'Not set'}",
+                f"Channel: {'Mission channel available' if detail.get('channel') else 'Not created yet'}",
+                "",
+                "Description:",
+                getattr(mission, "description", "") or "None",
+                "",
+                "Operation window:",
+                getattr(mission, "operation_window", "") or "Not set",
+                "",
+                "Objectives:",
+                _compact_jsonish(getattr(mission, "objectives", []) or []) or "None",
+            ]
+        detail = self._core.read_model("sitreps.detail", {"sitrep_id": item.id})
+        sitrep = detail["sitrep"]
+        body = _plain_text(getattr(sitrep, "body", ""))
+        followups = detail.get("followups", [])
+        return [
+            item.title,
+            "Type: SITREP",
+            f"SITREP: #{item.id}",
+            f"Status: {item.state_label}",
+            f"Priority: {item.priority}",
+            f"Assigned: {item.assigned_to}",
+            f"Mission: {detail.get('mission_title', '') or 'None'}",
+            f"Location: {getattr(sitrep, 'location_label', '') or 'Not set'}",
+            "",
+            "Body:",
+            body or "None",
+            "",
+            f"Recent follow-ups: {len(followups)}",
+            *[
+                "  "
+                f"{format_ts(followup.created_at)} - "
+                f"{getattr(followup, 'action', '')}"
+                for followup in followups[:5]
+            ],
+        ]
+
+    def _open_selected_work(self) -> None:
+        item = self._selected_item()
+        if item is None:
+            return
+        self.openRequested.emit(item.kind, item.id)
+
+    def _message_selected_operator(self) -> None:
+        item = self._selected_item()
+        if item is None:
+            return
+        operator_id = self._first_assigned_operator_id(item)
+        if operator_id is None:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Message Operator",
+                "No enrolled operator record could be matched for this assignment.",
+            )
+            return
+        body = (
+            f"Assignment update for {item.title}. "
+            f"Review the {item.type_label.lower()} details and acknowledge."
+        )
+        try:
+            self._send_direct_assignment_message(operator_id=operator_id, body=body)
+        except Exception as exc:
+            _log.warning("Assignment message failed: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Message Operator", str(exc))
+
+    def _reassign_selected_work(self) -> None:
+        item = self._selected_item()
+        if item is None:
+            return
+        if item.kind == "mission":
+            QtWidgets.QMessageBox.information(
+                self,
+                "Reassign Mission",
+                "Mission team changes are managed from the Mission detail page.",
+            )
+            return
+        try:
+            operators = available_operator_items(
+                self._core.read_model("operators.list"),
+                assignments=self._core.read_model("assignments.list", {"active_only": True}),
+                sitreps=self._core.read_model(
+                    "sitreps.list",
+                    {"unresolved_only": True, "limit": 500},
+                ),
+                missions=self._core.read_model("missions.list", {"status_filter": None}),
+                current_sitrep_id=item.id,
+            )
+        except Exception as exc:
+            _log.warning("Could not load operators for reassignment: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Reassign", str(exc))
+            return
+        dialog = OperatorChoiceDialog(operators, title="Reassign SITREP", parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        operator = dialog.selection()
+        try:
+            self._core.command(
+                "sitreps.assign_followup",
+                {
+                    "sitrep_id": item.id,
+                    "assigned_to": operator.callsign,
+                    "note": f"Reassigned from Assignment Board to {operator.callsign}.",
+                },
+            )
+            self.refresh()
+        except Exception as exc:
+            _log.warning("SITREP reassignment failed: %s", exc)
+            QtWidgets.QMessageBox.warning(self, "Reassign", str(exc))
+
+    def _first_assigned_operator_id(self, item: DesktopAssignedWorkItem) -> int | None:
+        for callsign in item.assigned_callsigns:
+            operator = self._operators_by_callsign.get(callsign.casefold())
+            if operator is not None:
+                return int(getattr(operator, "id"))
+        return None
 
     def _create_assignment(self) -> None:
         dialog = AssignmentTargetOperatorDialog(self._core, parent=self)
@@ -536,6 +676,89 @@ class AssignmentPage(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Acknowledge", str(exc))
 
 
+class OperatorChoiceDialog(QtWidgets.QDialog):
+    """Pick one available operator for reassignment workflows."""
+
+    def __init__(
+        self,
+        operators: typing.Sequence[AvailableOperatorItem],
+        *,
+        title: str,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._operators = list(operators)
+        self.setWindowTitle(title)
+        self.resize(520, 420)
+
+        self.operator_table = QtWidgets.QTableWidget(0, 3)
+        self.operator_table.setHorizontalHeaderLabels(["Operator", "Status", "Skills"])
+        self.operator_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.operator_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.operator_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.operator_table.verticalHeader().setVisible(False)
+        self.operator_table.horizontalHeader().setStretchLastSection(True)
+        configure_data_table(self.operator_table)
+
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
+
+        self.assign_button = QtWidgets.QPushButton("Reassign")
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.assign_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.assign_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.operator_table, stretch=1)
+        layout.addWidget(self.status_label)
+        layout.addLayout(button_row)
+
+        self._populate_operators()
+
+    def selection(self) -> AvailableOperatorItem:
+        rows = self.operator_table.selectionModel().selectedRows()
+        if not rows:
+            raise ValueError("Select an available operator.")
+        row = rows[0].row()
+        id_item = self.operator_table.item(row, 0)
+        if id_item is None:
+            raise ValueError("Select an available operator.")
+        operator_id = int(id_item.data(QtCore.Qt.UserRole))
+        for operator in self._operators:
+            if operator.id == operator_id:
+                return operator
+        raise ValueError("Selected operator is no longer available.")
+
+    def accept(self) -> None:
+        try:
+            self.selection()
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        super().accept()
+
+    def _populate_operators(self) -> None:
+        for operator in self._operators:
+            row = self.operator_table.rowCount()
+            self.operator_table.insertRow(row)
+            skills = ", ".join(operator.skills[:4]) if operator.skills else "No skills listed"
+            for column, value in enumerate((operator.callsign, "Available", skills)):
+                cell = QtWidgets.QTableWidgetItem(value)
+                if column == 0:
+                    cell.setData(QtCore.Qt.UserRole, operator.id)
+                elif column == 1:
+                    cell.setForeground(QtGui.QBrush(QtGui.QColor("#7fb069")))
+                self.operator_table.setItem(row, column, cell)
+        self.operator_table.resizeColumnsToContents()
+        if self.operator_table.rowCount():
+            self.operator_table.selectRow(0)
+
+
 class AssignmentTargetOperatorDialog(QtWidgets.QDialog):
     """Select an unassigned mission/SITREP target and an available operator."""
 
@@ -544,7 +767,7 @@ class AssignmentTargetOperatorDialog(QtWidgets.QDialog):
         self._core = core
         self._targets: list[AssignmentTargetItem] = []
         self._operators: list[AvailableOperatorItem] = []
-        self.setWindowTitle("New Assignment")
+        self.setWindowTitle("Assign Operator")
         self.setMinimumSize(980, 620)
 
         self.sort_combo = QtWidgets.QComboBox()
@@ -1185,6 +1408,53 @@ def _age_label(created_at: int) -> str:
     return format_ts(created_at)
 
 
+def _priority_color(priority: str) -> QtGui.QColor:
+    return {
+        "FLASH_OVERRIDE": QtGui.QColor("#ff5555"),
+        "FLASH": QtGui.QColor("#ff5555"),
+        "IMMEDIATE": QtGui.QColor("#f28c28"),
+        "PRIORITY": QtGui.QColor("#d6b85a"),
+        "ROUTINE": QtGui.QColor("#8fbcbb"),
+    }.get(str(priority), QtGui.QColor("#d8dee9"))
+
+
+def _state_color(state: str) -> QtGui.QColor:
+    return {
+        "active": QtGui.QColor("#7fb069"),
+        "approved": QtGui.QColor("#7fb069"),
+        "assigned": QtGui.QColor("#6aa3d8"),
+        "acknowledged": QtGui.QColor("#d6b85a"),
+        "open": QtGui.QColor("#f28c28"),
+        "pending_approval": QtGui.QColor("#d6b85a"),
+        "planned": QtGui.QColor("#d6b85a"),
+        "paused": QtGui.QColor("#d6b85a"),
+        "needs_support": QtGui.QColor("#ff5555"),
+    }.get(str(state), QtGui.QColor("#d8dee9"))
+
+
+def _plain_text(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _compact_jsonish(value: object) -> str:
+    if isinstance(value, list):
+        labels: list[str] = []
+        for entry in value[:5]:
+            if isinstance(entry, dict):
+                label = str(entry.get("title") or entry.get("label") or entry.get("name") or "").strip()
+                labels.append(label or str(entry))
+            else:
+                labels.append(str(entry))
+        return "\n".join(f"- {label}" for label in labels if label)
+    if isinstance(value, dict):
+        return "\n".join(f"- {key}: {val}" for key, val in list(value.items())[:5])
+    return str(value or "")
+
+
 class _MetricBox(QtWidgets.QFrame):
     def __init__(self, title: str, value: str, subtitle: str) -> None:
         super().__init__()
@@ -1207,14 +1477,28 @@ class _MetricBox(QtWidgets.QFrame):
         self.subtitle.setText(subtitle)
 
 
-def _panel(title: str, widget: QtWidgets.QWidget) -> QtWidgets.QFrame:
+def _panel(
+    title: str,
+    widget: QtWidgets.QWidget,
+    *,
+    note: str = "",
+) -> QtWidgets.QFrame:
     frame = QtWidgets.QFrame()
     frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
     layout = QtWidgets.QVBoxLayout(frame)
     layout.setContentsMargins(8, 8, 8, 8)
+    header = QtWidgets.QWidget()
+    header_layout = QtWidgets.QHBoxLayout(header)
+    header_layout.setContentsMargins(0, 0, 0, 0)
     heading = QtWidgets.QLabel(title)
     heading.setObjectName("sectionHeading")
-    layout.addWidget(heading)
+    header_layout.addWidget(heading)
+    if note:
+        note_label = QtWidgets.QLabel(note)
+        note_label.setObjectName("sideMode")
+        note_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        header_layout.addWidget(note_label, stretch=1)
+    layout.addWidget(header)
     layout.addWidget(widget, stretch=1)
     return frame
 

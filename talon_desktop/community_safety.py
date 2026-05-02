@@ -79,6 +79,23 @@ class DesktopOperatorStatusItem:
 
 
 @dataclasses.dataclass(frozen=True)
+class DesktopAssignedWorkItem:
+    kind: typing.Literal["mission", "sitrep"]
+    id: int
+    title: str
+    subtitle: str
+    type_label: str
+    assigned_to: str
+    assigned_callsigns: tuple[str, ...]
+    priority: str
+    state: str
+    state_label: str
+    location_label: str
+    created_at: int
+    sort_key: tuple[int, int, str]
+
+
+@dataclasses.dataclass(frozen=True)
 class _OperatorCommitment:
     status_label: str
     assignment_title: str
@@ -240,6 +257,117 @@ def operator_status_items_from_board(
     return sorted(items, key=lambda item: item.sort_key)
 
 
+def assigned_work_items_from_board(
+    board: typing.Mapping[str, typing.Any],
+) -> list[DesktopAssignedWorkItem]:
+    """Build the Assignment Board's visible mission/SITREP work list."""
+    operators_by_id = {
+        int(getattr(operator, "id")): str(
+            getattr(operator, "callsign", "") or f"#{int(getattr(operator, 'id'))}"
+        )
+        for operator in board.get("operators", []) or []
+        if not bool(getattr(operator, "revoked", False))
+    }
+    missions = list(board.get("missions", []) or [])
+    mission_assignments: dict[int, set[str]] = {}
+    mission_assignment_meta: dict[int, object] = {}
+    for assignment in _active_assignment_rows(board):
+        status = str(_field(assignment, "status", default="") or "")
+        if status in {"completed", "aborted"}:
+            continue
+        mission_id = _optional_int(_field(assignment, "mission_id", default=None))
+        if mission_id is None:
+            continue
+        assigned = mission_assignments.setdefault(mission_id, set())
+        for operator_id in _field(assignment, "assigned_operator_ids", default=[]) or []:
+            callsign = operators_by_id.get(int(operator_id))
+            if callsign:
+                assigned.add(callsign)
+        for callsign in (
+            str(_field(assignment, "team_lead", default="") or "").strip(),
+            str(_field(assignment, "backup_operator", default="") or "").strip(),
+        ):
+            if callsign and callsign.casefold() not in {"open", "unassigned"}:
+                assigned.add(callsign)
+        mission_assignment_meta.setdefault(mission_id, assignment)
+
+    items: list[DesktopAssignedWorkItem] = []
+    seen_mission_ids: set[int] = set()
+    for mission in missions:
+        status = str(_field(mission, "status", default="") or "")
+        if status in {"completed", "aborted", "rejected"}:
+            continue
+        mission_id = _optional_int(_field(mission, "id", default=None))
+        if mission_id is None:
+            continue
+        callsigns = set(_mission_operator_callsigns(mission))
+        callsigns.update(mission_assignments.get(mission_id, set()))
+        if not callsigns:
+            continue
+        seen_mission_ids.add(mission_id)
+        items.append(_mission_work_item(mission, callsigns))
+
+    for mission_id, callsigns in mission_assignments.items():
+        if mission_id in seen_mission_ids or not callsigns:
+            continue
+        assignment = mission_assignment_meta.get(mission_id)
+        items.append(
+            DesktopAssignedWorkItem(
+                kind="mission",
+                id=mission_id,
+                title=str(_field(assignment, "title", default="") or f"Mission #{mission_id}"),
+                subtitle=f"Mission #{mission_id} - assignment record",
+                type_label="Mission",
+                assigned_to=_callsign_label(callsigns),
+                assigned_callsigns=tuple(sorted(callsigns, key=str.casefold)),
+                priority=str(_field(assignment, "priority", default="ROUTINE") or "ROUTINE"),
+                state=str(_field(assignment, "status", default="planned") or "planned"),
+                state_label=_title_label(str(_field(assignment, "status", default="planned") or "planned")),
+                location_label=str(_field(assignment, "location_label", default="") or ""),
+                created_at=int(_field(assignment, "created_at", default=0) or 0),
+                sort_key=_work_sort_key(
+                    str(_field(assignment, "priority", default="ROUTINE") or "ROUTINE"),
+                    int(_field(assignment, "created_at", default=0) or 0),
+                    str(_field(assignment, "title", default="") or f"Mission #{mission_id}"),
+                ),
+            )
+        )
+
+    for entry in board.get("sitreps", []) or []:
+        sitrep = entry[0] if isinstance(entry, tuple) else entry
+        status = str(_field(sitrep, "status", default="open") or "open")
+        if status in {"resolved", "closed"}:
+            continue
+        assigned_to = str(_field(sitrep, "assigned_to", default="") or "").strip()
+        if not assigned_to:
+            continue
+        sitrep_id = _optional_int(_field(sitrep, "id", default=None))
+        if sitrep_id is None:
+            continue
+        title = _sitrep_title(sitrep)
+        created_at = int(_field(sitrep, "created_at", default=0) or 0)
+        priority = str(_field(sitrep, "level", default="ROUTINE") or "ROUTINE")
+        items.append(
+            DesktopAssignedWorkItem(
+                kind="sitrep",
+                id=sitrep_id,
+                title=title,
+                subtitle=f"SITREP #{sitrep_id} - {_age_or_timestamp(created_at)}",
+                type_label="SITREP",
+                assigned_to=assigned_to,
+                assigned_callsigns=(assigned_to,),
+                priority=priority,
+                state=status,
+                state_label=_title_label(status),
+                location_label=str(_field(sitrep, "location_label", default="") or ""),
+                created_at=created_at,
+                sort_key=_work_sort_key(priority, created_at, title),
+            )
+        )
+
+    return sorted(items, key=lambda item: item.sort_key)
+
+
 def _commitment_from_assignment(assignment: DesktopAssignmentItem) -> _OperatorCommitment:
     if assignment.needs_support:
         return _OperatorCommitment("Needs support", assignment.title, 0)
@@ -282,10 +410,7 @@ def _mission_operator_callsigns(mission: object) -> tuple[str, ...]:
 
 def _sitrep_assignment_title(sitrep: object) -> str:
     sitrep_id = _optional_int(_field(sitrep, "id", default=None))
-    body = _as_text(_field(sitrep, "body", default="")).strip()
-    first_line = body.splitlines()[0].strip() if body else ""
-    if len(first_line) > 60:
-        first_line = first_line[:57].rstrip() + "..."
+    first_line = _sitrep_title(sitrep, max_length=60)
     sitrep_label = f"SITREP #{sitrep_id}" if sitrep_id is not None else "SITREP"
     if first_line:
         return f"{sitrep_label}: {first_line}"
@@ -390,6 +515,110 @@ def _as_text(value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _active_assignment_rows(board: typing.Mapping[str, typing.Any]) -> list[object]:
+    active_rows = board.get("active_assignments")
+    if active_rows is not None:
+        return list(active_rows or [])
+    return [
+        assignment for assignment in board.get("assignments", []) or []
+        if str(_field(assignment, "status", default="") or "")
+        not in {"completed", "aborted"}
+    ]
+
+
+def _mission_work_item(
+    mission: object,
+    callsigns: typing.Iterable[str],
+) -> DesktopAssignedWorkItem:
+    mission_id = int(_field(mission, "id", default=0))
+    title = str(_field(mission, "title", default="") or f"Mission #{mission_id}")
+    mission_type = str(_field(mission, "mission_type", default="") or "Mission")
+    priority = str(_field(mission, "priority", default="ROUTINE") or "ROUTINE")
+    status = str(_field(mission, "status", default="") or "")
+    created_at = int(_field(mission, "created_at", default=0) or 0)
+    sorted_callsigns = tuple(sorted(set(callsigns), key=str.casefold))
+    return DesktopAssignedWorkItem(
+        kind="mission",
+        id=mission_id,
+        title=title,
+        subtitle=f"Mission #{mission_id} - {mission_type}",
+        type_label="Mission",
+        assigned_to=_callsign_label(sorted_callsigns),
+        assigned_callsigns=sorted_callsigns,
+        priority=priority,
+        state=status,
+        state_label=_title_label(status),
+        location_label=_mission_location_label(mission),
+        created_at=created_at,
+        sort_key=_work_sort_key(priority, created_at, title),
+    )
+
+
+def _mission_location_label(mission: object) -> str:
+    for field_name in ("staging_area", "demob_point"):
+        value = str(_field(mission, field_name, default="") or "").strip()
+        if value:
+            return value
+    key_locations = _field(mission, "key_locations", default={}) or {}
+    if isinstance(key_locations, dict):
+        for value in key_locations.values():
+            if isinstance(value, dict):
+                label = str(value.get("label") or "").strip()
+                if label:
+                    return label
+    return ""
+
+
+def _sitrep_title(sitrep: object, *, max_length: int = 80) -> str:
+    sitrep_id = _optional_int(_field(sitrep, "id", default=None))
+    body = _as_text(_field(sitrep, "body", default="")).strip()
+    first_line = body.splitlines()[0].strip() if body else ""
+    if not first_line:
+        level = str(_field(sitrep, "level", default="") or "").strip()
+        first_line = f"{level} SITREP #{sitrep_id}" if level else f"SITREP #{sitrep_id}"
+    if len(first_line) > max_length:
+        first_line = first_line[: max_length - 3].rstrip() + "..."
+    return first_line
+
+
+def _title_label(value: str) -> str:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return ""
+    return cleaned.replace("_", " ").title()
+
+
+def _callsign_label(callsigns: typing.Iterable[str]) -> str:
+    cleaned = [callsign for callsign in callsigns if str(callsign).strip()]
+    return ", ".join(cleaned) if cleaned else "Unassigned"
+
+
+def _work_sort_key(priority: str, created_at: int, title: str) -> tuple[int, int, str]:
+    priority_rank = {
+        "FLASH_OVERRIDE": 0,
+        "FLASH": 1,
+        "IMMEDIATE": 2,
+        "PRIORITY": 3,
+        "ROUTINE": 4,
+    }.get(str(priority or "ROUTINE"), 99)
+    return priority_rank, int(created_at or 0), str(title).lower()
+
+
+def _age_or_timestamp(created_at: int) -> str:
+    if created_at <= 0:
+        return "created time unknown"
+    seconds = max(0, int(time.time()) - int(created_at))
+    minutes = seconds // 60
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes} min old"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours} hr old"
+    return format_ts(created_at)
 
 
 def _optional_coordinate(

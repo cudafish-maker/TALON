@@ -845,6 +845,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 page = MissionPage(core)
             elif section.key == "assignments":
                 page = AssignmentPage(core)
+                page.openRequested.connect(self._open_assignment_notification_target)
             elif section.key == "chat":
                 page = ChatPage(core)
             elif section.key == "documents":
