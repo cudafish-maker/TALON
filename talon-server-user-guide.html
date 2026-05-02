@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TALON Server User Guide</title>
+<style>
+:root { --ink:#17212b; --muted:#536171; --line:#d8dee6; --panel:#f5f7fa; --accent:#2d5f85; --warn:#9a5b00; --danger:#8b1e2d; }
+* { box-sizing:border-box; }
+html { background:#e9edf2; }
+body { margin:0 auto; max-width:8.4in; background:#fff; color:var(--ink); font:10.5pt/1.45 Arial, Helvetica, sans-serif; padding:0.55in; }
+h1 { font-size:28pt; margin:0 0 0.12in; letter-spacing:0; }
+h2 { font-size:18pt; margin:0.34in 0 0.08in; padding-bottom:0.04in; border-bottom:1px solid var(--line); }
+h3 { font-size:13pt; margin:0.22in 0 0.06in; }
+p { margin:0 0 0.09in; }
+ul, ol { margin:0.04in 0 0.12in 0.22in; padding:0; }
+li { margin:0.035in 0; }
+a { color:var(--accent); }
+code { font-family:Consolas, Menlo, monospace; background:#eef2f6; padding:0.02in 0.045in; border-radius:3px; }
+pre { background:#111820; color:#eef6ff; padding:0.12in; border-radius:6px; overflow-wrap:anywhere; white-space:pre-wrap; font:9pt/1.35 Consolas, Menlo, monospace; }
+table { width:100%; border-collapse:collapse; margin:0.12in 0; font-size:9.5pt; }
+th, td { border:1px solid var(--line); padding:0.055in; vertical-align:top; }
+th { background:#edf3f8; text-align:left; }
+figure { margin:0.16in 0; break-inside:avoid; }
+figcaption { color:var(--muted); font-size:9pt; margin-top:0.05in; }
+.cover { min-height:8.8in; display:flex; flex-direction:column; justify-content:center; }
+.kicker { color:var(--accent); font-weight:700; text-transform:uppercase; letter-spacing:0.08em; }
+.subtitle { font-size:13pt; color:var(--muted); margin-bottom:0.25in; }
+.meta { border-left:4px solid var(--accent); padding-left:0.12in; color:var(--muted); }
+.toc a { text-decoration:none; color:var(--ink); }
+.note, .warning { border:1px solid var(--line); background:var(--panel); padding:0.12in; border-radius:6px; margin:0.12in 0; }
+.warning { border-color:#e0b56d; background:#fff8e9; }
+.danger { border-color:#e4a0a9; background:#fff1f3; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:0.12in; }
+.card { border:1px solid var(--line); border-radius:6px; padding:0.11in; background:var(--panel); }
+.shot .frame { position:relative; border:1px solid var(--line); border-radius:5px; overflow:hidden; }
+.shot img { display:block; width:100%; height:auto; }
+.callout { position:absolute; background:rgba(45,95,133,.92); color:#fff; border:1px solid rgba(255,255,255,.55); border-radius:4px; padding:0.035in 0.055in; font-size:8.5pt; line-height:1.2; max-width:1.7in; box-shadow:0 1px 6px rgba(0,0,0,.25); }
+.callout.warn { background:rgba(154,91,0,.94); }
+.page-break { break-before:page; }
+.small { color:var(--muted); font-size:9pt; }
+@page { size:Letter; margin:0.55in; }
+@media print { html { background:#fff; } body { max-width:none; padding:0; } a[href]::after { content:""; } .page-break { break-before:page; } }
+</style>
+</head>
+<body>
+<section class="cover">
+  <p class="kicker">T.A.L.O.N.</p>
+  <h1>Server User Guide</h1>
+  <p class="subtitle">Installation, setup, Reticulum configuration, and server desktop operation.</p>
+  <div class="meta">
+    <p>Updated May 2, 2026 from the current PySide6 desktop code path.</p>
+    <p>Screenshots use isolated sample data and do not show live operational records.</p>
+  </div>
+</section>
+
+<section class="page-break toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#install">Installation</a></li>
+    <li><a href="#setup">First Run And Reticulum Setup</a></li>
+    <li><a href="#shell">Main Shell</a></li>
+    <li><a href="#admin">Server Administration</a></li>
+    <li><a href="#screens">Screen Walkthrough</a></li>
+    <li><a href="#security">Security And Data Handling</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+  </ol>
+</section>
+
+<h2 id="overview">Overview</h2>
+<p>T.A.L.O.N. is a tactical awareness and linked operations network for resilient coordination when normal infrastructure is unavailable. The server desktop is the command node for a deployment. It owns local server authority, client enrollment, operator leases, revocation, audit review, key status, and server-only operational actions.</p>
+<p>The server uses a local SQLCipher database and syncs through Reticulum. Operators use the PySide6 desktop to manage maps, SITREPs, assets, missions, assignments, chat, documents, and operator records from one role-specific application.</p>
+<figure class="shot">
+  <div class="frame">
+    <img src="assets/server_dashboard_annotated.png" alt="TALON server dashboard with navigation rail and status bar.">
+    <span class="callout" style="left:2%;top:9%;">Role-specific navigation</span>
+    <span class="callout" style="right:4%;bottom:3%;">Network, setup, theme, font, and logs</span>
+  </div>
+  <figcaption>Server desktop after unlock.</figcaption>
+</figure>
+
+<h2 id="install">Installation</h2>
+<h3>Install The Server Artifact</h3>
+<p>Use the server-specific Linux artifact. The installer reads the role marker from the extracted bundle and creates a server launcher. Do not pass a role flag to the installer.</p>
+<pre>tar -xzf talon-desktop-server-linux.tar.gz
+cd talon-desktop-server-linux
+bash ./install.sh --yes</pre>
+
+<h3>Installed Paths</h3>
+<table>
+  <tr><th>Item</th><th>Default path or name</th></tr>
+  <tr><td>Launcher</td><td><code>~/.local/bin/talon-desktop-server</code></td></tr>
+  <tr><td>Desktop entry</td><td><code>talon-desktop-server.desktop</code>, displayed as <strong>T.A.L.O.N. Server</strong></td></tr>
+  <tr><td>Data directory</td><td><code>~/.talon-server</code></td></tr>
+  <tr><td>Application config</td><td><code>~/.talon-server/talon.ini</code></td></tr>
+  <tr><td>TALON Reticulum config</td><td><code>~/.talon-server/reticulum/config</code></td></tr>
+  <tr><td>Document storage</td><td><code>~/.talon-server/documents</code></td></tr>
+  <tr><td>Launcher log</td><td><code>${XDG_STATE_HOME:-~/.local/state}/talon/desktop-server-launcher.log</code></td></tr>
+</table>
+
+<h3>Useful Installer Options</h3>
+<table>
+  <tr><th>Option</th><th>Use</th></tr>
+  <tr><td><code>--yes</code></td><td>Assume yes for supported system package managers.</td></tr>
+  <tr><td><code>--no-deps</code></td><td>Skip system runtime dependency installation.</td></tr>
+  <tr><td><code>--no-bin</code></td><td>Skip role-specific launcher wrapper creation.</td></tr>
+  <tr><td><code>--no-desktop</code></td><td>Skip desktop entry creation.</td></tr>
+  <tr><td><code>--smoke-test</code></td><td>Run the installed package smoke test.</td></tr>
+  <tr><td><code>--uninstall --confirm-delete "DELETE TALON DATA"</code></td><td>Remove local TALON desktop files, data, identities, documents, logs, and launchers.</td></tr>
+</table>
+<div class="warning"><strong>Role switch warning:</strong> a local user profile should not host both roles. Opposite-role cleanup and full uninstall require the exact phrase <code>DELETE TALON DATA</code>.</div>
+
+<h2 id="setup">First Run And Reticulum Setup</h2>
+<h3>Unlock Or Create The Local Database</h3>
+<p>Launch <code>talon-desktop-server</code>. Enter the server database passphrase and select <strong>Unlock</strong>. On a fresh database, choose a strong local passphrase that meets the TALON passphrase policy.</p>
+<figure class="shot">
+  <div class="frame"><img src="assets/server_login.png" alt="Server unlock window."></div>
+  <figcaption>Server unlock window.</figcaption>
+</figure>
+
+<h3>Configure Reticulum</h3>
+<p>Network setup is available only after the encrypted database is unlocked. The server uses a TALON-owned Reticulum config under the server data directory. Use the dialog to pick a template, import a config, edit the raw Reticulum stanza, validate, then save or continue.</p>
+<figure class="shot">
+  <div class="frame">
+    <img src="assets/server_network_setup.png" alt="Server Reticulum Configuration dialog.">
+    <span class="callout" style="left:3%;top:12%;">TALON-owned config path</span>
+    <span class="callout" style="left:5%;top:22%;">Templates for common transports</span>
+    <span class="callout" style="right:5%;bottom:13%;">Validate before continuing</span>
+  </div>
+  <figcaption>Reticulum setup after SQLCipher unlock.</figcaption>
+</figure>
+<ul>
+  <li><strong>TALON Default</strong> creates a role-appropriate baseline with <code>share_instance = No</code>.</li>
+  <li><strong>AutoInterface</strong> is useful for local mesh discovery where supported.</li>
+  <li><strong>TCP Server</strong> listens for TCP peers. Use direct TCP only when its metadata exposure is acceptable or protected by another layer.</li>
+  <li><strong>Yggdrasil Server</strong> and <strong>i2pd Server</strong> generate stanzas for those overlay paths.</li>
+  <li>If Reticulum is already running, saved changes require restarting TALON before they affect sync.</li>
+</ul>
+
+<h2 id="shell">Main Shell</h2>
+<p>The server main window has a collapsible navigation rail, the active page, and a status bar. The server navigation contains Map, Chat, Missions, SITREPs, Assets, Assignments, Documents, Operators, Enrollment, Audit, Keys, and Dashboard. The status bar shows core unlock state, the redacted network method, Network Setup, Theme, Font, and Logs.</p>
+<div class="note"><strong>Unread badges:</strong> red-dot indicators appear for relevant updates from other operators. The Map and Dashboard sections do not show red dots.</div>
+
+<h2 id="admin" class="page-break">Server Administration</h2>
+<h3>Enrollment</h3>
+<p>Use Enrollment to generate one-time client enrollment tokens. Give the full <code>TOKEN:SERVER_HASH</code> value to the client operator through a trusted out-of-band channel. Tokens are temporary and disappear after use or expiry.</p>
+<figure class="shot">
+  <div class="frame">
+    <img src="assets/server_enrollment_annotated.png" alt="Server Enrollment page.">
+    <span class="callout" style="right:5%;top:9%;">Generate a one-time token</span>
+    <span class="callout" style="left:22%;top:19%;">Copy TOKEN:SERVER_HASH</span>
+  </div>
+  <figcaption>Enrollment token generation and pending-token review.</figcaption>
+</figure>
+
+<h3>Operators</h3>
+<p>The Operators page lists enrolled operators, lease state, profile details, skills, and revocation state. Server operators can edit profiles, renew leases, and revoke access after confirmation.</p>
+<figure class="shot">
+  <div class="frame"><img src="assets/server_operators.png" alt="Server Operators page."></div>
+  <figcaption>Operator roster and lease controls.</figcaption>
+</figure>
+<figure class="shot">
+  <div class="frame"><img src="assets/server_operator_profile_dialog.png" alt="Server operator profile dialog."></div>
+  <figcaption>Profile and skills editor.</figcaption>
+</figure>
+
+<h3>Audit And Keys</h3>
+<p>Audit shows recent server audit events and payload detail. Keys shows the server hash, Reticulum identity state, operator key status, and server revocation controls. The visible group-key rotation control reports current implementation status and does not silently rotate keys.</p>
+<figure class="shot"><div class="frame"><img src="assets/server_audit.png" alt="Server Audit page."></div><figcaption>Audit event search and detail view.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_keys.png" alt="Server Keys page."></div><figcaption>Server hash, identity status, and operator key status.</figcaption></figure>
+
+<h2 id="screens" class="page-break">Screen Walkthrough</h2>
+<h3>Map</h3>
+<p>The Map page displays OSM, TOPO, or Satellite base-layer controls with TALON overlays for assets, mission areas, routes, waypoints, assignments, operator pings, and located SITREPs. If an operator will be in an area with no connectivity, or limited connectivity, map tiles can be pre cached.</p>
+<figure class="shot">
+  <div class="frame">
+    <img src="assets/server_map_annotated.png" alt="Server Map page with mock OSM-style background and overlays.">
+    <span class="callout" style="right:34%;top:7%;">Layer and mission focus controls</span>
+    <span class="callout" style="right:6%;top:38%;">Selection context panels</span>
+  </div>
+  <figcaption>Operational map with fallback OSM-style background.</figcaption>
+</figure>
+
+<h3>SITREPs</h3>
+<p>SITREPs provide a severity feed, open/closed filtering, append-only follow-up notes, assignment, server-only delete, and opt-in FLASH/FLASH_OVERRIDE audio. New SITREPs can include mission, assignment, asset, and map-picked location context.</p>
+<figure class="shot"><div class="frame"><img src="assets/server_sitreps_annotated.png" alt="Server SITREPs page."></div><figcaption>SITREP feed and selected report detail.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_sitrep_create_dialog.png" alt="Server new SITREP dialog."></div><figcaption>New SITREP dialog with optional context and embedded map picker.</figcaption></figure>
+
+<h3>Assets</h3>
+<p>Assets can be created and edited with category, label, description, and coordinates. Server mode can verify or unverify assets and can hard-delete after confirmation. Client deletion requests appear in the asset list.</p>
+<figure class="shot"><div class="frame"><img src="assets/server_assets.png" alt="Server Assets page."></div><figcaption>Asset table, verification state, and detail panel.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_asset_dialog.png" alt="Server asset dialog."></div><figcaption>Asset create/edit dialog with typed or map-picked coordinates.</figcaption></figure>
+
+<h3>Missions</h3>
+<p>Missions include title, type, priority, team lead, team members, requested assets, AO polygon, route, timing, support notes, constraints, objectives, and key locations. Server lifecycle controls include approve, reject, abort, complete, delete, and server edit. Approval opens asset allocation review.</p>
+<figure class="shot"><div class="frame"><img src="assets/server_missions.png" alt="Server Missions page."></div><figcaption>Mission list, status filter, detail, and lifecycle controls.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_mission_create_dialog.png" alt="Server mission create dialog."></div><figcaption>Mission create/edit workflow with embedded map drawing.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_mission_approval_dialog.png" alt="Mission approval dialog."></div><figcaption>Asset allocation review before approval.</figcaption></figure>
+
+<h3>Assignments</h3>
+<p>The Assignment Board tracks assigned mission and SITREP follow-up work, operator availability, unassigned targets, and pending sync. The server can assign an available operator to an unassigned mission or SITREP and optionally message that operator.</p>
+<figure class="shot"><div class="frame"><img src="assets/server_assignments.png" alt="Server Assignment Board."></div><figcaption>Assigned work, operator status, selected detail, and unassigned work.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_assignment_operator_dialog.png" alt="Server Assign Operator dialog."></div><figcaption>Assign an available operator to unassigned mission or SITREP work.</figcaption></figure>
+
+<h3>Chat</h3>
+<p>Chat includes grouped channels, default channels, custom channels, mission channels, direct-message channels, urgent messages, grid-reference attachments, operator presence, alert summaries, and server-only delete controls. Direct-message channels are server-readable until end-to-end encryption is implemented.</p>
+<figure class="shot"><div class="frame"><img src="assets/server_chat.png" alt="Server Chat page."></div><figcaption>Channel list, message timeline, composer, operators, and alerts.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_dm_dialog.png" alt="Server direct-message dialog."></div><figcaption>Direct-message peer picker.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_grid_reference_dialog.png" alt="Server grid reference dialog."></div><figcaption>Attach a map position to a chat message.</figcaption></figure>
+
+<h3>Documents</h3>
+<p>Server mode can upload, organize, download, move, rename, and delete documents. Document validation is enforced by core handling. Macro-capable office formats are called out as higher risk before save.</p>
+<figure class="shot"><div class="frame"><img src="assets/server_documents.png" alt="Server Documents page."></div><figcaption>Repository folders, document list, and detail panel.</figcaption></figure>
+<figure class="shot"><div class="frame"><img src="assets/server_document_upload_dialog.png" alt="Server document upload dialog."></div><figcaption>Server upload dialog with target folder and description.</figcaption></figure>
+
+<h2 id="security" class="page-break">Security And Data Handling</h2>
+<div class="grid">
+  <div class="card"><h3>Local Database</h3><p>The server unlocks a local SQLCipher database. The passphrase derives the local key used for database and protected local material.</p></div>
+  <div class="card"><h3>Network Identity</h3><p>Reticulum identity material belongs in the TALON role data directory and is protected by the unlocked local state. Do not share server and client Reticulum directories.</p></div>
+  <div class="card"><h3>Transport</h3><p>TALON sync traffic uses Reticulum. The desktop reports only the transport family, not addresses, ports, peers, or device names.</p></div>
+  <div class="card"><h3>Documents</h3><p>Uploads are size-checked, filename-checked, extension-checked, MIME-checked where available, and hash-verified on download.</p></div>
+</div>
+<div class="warning"><strong>Direct TCP:</strong> direct TCP can reveal network addressing metadata. Use Yggdrasil, i2pd, LoRa, or a trusted VPN when address privacy matters.</div>
+
+<h2 id="troubleshooting" class="page-break">Troubleshooting</h2>
+<table>
+  <tr><th>Issue</th><th>Action</th></tr>
+  <tr><td>Application will not launch.</td><td>Run <code>talon-desktop-server --smoke --mode server</code> or reinstall with <code>--smoke-test</code>. Check the launcher log path listed above.</td></tr>
+  <tr><td>Network setup keeps appearing.</td><td>Unlock, open Network Setup, validate the TALON Reticulum config, save or continue, then restart if Reticulum was already running.</td></tr>
+  <tr><td>A client operator cannot enroll.</td><td>Confirm the server is running, the server Reticulum path is reachable, the client has the matching client transport config, and the full <code>TOKEN:SERVER_HASH</code> was entered before expiry.</td></tr>
+  <tr><td>Direct TCP warning appears.</td><td>The active Reticulum method is direct TCP. Change to Yggdrasil, i2pd, LoRa, or a trusted VPN-backed path if address privacy matters.</td></tr>
+  <tr><td>Document upload is blocked.</td><td>Check file size, extension, filename, MIME type, and whether the file is an executable or script type.</td></tr>
+</table>
+</body>
+</html>
