@@ -16,16 +16,7 @@ do
         continue
     fi
 
-    if [ "$remote_sha" = "$zero_sha" ]; then
-        commits=$(git rev-list "$local_commit" --not --remotes)
-    else
-        remote_commit=$(git rev-parse -q --verify "$remote_sha^{commit}" 2>/dev/null || true)
-        if [ -z "$remote_commit" ]; then
-            commits=$(git rev-list "$local_commit" --not --remotes)
-        else
-            commits=$(git rev-list "$remote_commit..$local_commit")
-        fi
-    fi
+    commits=$(git rev-list "$local_commit" --not --remotes)
 
     for commit in $commits
     do
