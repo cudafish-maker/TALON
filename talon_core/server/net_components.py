@@ -968,14 +968,7 @@ class ServerMessageHandlers:
                         continue
 
                 if existing is None and table == "operators":
-                    try:
-                        record_operator_id = int(record.get("id", 0) or 0)
-                    except (TypeError, ValueError):
-                        record_operator_id = 0
-                    if (
-                        pushing_operator_id is not None
-                        and record_operator_id == int(pushing_operator_id)
-                    ):
+                    if pushing_operator_id is not None:
                         server_record = handler._fetch_record(
                             table,
                             int(pushing_operator_id),

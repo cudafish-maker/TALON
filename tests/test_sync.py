@@ -1498,20 +1498,22 @@ class TestClientServerPushIntegration:
             server_uuid = uuid.uuid4().hex
             client_uuid = uuid.uuid4().hex
             _insert_operator(server_conn, 42, "PROFILE", operator_hash)
-            _insert_operator(client_conn, 42, "PROFILE", operator_hash)
+            _insert_operator(client_conn, 99, "PROFILE", operator_hash)
             server_conn.execute(
                 "UPDATE operators SET uuid = ? WHERE id = 42",
                 (server_uuid,),
             )
             client_conn.execute(
                 "UPDATE operators SET uuid = ?, skills = ?, profile = ?, "
-                "version = version + 1, sync_status = 'pending' WHERE id = 42",
+                "version = version + 1, sync_status = 'pending' WHERE id = 99",
                 (client_uuid, '["comms"]', '{"role": "relay"}'),
             )
             server_conn.commit()
             client_conn.commit()
 
             sent = []
+            notified = []
+            ui_notified = []
             monkeypatch.setattr(
                 net_handler,
                 "_smart_send",
@@ -1521,13 +1523,25 @@ class TestClientServerPushIntegration:
                 server_conn,
                 configparser.ConfigParser(),
                 test_key,
+                notify_ui=lambda table: ui_notified.append(table),
             )
-            handler.notify_change = lambda _table, _record_id: None
+            handler.notify_change = lambda table, record_id: notified.append(
+                (table, record_id)
+            )
 
-            manager = _make_client_manager(client_conn, test_key, operator_id=42)
+            manager = _make_client_manager(client_conn, test_key, operator_id=99)
             outbox = manager._collect_outbox()
             assert outbox["operators"][0]["uuid"] == client_uuid
-            handler._handle_client_push(_FakeLink(operator_hash), {"records": outbox})
+            handler._on_packet(
+                _FakeLink(operator_hash),
+                proto.encode(
+                    {
+                        "type": proto.MSG_CLIENT_PUSH_RECORDS,
+                        "records": outbox,
+                    }
+                ),
+                None,
+            )
 
             ack = sent[-1]
             manager._handle_incoming(ack, threading.Event())
@@ -1535,12 +1549,14 @@ class TestClientServerPushIntegration:
                 "SELECT uuid, skills, profile, version FROM operators WHERE id = 42"
             ).fetchone()
             client_status = client_conn.execute(
-                "SELECT sync_status FROM operators WHERE id = 42"
+                "SELECT sync_status FROM operators WHERE id = 99"
             ).fetchone()[0]
             assert ack["accepted"] == [client_uuid]
             assert ack["rejected"] == []
             assert server_row == (server_uuid, '["comms"]', '{"role": "relay"}', 2)
             assert client_status == "synced"
+            assert notified == [("operators", 42)]
+            assert ui_notified == ["operators"]
         finally:
             close_db(client_conn)
             close_db(server_conn)
