@@ -1,8 +1,12 @@
 """Tests for PySide6 desktop domain-event routing."""
 
+import os
+
 import pytest
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtCore = pytest.importorskip("PySide6.QtCore")
+QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
 from talon_core.services.events import (
     RecordMutation,
@@ -14,9 +18,16 @@ from talon_core.services.events import (
 )
 from talon_desktop.qt_events import CoreEventBridge
 
+_QT_APP: QtWidgets.QApplication | None = None
+
 
 def _bridge() -> CoreEventBridge:
-    QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
+    global _QT_APP
+    app = QtWidgets.QApplication.instance()
+    if isinstance(app, QtWidgets.QApplication):
+        _QT_APP = app
+    else:
+        _QT_APP = QtWidgets.QApplication([])
     return CoreEventBridge()
 
 

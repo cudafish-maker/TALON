@@ -324,7 +324,7 @@ class ChatPage(QtWidgets.QWidget):
         self.channel_list.itemClicked.connect(self._on_channel_clicked)
         self.channel_search = QtWidgets.QLineEdit()
         self.channel_search.setPlaceholderText("Search channels")
-        self.channel_search.textChanged.connect(lambda _text: self._populate_channels(self._active_channel_id))
+        self.channel_search.textChanged.connect(self._on_channel_search_changed)
         self.user_footer = QtWidgets.QLabel("")
         self.user_footer.setWordWrap(True)
         self.user_footer.setObjectName("summaryLabel")
@@ -442,8 +442,7 @@ class ChatPage(QtWidgets.QWidget):
         self._populate_channels(self._selected_channel_id() or self._active_channel_id)
 
     def _populate_channels(self, preferred_id: int | None) -> None:
-        self.channel_list.blockSignals(True)
-        try:
+        with QtCore.QSignalBlocker(self.channel_list):
             self.channel_list.clear()
             search = self.channel_search.text().strip().lower()
             channels = [
@@ -481,33 +480,35 @@ class ChatPage(QtWidgets.QWidget):
                         "Direct messages are server-readable until Phase 2b E2E encryption lands."
                     )
                 self.channel_list.addItem(item)
-        finally:
-            self.channel_list.blockSignals(False)
 
-        selectable = [
-            self.channel_list.item(row)
-            for row in range(self.channel_list.count())
-            if self.channel_list.item(row).data(QtCore.Qt.UserRole) not in (None, "")
-        ]
-        if not selectable:
-            placeholder = QtWidgets.QListWidgetItem("No channels.")
-            placeholder.setFlags(QtCore.Qt.NoItemFlags)
-            self.channel_list.addItem(placeholder)
-            self._active_channel_id = None
-            self._update_controls()
-            return
+            selectable = [
+                self.channel_list.item(row)
+                for row in range(self.channel_list.count())
+                if self.channel_list.item(row).data(QtCore.Qt.UserRole) not in (None, "")
+            ]
+            if not selectable:
+                placeholder = QtWidgets.QListWidgetItem("No channels.")
+                placeholder.setFlags(QtCore.Qt.NoItemFlags)
+                self.channel_list.addItem(placeholder)
+                self._active_channel_id = None
+                self._update_controls()
+                return
 
-        target_id = preferred_id if self._channel_for_id(preferred_id) else self._channels[0].id
-        for row in range(self.channel_list.count()):
-            item = self.channel_list.item(row)
-            if item.data(QtCore.Qt.UserRole) == target_id:
-                self.channel_list.setCurrentRow(row)
-                return
-        for row in range(self.channel_list.count()):
-            item = self.channel_list.item(row)
-            if item.data(QtCore.Qt.UserRole) not in (None, ""):
-                self.channel_list.setCurrentRow(row)
-                return
+            target_id = preferred_id if self._channel_for_id(preferred_id) else self._channels[0].id
+            for row in range(self.channel_list.count()):
+                item = self.channel_list.item(row)
+                if item.data(QtCore.Qt.UserRole) == target_id:
+                    self.channel_list.setCurrentRow(row)
+                    return
+            for row in range(self.channel_list.count()):
+                item = self.channel_list.item(row)
+                if item.data(QtCore.Qt.UserRole) not in (None, ""):
+                    self.channel_list.setCurrentRow(row)
+                    return
+
+    def _on_channel_search_changed(self, _text: str) -> None:
+        self._populate_channels(self._active_channel_id)
+        self._refresh_messages()
 
     def _refresh_messages(self) -> None:
         channel = self._selected_channel()
