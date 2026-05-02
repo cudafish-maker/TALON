@@ -6,6 +6,7 @@ import json
 import threading
 import time
 import typing
+import uuid as _uuid_mod
 
 import RNS
 
@@ -60,6 +61,19 @@ def _resource_data_size(resource) -> typing.Optional[int]:
         return int(size) if size is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _valid_uuid_text(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    if len(value) != 32:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return True
 
 
 def _ensure_server_operator_sentinel(conn) -> None:
@@ -953,6 +967,7 @@ class ClientOutbox:
                     records = []
                     for row in rows:
                         record = dict(zip(cols, row))
+                        self._repair_pending_operator_uuid(table, record)
                         records.append(
                             prepare_client_outbox_record(
                                 table,
@@ -970,6 +985,27 @@ class ClientOutbox:
                         exc,
                     )
         return outbox
+
+    def _repair_pending_operator_uuid(self, table: str, record: dict) -> None:
+        if table != "operators":
+            return
+        uuid_value = record.get("uuid")
+        if _valid_uuid_text(uuid_value):
+            return
+
+        manager = self._manager
+        repaired_uuid = _uuid_mod.uuid4().hex
+        manager._conn.execute(
+            "UPDATE operators SET uuid = ? WHERE id = ?",
+            (repaired_uuid, record.get("id")),
+        )
+        manager._conn.commit()
+        record["uuid"] = repaired_uuid
+        self._log.warning(
+            "Repaired missing operator UUID before client push: id=%s uuid=%s",
+            record.get("id"),
+            repaired_uuid,
+        )
 
     def apply_push_ack(self, accepted: list, rejected: list) -> None:
         manager = self._manager

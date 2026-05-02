@@ -1488,6 +1488,101 @@ class TestClientServerPushIntegration:
             close_db(client_conn)
             close_db(server_conn)
 
+    def test_pending_operator_profile_without_uuid_is_repaired_before_push(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(
+            tmp_path,
+            "client_operator_profile_missing_uuid.db",
+            test_key,
+        )
+        try:
+            _insert_operator(client_conn, 40, "PROFILE", "8" * 64)
+            client_conn.execute(
+                "UPDATE operators SET skills = ?, profile = ?, "
+                "version = version + 1, sync_status = 'pending' WHERE id = 40",
+                ('["medic"]', '{"role": "field"}'),
+            )
+            client_conn.commit()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=40)
+            outbox = manager._collect_outbox()
+
+            repaired_uuid = outbox["operators"][0]["uuid"]
+            assert len(repaired_uuid) == 32
+            int(repaired_uuid, 16)
+            row = client_conn.execute(
+                "SELECT uuid, sync_status FROM operators WHERE id = 40"
+            ).fetchone()
+            assert row == (repaired_uuid, "pending")
+        finally:
+            close_db(client_conn)
+
+    def test_client_operator_profile_update_with_missing_local_uuid_round_trips_to_server(
+        self, tmp_path, test_key, monkeypatch
+    ):
+        server_conn = _open_test_db(
+            tmp_path,
+            "server_operator_profile_missing_client_uuid.db",
+            test_key,
+        )
+        client_conn = _open_test_db(
+            tmp_path,
+            "client_operator_profile_missing_client_uuid.db",
+            test_key,
+        )
+        try:
+            operator_hash = "5" * 64
+            server_uuid = uuid.uuid4().hex
+            _insert_operator(server_conn, 44, "PROFILE", operator_hash)
+            _insert_operator(client_conn, 44, "PROFILE", operator_hash)
+            server_conn.execute(
+                "UPDATE operators SET uuid = ? WHERE id = 44",
+                (server_uuid,),
+            )
+            client_conn.execute(
+                "UPDATE operators SET skills = ?, profile = ?, "
+                "version = version + 1, sync_status = 'pending' WHERE id = 44",
+                ('["comms"]', '{"role": "relay"}'),
+            )
+            server_conn.commit()
+            client_conn.commit()
+
+            sent = []
+            fake_link = _FakeLink(operator_hash)
+            monkeypatch.setattr(
+                net_handler,
+                "_smart_send",
+                lambda _link, data: sent.append(proto.decode(data)),
+            )
+            handler = net_handler.ServerNetHandler(
+                server_conn,
+                configparser.ConfigParser(),
+                test_key,
+            )
+            handler.notify_change = lambda _table, _record_id: None
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=44)
+            outbox = manager._collect_outbox()
+            repaired_uuid = outbox["operators"][0]["uuid"]
+            handler._handle_client_push(fake_link, {"records": outbox})
+
+            ack = sent[-1]
+            manager._handle_incoming(ack, threading.Event())
+            server_row = server_conn.execute(
+                "SELECT uuid, skills, profile, version FROM operators WHERE id = 44"
+            ).fetchone()
+            client_row = client_conn.execute(
+                "SELECT uuid, sync_status FROM operators WHERE id = 44"
+            ).fetchone()
+            assert ack["accepted"] == [repaired_uuid]
+            assert ack["rejected"] == []
+            assert server_row == (server_uuid, '["comms"]', '{"role": "relay"}', 2)
+            assert client_row == (repaired_uuid, "synced")
+        finally:
+            close_db(client_conn)
+            close_db(server_conn)
+
     def test_client_operator_profile_update_during_initial_sync_flushes_after_sync_done(
         self, tmp_path, test_key
     ):
