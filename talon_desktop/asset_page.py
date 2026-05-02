@@ -1,7 +1,7 @@
 """PySide6 asset list, detail, and command page."""
 from __future__ import annotations
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from talon_core import TalonCoreSession
 from talon_core.utils.logging import get_logger
