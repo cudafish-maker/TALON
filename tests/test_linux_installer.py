@@ -186,6 +186,21 @@ def _desktop_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
+def _fake_reticulum_ok_python(fake_bin: Path, version: str = "1.1.3") -> Path:
+    python = fake_bin / "reticulum-python"
+    python.write_text(
+        "#!/usr/bin/env sh\n"
+        "if [ \"$1\" = '-' ]; then\n"
+        f"  printf 'ok {version}\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    python.chmod(python.stat().st_mode | stat.S_IXUSR)
+    return python
+
+
 def _run_desktop_install(
     tmp_path: Path,
     bundle: Path,
@@ -405,6 +420,7 @@ def test_desktop_installer_configures_i2pd_sam_when_deps_enabled(tmp_path):
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["TALON_I2PD_CONFIG_PATH"] = str(i2pd_config)
     env["TALON_FAKE_SYSTEMCTL_LOG"] = str(systemctl_log)
+    env["TALON_RETICULUM_PYTHON"] = str(_fake_reticulum_ok_python(fake_bin))
 
     result = _run_desktop_install(
         tmp_path,
@@ -423,6 +439,181 @@ def test_desktop_installer_configures_i2pd_sam_when_deps_enabled(tmp_path):
     systemctl_lines = systemctl_log.read_text(encoding="utf-8").splitlines()
     assert "enable i2pd.service" in systemctl_lines
     assert "restart i2pd.service" in systemctl_lines
+
+
+def test_desktop_installer_accepts_i2pd_package_without_path_binary(tmp_path):
+    env = _desktop_env(tmp_path)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    i2pd_config = tmp_path / "i2pd" / "i2pd.conf"
+    i2pd_config.parent.mkdir()
+    i2pd_config.write_text("[http]\nenabled = false\n", encoding="utf-8")
+
+    xdg_open = fake_bin / "xdg-open"
+    xdg_open.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    xdg_open.chmod(xdg_open.stat().st_mode | stat.S_IXUSR)
+
+    sudo = fake_bin / "sudo"
+    sudo.write_text("#!/usr/bin/env sh\nexec \"$@\"\n", encoding="utf-8")
+    sudo.chmod(sudo.stat().st_mode | stat.S_IXUSR)
+
+    apt_get = fake_bin / "apt-get"
+    apt_get.write_text(
+        "#!/usr/bin/env sh\n"
+        "printf 'apt-get should not run\\n' >&2\n"
+        "exit 42\n",
+        encoding="utf-8",
+    )
+    apt_get.chmod(apt_get.stat().st_mode | stat.S_IXUSR)
+
+    dpkg_query = fake_bin / "dpkg-query"
+    dpkg_query.write_text(
+        "#!/usr/bin/env sh\n"
+        "if [ \"$1\" = '-W' ] && [ \"$3\" = 'i2pd' ]; then\n"
+        "  printf 'ii '\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    dpkg_query.chmod(dpkg_query.stat().st_mode | stat.S_IXUSR)
+
+    ldconfig = fake_bin / "ldconfig"
+    ldconfig.write_text(
+        "#!/usr/bin/env sh\n"
+        "cat <<'OUT'\n"
+        "libGL.so.1 (libc6,x86-64) => /tmp/libGL.so.1\n"
+        "libEGL.so.1 (libc6,x86-64) => /tmp/libEGL.so.1\n"
+        "libxkbcommon.so.0 (libc6,x86-64) => /tmp/libxkbcommon.so.0\n"
+        "libxcb-cursor.so.0 (libc6,x86-64) => /tmp/libxcb-cursor.so.0\n"
+        "libxcb-icccm.so.4 (libc6,x86-64) => /tmp/libxcb-icccm.so.4\n"
+        "libxcb-image.so.0 (libc6,x86-64) => /tmp/libxcb-image.so.0\n"
+        "libxcb-keysyms.so.1 (libc6,x86-64) => /tmp/libxcb-keysyms.so.1\n"
+        "libxcb-render-util.so.0 (libc6,x86-64) => /tmp/libxcb-render-util.so.0\n"
+        "libxcb-xinerama.so.0 (libc6,x86-64) => /tmp/libxcb-xinerama.so.0\n"
+        "libmagic.so.1 (libc6,x86-64) => /tmp/libmagic.so.1\n"
+        "libsqlcipher.so.1 (libc6,x86-64) => /tmp/libsqlcipher.so.1\n"
+        "OUT\n",
+        encoding="utf-8",
+    )
+    ldconfig.chmod(ldconfig.stat().st_mode | stat.S_IXUSR)
+
+    systemctl = fake_bin / "systemctl"
+    systemctl.write_text(
+        "#!/usr/bin/env sh\n"
+        "if [ \"$1\" = 'list-unit-files' ]; then exit 1; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(systemctl.stat().st_mode | stat.S_IXUSR)
+
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["TALON_I2PD_CONFIG_PATH"] = str(i2pd_config)
+    env["TALON_RETICULUM_PYTHON"] = str(_fake_reticulum_ok_python(fake_bin))
+
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "server"),
+        env=env,
+        install_deps=True,
+    )
+
+    text = i2pd_config.read_text(encoding="utf-8")
+    assert "Runtime dependency check passed." in result.stdout
+    assert "Missing runtime dependencies" not in result.stdout
+    assert "[sam]" in text
+    assert "enabled = true" in text
+    assert "address = 127.0.0.1" in text
+    assert "port = 7656" in text
+
+
+def test_desktop_installer_updates_outdated_reticulum_package(tmp_path):
+    env = _desktop_env(tmp_path)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    python_state = tmp_path / "reticulum-updated"
+    pip_log = tmp_path / "pip.log"
+    i2pd_config = tmp_path / "i2pd" / "i2pd.conf"
+    i2pd_config.parent.mkdir()
+    i2pd_config.write_text("[http]\nenabled = false\n", encoding="utf-8")
+
+    for name in ["xdg-open", "i2pd"]:
+        tool = fake_bin / name
+        tool.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+        tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+
+    sudo = fake_bin / "sudo"
+    sudo.write_text("#!/usr/bin/env sh\nexec \"$@\"\n", encoding="utf-8")
+    sudo.chmod(sudo.stat().st_mode | stat.S_IXUSR)
+
+    ldconfig = fake_bin / "ldconfig"
+    ldconfig.write_text(
+        "#!/usr/bin/env sh\n"
+        "cat <<'OUT'\n"
+        "libGL.so.1 (libc6,x86-64) => /tmp/libGL.so.1\n"
+        "libEGL.so.1 (libc6,x86-64) => /tmp/libEGL.so.1\n"
+        "libxkbcommon.so.0 (libc6,x86-64) => /tmp/libxkbcommon.so.0\n"
+        "libxcb-cursor.so.0 (libc6,x86-64) => /tmp/libxcb-cursor.so.0\n"
+        "libxcb-icccm.so.4 (libc6,x86-64) => /tmp/libxcb-icccm.so.4\n"
+        "libxcb-image.so.0 (libc6,x86-64) => /tmp/libxcb-image.so.0\n"
+        "libxcb-keysyms.so.1 (libc6,x86-64) => /tmp/libxcb-keysyms.so.1\n"
+        "libxcb-render-util.so.0 (libc6,x86-64) => /tmp/libxcb-render-util.so.0\n"
+        "libxcb-xinerama.so.0 (libc6,x86-64) => /tmp/libxcb-xinerama.so.0\n"
+        "libmagic.so.1 (libc6,x86-64) => /tmp/libmagic.so.1\n"
+        "libsqlcipher.so.1 (libc6,x86-64) => /tmp/libsqlcipher.so.1\n"
+        "OUT\n",
+        encoding="utf-8",
+    )
+    ldconfig.chmod(ldconfig.stat().st_mode | stat.S_IXUSR)
+
+    systemctl = fake_bin / "systemctl"
+    systemctl.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    systemctl.chmod(systemctl.stat().st_mode | stat.S_IXUSR)
+
+    python = fake_bin / "python3"
+    python.write_text(
+        "#!/usr/bin/env sh\n"
+        "if [ \"$1\" = '-' ]; then\n"
+        f"  if [ -f {python_state} ]; then printf 'ok 1.1.3\\n'; exit 0; fi\n"
+        "  printf 'outdated 1.0.0\\n'\n"
+        "  exit 1\n"
+        "fi\n"
+        "if [ \"$1\" = '-m' ] && [ \"$2\" = 'pip' ]; then\n"
+        "  if [ \"$3\" = '--version' ]; then printf 'pip 24\\n'; exit 0; fi\n"
+        "  if [ \"$3\" = 'help' ] && [ \"$4\" = 'install' ]; then\n"
+        "    printf '%s\\n' '--break-system-packages'\n"
+        "    exit 0\n"
+        "  fi\n"
+        f"  printf '%s\\n' \"$*\" >> {pip_log}\n"
+        "  case \" $* \" in\n"
+        f"    *' --break-system-packages '*) touch {python_state}; exit 0 ;;\n"
+        "  esac\n"
+        "  exit 1\n"
+        "fi\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    python.chmod(python.stat().st_mode | stat.S_IXUSR)
+
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["TALON_RETICULUM_PYTHON"] = str(python)
+    env["TALON_I2PD_CONFIG_PATH"] = str(i2pd_config)
+
+    result = _run_desktop_install(
+        tmp_path,
+        _fake_desktop_bundle(tmp_path, "client"),
+        env=env,
+        install_deps=True,
+    )
+
+    assert (
+        "Updating Reticulum Python package from rns 1.0.0 to >= 1.1.3."
+        in result.stdout
+    )
+    assert "Reticulum Python package updated (rns 1.1.3)." in result.stdout
+    pip_args = pip_log.read_text(encoding="utf-8")
+    assert "install --user --upgrade rns>=1.1.3" in pip_args
+    assert "install --user --upgrade --break-system-packages rns>=1.1.3" in pip_args
 
 
 def test_desktop_fresh_installer_rns_config_requires_first_launch_acceptance(tmp_path):

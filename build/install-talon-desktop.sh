@@ -7,6 +7,7 @@ DELETE_CONFIRMATION="DELETE TALON DATA"
 I2PD_SERVICE_NAME="i2pd.service"
 I2PD_SAM_ADDRESS="127.0.0.1"
 I2PD_SAM_PORT="7656"
+REQUIRED_RNS_VERSION="1.1.3"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)
 
 log() {
@@ -130,11 +131,173 @@ have_library() {
     have_library_file "$library"
 }
 
+have_debian_package_installed() {
+    local package=$1
+    command -v dpkg-query >/dev/null 2>&1 || return 1
+    dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null | grep -Eq '^ii'
+}
+
+have_i2pd() {
+    local path
+
+    command -v i2pd >/dev/null 2>&1 && return 0
+    for path in /usr/bin/i2pd /usr/sbin/i2pd /bin/i2pd /sbin/i2pd; do
+        [[ -x $path ]] && return 0
+    done
+    have_debian_package_installed i2pd && return 0
+
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl list-unit-files "$I2PD_SERVICE_NAME" >/dev/null 2>&1 && return 0
+    fi
+
+    [[ -f /etc/systemd/system/$I2PD_SERVICE_NAME ||
+       -f /lib/systemd/system/$I2PD_SERVICE_NAME ||
+       -f /usr/lib/systemd/system/$I2PD_SERVICE_NAME ]] && return 0
+
+    return 1
+}
+
+reticulum_package_status() {
+    local python_bin=$1
+    "$python_bin" - "$REQUIRED_RNS_VERSION" <<'PY'
+import importlib.metadata
+import re
+import sys
+
+minimum = sys.argv[1]
+
+
+def version_tuple(value):
+    parts = [int(part) for part in re.findall(r"\d+", value)]
+    return tuple((parts + [0, 0, 0])[:3])
+
+
+try:
+    version = importlib.metadata.version("rns")
+except importlib.metadata.PackageNotFoundError:
+    try:
+        import RNS  # noqa: F401
+    except Exception:
+        print("missing")
+        sys.exit(1)
+    version = getattr(sys.modules.get("RNS"), "__version__", "")
+
+if not version:
+    print("unknown")
+    sys.exit(1)
+
+if version_tuple(version) >= version_tuple(minimum):
+    print(f"ok {version}")
+    sys.exit(0)
+
+print(f"outdated {version}")
+sys.exit(1)
+PY
+}
+
+pip_supports_break_system_packages() {
+    local python_bin=$1
+    "$python_bin" -m pip help install 2>/dev/null | grep -q -- "--break-system-packages"
+}
+
+install_python_pip_for_reticulum() {
+    local python_bin=$1
+    local yes_args=()
+
+    log "Python pip is missing; installing it for Reticulum package updates."
+
+    if command -v apt-get >/dev/null 2>&1; then
+        [[ $ASSUME_YES == "1" ]] && yes_args=(-y)
+        run_as_root apt-get update
+        run_as_root apt-get install "${yes_args[@]}" --no-install-recommends python3-pip
+    elif command -v dnf >/dev/null 2>&1; then
+        [[ $ASSUME_YES == "1" ]] && yes_args=(-y)
+        run_as_root dnf install "${yes_args[@]}" python3-pip
+    elif command -v pacman >/dev/null 2>&1; then
+        [[ $ASSUME_YES == "1" ]] && yes_args=(--noconfirm)
+        run_as_root pacman -S --needed "${yes_args[@]}" python-pip
+    else
+        die "Python pip is required to install or update Reticulum. Install python3-pip, then rerun this installer."
+    fi
+
+    if ! "$python_bin" -m pip --version >/dev/null 2>&1; then
+        die "Python pip is still unavailable after package installation. Install python3-pip, then rerun this installer."
+    fi
+}
+
+ensure_reticulum_python_package() {
+    local python_bin=${TALON_RETICULUM_PYTHON:-python3}
+    local status
+    local version
+    local pip_args
+    local retry_pip_args
+
+    if ! command -v "$python_bin" >/dev/null 2>&1; then
+        warn "python3 was not found; could not verify the host Reticulum Python package."
+        return 0
+    fi
+
+    if status=$(reticulum_package_status "$python_bin"); then
+        version=${status#ok }
+        log "Reticulum Python package check passed (rns $version)."
+        return 0
+    fi
+
+    case "$status" in
+        outdated\ *)
+            version=${status#outdated }
+            log "Updating Reticulum Python package from rns $version to >= $REQUIRED_RNS_VERSION."
+            ;;
+        missing)
+            log "Installing Reticulum Python package rns >= $REQUIRED_RNS_VERSION."
+            ;;
+        *)
+            log "Updating Reticulum Python package to rns >= $REQUIRED_RNS_VERSION."
+            ;;
+    esac
+
+    if ! "$python_bin" -m pip --version >/dev/null 2>&1; then
+        install_python_pip_for_reticulum "$python_bin"
+    fi
+
+    if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+        pip_args=(install --upgrade)
+    else
+        pip_args=(install --user --upgrade)
+    fi
+    pip_args+=("rns>=$REQUIRED_RNS_VERSION")
+
+    if ! "$python_bin" -m pip "${pip_args[@]}"; then
+        if ! pip_supports_break_system_packages "$python_bin"; then
+            die "Reticulum update failed. Review pip output above and rerun this installer after fixing Python package installation."
+        fi
+
+        warn "pip rejected the first Reticulum update attempt; retrying with --break-system-packages."
+        if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+            retry_pip_args=(install --upgrade --break-system-packages)
+        else
+            retry_pip_args=(install --user --upgrade --break-system-packages)
+        fi
+        retry_pip_args+=("rns>=$REQUIRED_RNS_VERSION")
+        if ! "$python_bin" -m pip "${retry_pip_args[@]}"; then
+            die "Reticulum update failed even with --break-system-packages. Review pip output above."
+        fi
+    fi
+
+    if status=$(reticulum_package_status "$python_bin"); then
+        version=${status#ok }
+        log "Reticulum Python package updated (rns $version)."
+        return 0
+    fi
+
+    die "Reticulum update did not provide rns >= $REQUIRED_RNS_VERSION. Current status: $status"
+}
+
 runtime_dependency_gaps() {
     local missing=()
 
     command -v xdg-open >/dev/null 2>&1 || missing+=("xdg-open")
-    command -v i2pd >/dev/null 2>&1 || missing+=("i2pd")
+    have_i2pd || missing+=("i2pd")
     have_library "libGL.so.1" || missing+=("libGL.so.1")
     have_library "libEGL.so.1" || missing+=("libEGL.so.1")
     have_library "libxkbcommon.so.0" || missing+=("libxkbcommon.so.0")
@@ -187,6 +350,7 @@ install_deps_apt() {
         libdbus-1-3
         libfontconfig1
         libfreetype6
+        python3-pip
         i2pd
     )
 
@@ -212,6 +376,7 @@ install_deps_dnf() {
         xcb-util-renderutil
         file-libs
         sqlcipher
+        python3-pip
         i2pd
     )
     local yes_args=()
@@ -232,6 +397,7 @@ install_deps_pacman() {
         xcb-util-renderutil
         file
         sqlcipher
+        python-pip
         i2pd
     )
     local yes_args=()
@@ -367,7 +533,7 @@ configure_i2pd_sam() {
     local tmp
     local backup_path
 
-    if ! command -v i2pd >/dev/null 2>&1; then
+    if ! have_i2pd; then
         warn "i2pd is not installed; Reticulum I2PInterface will not work until i2pd is installed."
         return 0
     fi
@@ -397,7 +563,7 @@ configure_i2pd_sam() {
 }
 
 start_i2pd_daemon() {
-    if ! command -v i2pd >/dev/null 2>&1; then
+    if ! have_i2pd; then
         return 0
     fi
 
@@ -437,6 +603,7 @@ install_runtime_dependencies() {
     if ((${#gaps[@]} == 0)); then
         log "Runtime dependency check passed."
         setup_i2pd_daemon
+        ensure_reticulum_python_package
         return 0
     fi
 
@@ -457,6 +624,7 @@ install_runtime_dependencies() {
     fi
 
     setup_i2pd_daemon
+    ensure_reticulum_python_package
 }
 
 canonical_dir() {
