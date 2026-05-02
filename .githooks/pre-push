@@ -20,19 +20,29 @@ do
 
     for commit in $commits
     do
-        git diff-tree --root --no-commit-id --name-only -r "$commit" |
-            awk 'tolower($0) ~ /\.md$/ { print }' >> "$blocked_paths_file"
+        git diff-tree --root --no-commit-id --name-status -r "$commit" |
+            awk '
+                {
+                    status = substr($1, 1, 1)
+                    for (i = 2; i <= NF; i++) {
+                        path = tolower($i)
+                        if (path ~ /\.(md|html)$/ && status != "D") {
+                            print $i
+                        }
+                    }
+                }
+            ' >> "$blocked_paths_file"
     done
 done
 
 if [ -s "$blocked_paths_file" ]; then
     {
-        echo "TALON policy: Markdown files may be committed locally, but must not be pushed to a remote."
+        echo "TALON policy: Markdown and HTML files may be committed locally, but must not be pushed to a remote."
         echo
-        echo "This push contains Markdown paths:"
+        echo "This push contains local-only paths:"
         sort -u "$blocked_paths_file" | sed 's/^/  - /'
         echo
-        echo "Split or amend the pushed commits so Markdown changes stay local."
+        echo "Split or amend the pushed commits so Markdown and HTML changes stay local."
     } >&2
     exit 1
 fi
