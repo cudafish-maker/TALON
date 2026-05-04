@@ -33,9 +33,10 @@ jobs:
 
       - name: Run tests
         shell: pwsh
+        timeout-minutes: 30
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q
+        run: python -m pytest -vv -ra --tb=short --durations=25 -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=true
 
       - name: Build PySide6 Windows package
         shell: pwsh

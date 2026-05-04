@@ -77,6 +77,17 @@ def test_windows_workflow_only_runs_on_dev_push():
     assert "contents: write" not in workflow
 
 
+def test_windows_workflow_pytest_fails_fast_with_diagnostics():
+    workflow = WINDOWS_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "timeout-minutes: 30" in workflow
+    assert "python -m pytest" in workflow
+    assert "-vv" in workflow
+    assert "--durations=25" in workflow
+    assert "faulthandler_timeout=120" in workflow
+    assert "faulthandler_exit_on_timeout=true" in workflow
+
+
 def test_windows_runtime_script_writes_talon_specific_configs():
     text = RUNTIME_SCRIPT.read_text(encoding="utf-8")
 

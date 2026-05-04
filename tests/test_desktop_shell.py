@@ -693,6 +693,113 @@ sys.stderr.flush()
 os._exit(0)
 """
 
+_QT_NOTIFICATION_BADGES_SCRIPT = r"""
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtCore, QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_core.services.events import record_changed
+from talon_desktop.app import MainWindow
+from talon_desktop.asset_page import AssetPage
+from talon_desktop.chat_page import ChatPage
+from talon_desktop.qt_events import CoreEventBridge
+from tests.test_desktop_shell import (
+    _insert_test_asset,
+    _insert_test_message,
+    _open_nav_section,
+)
+
+config_path = sys.argv[1]
+settings_path = sys.argv[4]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+settings = QtCore.QSettings(settings_path, QtCore.QSettings.IniFormat)
+core = TalonCoreSession(config_path=config_path, mode="server").start()
+bridge = CoreEventBridge()
+window = None
+try:
+    core.unlock_with_key(bytes(range(32)))
+    window = MainWindow(core, bridge, settings=settings)
+    core.conn.execute(
+        "INSERT INTO operators "
+        "(id, callsign, rns_hash, skills, profile, enrolled_at, "
+        "lease_expires_at, revoked, version, uuid, sync_status) "
+        "VALUES (8, 'RIDGE', 'ridge-rns', '[]', '{}', 1000, "
+        "9999999999, 0, 1, '81111111111111111111111111111111', 'synced')"
+    )
+    core.conn.commit()
+    window.refresh_all()
+    window._prime_notification_state()
+    chat_page = window._pages["chat"]
+    asset_page = window._pages["assets"]
+    assert isinstance(chat_page, ChatPage)
+    assert isinstance(asset_page, AssetPage)
+
+    channel_id = chat_page._selected_channel_id()
+    assert channel_id is not None
+    message_id = _insert_test_message(core, channel_id, sender_id=8, uuid_prefix="a")
+    bridge.handle_core_event(record_changed("messages", message_id))
+    app.processEvents()
+
+    assert window.nav._badges.get("chat") == 1
+    assert channel_id in chat_page._unread_channel_ids
+
+    _open_nav_section(window, "chat")
+    app.processEvents()
+    assert "chat" not in window.nav._badges
+    assert channel_id in chat_page._unread_channel_ids
+    current_channel_item = chat_page.channel_list.currentItem()
+    assert current_channel_item is not None
+    chat_page._on_channel_clicked(current_channel_item)
+    assert channel_id not in chat_page._unread_channel_ids
+
+    _open_nav_section(window, "dashboard")
+    window.nav.clear_badge("chat")
+    self_message_id = _insert_test_message(
+        core,
+        channel_id,
+        sender_id=1,
+        uuid_prefix="b",
+    )
+    bridge.handle_core_event(record_changed("messages", self_message_id))
+    app.processEvents()
+    assert "chat" not in window.nav._badges
+    assert channel_id not in chat_page._unread_channel_ids
+
+    asset_id = _insert_test_asset(core, created_by=8, uuid_prefix="c")
+    bridge.handle_core_event(record_changed("assets", asset_id))
+    app.processEvents()
+    assert window.nav._badges.get("assets") == 1
+    assert asset_id in asset_page._unread_asset_ids
+
+    _open_nav_section(window, "assets")
+    app.processEvents()
+    assert "assets" not in window.nav._badges
+    assert asset_id in asset_page._unread_asset_ids
+    asset_page._asset_clicked(0, 0)
+    assert asset_id not in asset_page._unread_asset_ids
+
+    _open_nav_section(window, "dashboard")
+    self_asset_id = _insert_test_asset(core, created_by=1, uuid_prefix="d")
+    bridge.handle_core_event(record_changed("assets", self_asset_id))
+    app.processEvents()
+    assert "assets" not in window.nav._badges
+    assert self_asset_id not in asset_page._unread_asset_ids
+    print("notification-badges-ok")
+finally:
+    if window is not None:
+        window.close()
+    core.close()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
 _QT_UNACCEPTED_CONFIG_GATE_SCRIPT = r"""
 import os
 import sys
@@ -2166,99 +2273,15 @@ def test_qt_network_method_badge_warns_for_each_direct_tcp_session(
 def test_qt_notification_badges_ignore_self_and_track_unread_rows(
     tmp_path: pathlib.Path,
 ) -> None:
-    pytest.importorskip("PySide6")
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6 import QtCore, QtWidgets
-
-    from talon_core import TalonCoreSession
-    from talon_core.services.events import record_changed
-    from talon_desktop.app import MainWindow
-    from talon_desktop.asset_page import AssetPage
-    from talon_desktop.chat_page import ChatPage
-    from talon_desktop.qt_events import CoreEventBridge
-
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    config_path = _write_desktop_config(tmp_path, "server")
-    settings = QtCore.QSettings(
-        str(tmp_path / "notification-settings.ini"),
-        QtCore.QSettings.IniFormat,
+    result = _run_qt_subprocess(
+        _QT_NOTIFICATION_BADGES_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="notification-badges",
+        timeout=30,
     )
-    core = TalonCoreSession(config_path=config_path, mode="server").start()
-    bridge = CoreEventBridge()
-    window = None
-    try:
-        core.unlock_with_key(bytes(range(32)))
-        window = MainWindow(core, bridge, settings=settings)
-        core.conn.execute(
-            "INSERT INTO operators "
-            "(id, callsign, rns_hash, skills, profile, enrolled_at, "
-            "lease_expires_at, revoked, version, uuid, sync_status) "
-            "VALUES (8, 'RIDGE', 'ridge-rns', '[]', '{}', 1000, "
-            "9999999999, 0, 1, '81111111111111111111111111111111', 'synced')"
-        )
-        core.conn.commit()
-        window.refresh_all()
-        window._prime_notification_state()
-        chat_page = window._pages["chat"]
-        asset_page = window._pages["assets"]
-        assert isinstance(chat_page, ChatPage)
-        assert isinstance(asset_page, AssetPage)
 
-        channel_id = chat_page._selected_channel_id()
-        assert channel_id is not None
-        message_id = _insert_test_message(core, channel_id, sender_id=8, uuid_prefix="a")
-        bridge.handle_core_event(record_changed("messages", message_id))
-        app.processEvents()
-
-        assert window.nav._badges.get("chat") == 1
-        assert channel_id in chat_page._unread_channel_ids
-
-        _open_nav_section(window, "chat")
-        app.processEvents()
-        assert "chat" not in window.nav._badges
-        assert channel_id in chat_page._unread_channel_ids
-        current_channel_item = chat_page.channel_list.currentItem()
-        assert current_channel_item is not None
-        chat_page._on_channel_clicked(current_channel_item)
-        assert channel_id not in chat_page._unread_channel_ids
-
-        _open_nav_section(window, "dashboard")
-        window.nav.clear_badge("chat")
-        self_message_id = _insert_test_message(
-            core,
-            channel_id,
-            sender_id=1,
-            uuid_prefix="b",
-        )
-        bridge.handle_core_event(record_changed("messages", self_message_id))
-        app.processEvents()
-        assert "chat" not in window.nav._badges
-        assert channel_id not in chat_page._unread_channel_ids
-
-        asset_id = _insert_test_asset(core, created_by=8, uuid_prefix="c")
-        bridge.handle_core_event(record_changed("assets", asset_id))
-        app.processEvents()
-        assert window.nav._badges.get("assets") == 1
-        assert asset_id in asset_page._unread_asset_ids
-
-        _open_nav_section(window, "assets")
-        app.processEvents()
-        assert "assets" not in window.nav._badges
-        assert asset_id in asset_page._unread_asset_ids
-        asset_page._asset_clicked(0, 0)
-        assert asset_id not in asset_page._unread_asset_ids
-
-        _open_nav_section(window, "dashboard")
-        self_asset_id = _insert_test_asset(core, created_by=1, uuid_prefix="d")
-        bridge.handle_core_event(record_changed("assets", self_asset_id))
-        app.processEvents()
-        assert "assets" not in window.nav._badges
-        assert self_asset_id not in asset_page._unread_asset_ids
-    finally:
-        if window is not None:
-            window.close()
-        core.close()
-        app.processEvents()
+    assert "notification-badges-ok" in result.stdout
 
 
 def test_qt_unaccepted_reticulum_config_opens_setup_before_network_start(
@@ -2443,9 +2466,7 @@ def test_desktop_cli_package_smoke_exits_offscreen(
     tmp_path: pathlib.Path,
     mode: str,
 ) -> None:
-    python = pathlib.Path(".venv/bin/python")
-    if not python.exists():
-        pytest.skip("Project venv Python is not available for PySide6 smoke tests.")
+    python = _qt_test_python()
     env = os.environ.copy()
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
     env["PYTHONPATH"] = str(pathlib.Path.cwd())
@@ -2515,6 +2536,17 @@ def test_loopback_smoke_accepts_temp_reticulum_config_after_unlock(
         core.close()
 
 
+def _qt_test_python() -> pathlib.Path:
+    for candidate in (
+        pathlib.Path(".venv/Scripts/python.exe"),
+        pathlib.Path(".venv/bin/python"),
+    ):
+        if candidate.exists():
+            return candidate
+    pytest.importorskip("PySide6")
+    return pathlib.Path(sys.executable)
+
+
 def _run_qt_smoke(
     tmp_path: pathlib.Path,
     *,
@@ -2538,9 +2570,7 @@ def _run_qt_subprocess(
     extra_arg: str,
     timeout: int,
 ) -> subprocess.CompletedProcess[str]:
-    python = pathlib.Path(".venv/bin/python")
-    if not python.exists():
-        pytest.skip("Project venv Python is not available for PySide6 smoke tests.")
+    python = _qt_test_python()
     config_path = _write_desktop_config(tmp_path, mode)
     env = os.environ.copy()
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
