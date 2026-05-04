@@ -1,32 +1,43 @@
-# PyInstaller spec — Windows
-# Run from repo root: pyinstaller build/pyinstaller-windows.spec
-import importlib.util
+# PyInstaller spec - PySide6 Windows desktop
+# Run from repo root on Windows:
+#   pyinstaller --clean --noconfirm build/pyinstaller-windows.spec
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files
+
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 root = Path(SPECPATH).parent
-icon_definitions_spec = importlib.util.find_spec("kivymd.icon_definitions")
 
-datas = [
-    (str(root / "talon" / "ui" / "kv"), "talon/ui/kv"),
-]
-datas += collect_data_files("kivy", includes=["data/**"])
+datas = []
 logo_path = root / "Images" / "talonlogo.png"
 if logo_path.exists():
     datas.append((str(logo_path), "Images"))
-if icon_definitions_spec is not None and icon_definitions_spec.origin:
-    datas.append((icon_definitions_spec.origin, "kivymd"))
+
+hiddenimports = [
+    "RNS",
+    "argon2",
+    "nacl",
+    "sqlcipher3",
+]
+hiddenimports += collect_submodules("RNS")
+hiddenimports += collect_submodules("talon_core")
+hiddenimports += collect_submodules("talon_desktop")
 
 a = Analysis(
-    [str(root / "main.py")],
+    [str(root / "talon_desktop" / "main.py")],
     pathex=[str(root)],
     binaries=[],
     datas=datas,
-    hiddenimports=["sqlcipher3", "nacl", "argon2", "RNS", "kivymd.icon_definitions"],
+    hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["pyinstaller"],
+    excludes=[
+        "kivy",
+        "kivymd",
+        "mapview",
+        "pyinstaller",
+        "tkinter",
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -39,13 +50,13 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="talon",
+    name="talon-desktop",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     console=False,
-    icon=None,  # TODO: add talon.ico
+    icon=None,  # TODO: add talon.ico when the release icon is approved.
 )
 
 coll = COLLECT(
@@ -56,5 +67,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="talon-windows",
+    name="talon-desktop-windows",
 )
