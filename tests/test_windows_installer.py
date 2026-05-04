@@ -64,6 +64,19 @@ def test_windows_installer_bundles_yggdrasil_and_i2pd():
     assert "innosetup" in workflow
 
 
+def test_windows_workflow_only_runs_on_dev_push():
+    workflow = WINDOWS_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "  push:" in workflow
+    assert "      - dev" in workflow
+    assert "workflow_dispatch" not in workflow
+    assert "      - main" not in workflow
+    assert "tags:" not in workflow
+    assert "softprops/action-gh-release" not in workflow
+    assert "contents: read" in workflow
+    assert "contents: write" not in workflow
+
+
 def test_windows_runtime_script_writes_talon_specific_configs():
     text = RUNTIME_SCRIPT.read_text(encoding="utf-8")
 
