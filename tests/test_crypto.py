@@ -1,4 +1,5 @@
 """Tests for talon.crypto.keystore and talon.crypto.fields."""
+import os
 import pathlib
 import stat
 
@@ -7,6 +8,7 @@ import pytest
 from talon.crypto.keystore import derive_key, generate_salt, key_to_hex, load_or_create_salt
 from talon.crypto.fields import decrypt_field, encrypt_field
 from talon_core.crypto.identity import (
+    _require_private_file,
     load_or_create_identity,
     load_or_create_protected_identity,
     protected_identity_path,
@@ -110,8 +112,9 @@ class TestProtectedIdentity:
         assert encrypted_path.exists()
         assert not identity_path.exists()
         assert loaded.hash == identity.hash
-        assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o700
-        assert stat.S_IMODE(encrypted_path.stat().st_mode) == 0o600
+        if os.name != "nt":
+            assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o700
+            assert stat.S_IMODE(encrypted_path.stat().st_mode) == 0o600
         assert identity.get_private_key() not in encrypted_path.read_bytes()
 
     def test_migrates_private_legacy_plaintext_identity(self, tmp_path, test_key):
@@ -125,12 +128,22 @@ class TestProtectedIdentity:
         assert protected_identity_path(identity_path).exists()
 
     def test_rejects_group_readable_legacy_plaintext_identity(self, tmp_path, test_key):
+        if os.name == "nt":
+            pytest.skip("POSIX group/world mode bits are not meaningful on Windows.")
         identity_path = tmp_path / "client.identity"
         load_or_create_identity(identity_path)
         identity_path.chmod(0o644)
 
         with pytest.raises(RuntimeError, match="group/world-accessible"):
             load_or_create_protected_identity(identity_path, test_key)
+
+    def test_windows_mode_bits_do_not_block_identity_load(self, tmp_path, monkeypatch):
+        identity_path = tmp_path / "client.identity"
+        identity_path.write_bytes(b"placeholder")
+        identity_path.chmod(0o666)
+        monkeypatch.setattr(os, "name", "nt")
+
+        _require_private_file(identity_path)
 
 
 class TestPassphrasePolicy:

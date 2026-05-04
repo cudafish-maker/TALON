@@ -1,3 +1,4 @@
+import os
 import pathlib
 import stat
 import time
@@ -1236,11 +1237,15 @@ def test_core_reticulum_save_writes_private_permissions_and_backup(
     assert second.backup_path is not None
     assert second.backup_path.read_text(encoding="utf-8") == first_text
     assert session.reticulum_config_status().accepted is True
-    assert stat.S_IMODE(session.paths.rns_config_dir.stat().st_mode) == 0o700
-    assert stat.S_IMODE(first.path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(second.backup_path.stat().st_mode) == 0o600
-    acceptance_mode = reticulum_acceptance_path(session.paths.rns_config_dir).stat().st_mode
-    assert stat.S_IMODE(acceptance_mode) == 0o600
+    assert first.path.is_file()
+    assert second.backup_path.is_file()
+    assert reticulum_acceptance_path(session.paths.rns_config_dir).is_file()
+    if os.name != "nt":
+        assert stat.S_IMODE(session.paths.rns_config_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(first.path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(second.backup_path.stat().st_mode) == 0o600
+        acceptance_mode = reticulum_acceptance_path(session.paths.rns_config_dir).stat().st_mode
+        assert stat.S_IMODE(acceptance_mode) == 0o600
 
     session.close()
 
@@ -1318,6 +1323,7 @@ def test_core_reticulum_import_default_requires_explicit_unlocked_call(
     )
     (default_dir / "config").write_text(default_text, encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
 
     config_path = _write_config(tmp_path, "client")
     session = TalonCoreSession(config_path=config_path).start()

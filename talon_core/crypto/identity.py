@@ -146,6 +146,8 @@ def _ensure_private_dir(path: pathlib.Path) -> None:
 def _require_private_file(path: pathlib.Path) -> None:
     if path.is_symlink():
         raise RuntimeError(f"Refusing to load symlinked identity file: {path}")
+    if os.name == "nt":
+        return
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
         raise RuntimeError(
