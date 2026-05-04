@@ -16,6 +16,7 @@ from talon.documents import (
     upload_document,
     _sanitize_image,
 )
+import talon_core.documents as documents
 
 
 def _open_test_db(tmp_path, name: str, key: bytes):
@@ -69,6 +70,32 @@ def test_upload_rejects_non_allowlisted_document_formats(tmp_path, test_key, fil
             )
     finally:
         close_db(conn)
+
+
+def test_detect_mime_skips_python_magic_on_windows(monkeypatch):
+    fake_magic = types.ModuleType("magic")
+
+    def _from_buffer(*_args, **_kwargs):
+        raise AssertionError("python-magic should not be imported on Windows")
+
+    fake_magic.from_buffer = _from_buffer
+    monkeypatch.setitem(sys.modules, "magic", fake_magic)
+    monkeypatch.setattr(documents.os, "name", "nt")
+
+    assert documents._detect_mime(b"%PDF-1.4\n", "brief.pdf") == "application/pdf"
+
+
+def test_detect_mime_falls_back_when_python_magic_errors(monkeypatch):
+    fake_magic = types.ModuleType("magic")
+
+    def _from_buffer(*_args, **_kwargs):
+        raise OSError("libmagic unavailable")
+
+    fake_magic.from_buffer = _from_buffer
+    monkeypatch.setitem(sys.modules, "magic", fake_magic)
+    monkeypatch.setattr(documents.os, "name", "posix")
+
+    assert documents._detect_mime(b"field notes", "brief.txt").startswith("text/")
 
 
 def test_sanitize_image_fails_closed_when_pillow_reencode_fails(monkeypatch):

@@ -14,9 +14,11 @@ dependencies = [
     "sqlcipher3>=0.6.0",
     # Document security — MIME magic-byte detection and image re-encoding.
     # python-magic requires the system library: apt install libmagic1
+    # Windows uses extension-based MIME fallback; python-magic can crash while
+    # loading libmagic there.
     # Both degrade gracefully if absent (extension-only MIME / no EXIF strip).
     # Android Phase 4: python-magic needs a custom p4a recipe; Pillow has one.
-    "python-magic>=0.4.27",
+    "python-magic>=0.4.27; platform_system != 'Windows'",
     "Pillow>=10.0.0",
 ]
 

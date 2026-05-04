@@ -27,7 +27,8 @@ Storage directory:
 
 Optional dependencies (graceful fallback if absent):
   python-magic  — requires libmagic1 on Linux (`apt install libmagic1`).
-                  ImportError → extension-only MIME detection.
+                  ImportError or unsupported platform → extension-only MIME
+                  detection.
   Pillow        — ImportError → image re-encoding skipped (logged as warning).
 """
 import hashlib
@@ -142,11 +143,20 @@ def _detect_mime(data: bytes, filename: str) -> str:
     Tries python-magic first (magic bytes); falls back to mimetypes extension
     lookup; falls back to 'application/octet-stream'.
     """
-    try:
-        import magic  # type: ignore
-        return magic.from_buffer(data[:4096], mime=True) or "application/octet-stream"
-    except ImportError:
-        _log.debug("python-magic not available; using extension-based MIME detection.")
+    # python-magic's Windows compatibility loader can segfault while loading
+    # libmagic, which cannot be caught as a Python exception. Avoid importing it
+    # there and use the documented extension-based fallback instead.
+    if os.name != "nt":
+        try:
+            import magic  # type: ignore
+            return magic.from_buffer(data[:4096], mime=True) or "application/octet-stream"
+        except Exception as exc:
+            _log.debug(
+                "python-magic unavailable; using extension-based MIME detection: %s",
+                exc,
+            )
+    else:
+        _log.debug("python-magic disabled on Windows; using extension-based MIME detection.")
     guessed, _ = mimetypes.guess_type(filename)
     return guessed or "application/octet-stream"
 
