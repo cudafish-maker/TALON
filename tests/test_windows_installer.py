@@ -57,7 +57,7 @@ def test_windows_installer_bundles_yggdrasil_and_i2pd():
     assert "ShouldInstallYggdrasil" in inno
     assert "yggdrasil-network/yggdrasil-go" in download
     assert "PurpleI2P/i2pd" in download
-    assert "yggdrasil-.*-amd64\\.msi" in download
+    assert "yggdrasil-.*-(amd64|x64)\\.msi" in download
     assert "i2pd_.*_win64_mingw\\.zip" in download
     assert "download-runtime.ps1" in workflow
     assert "Verify bundled Windows runtimes" in workflow

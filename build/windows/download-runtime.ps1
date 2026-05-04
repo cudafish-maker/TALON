@@ -60,8 +60,8 @@ New-Item -ItemType Directory -Force -Path $installerRoot, $i2pdRoot, $tempRoot |
 $yggRelease = Get-LatestRelease "yggdrasil-network/yggdrasil-go"
 $yggAsset = Get-ReleaseAsset `
     -Release $yggRelease `
-    -Pattern "^yggdrasil-.*-amd64\.msi$" `
-    -Description "Yggdrasil Windows amd64 MSI"
+    -Pattern "^yggdrasil-.*-(amd64|x64)\.msi$" `
+    -Description "Yggdrasil Windows x64 MSI"
 $yggMsi = Join-Path $installerRoot "yggdrasil.msi"
 Save-ReleaseAsset -Asset $yggAsset -Destination $yggMsi
 
