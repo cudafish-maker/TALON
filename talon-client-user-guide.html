@@ -80,7 +80,7 @@ figcaption { color:var(--muted); font-size:9pt; margin-top:0.05in; }
 
 <h2 id="install">Installation</h2>
 <h3>Install The Client Artifact</h3>
-<p>Use the client-specific Linux artifact. The installer reads the role marker from the extracted bundle and creates a client launcher.</p>
+<p>Use the client-specific Linux artifact. The installer reads the role marker from the extracted bundle and creates a client launcher, desktop menu entry, and desktop shortcut using the bundled TALON logo.</p>
 <pre>tar -xzf talon-desktop-client-linux.tar.gz
 cd talon-desktop-client-linux
 bash ./install.sh --yes</pre>
@@ -89,7 +89,8 @@ bash ./install.sh --yes</pre>
 <table>
   <tr><th>Item</th><th>Default path or name</th></tr>
   <tr><td>Launcher</td><td><code>~/.local/bin/talon-desktop-client</code></td></tr>
-  <tr><td>Desktop entry</td><td><code>talon-desktop-client.desktop</code>, displayed as <strong>T.A.L.O.N. Client</strong></td></tr>
+  <tr><td>Desktop menu entry</td><td><code>${XDG_DATA_HOME:-~/.local/share}/applications/talon-desktop-client.desktop</code>, displayed as <strong>T.A.L.O.N. Client</strong></td></tr>
+  <tr><td>Desktop shortcut</td><td><code>~/Desktop/talon-desktop-client.desktop</code></td></tr>
   <tr><td>Data directory</td><td><code>~/.talon</code></td></tr>
   <tr><td>Application config</td><td><code>~/.talon/talon.ini</code></td></tr>
   <tr><td>TALON Reticulum config</td><td><code>~/.talon/reticulum/config</code></td></tr>
@@ -103,7 +104,7 @@ bash ./install.sh --yes</pre>
   <tr><td><code>--yes</code></td><td>Assume yes for supported system package managers.</td></tr>
   <tr><td><code>--no-deps</code></td><td>Skip system runtime dependency installation.</td></tr>
   <tr><td><code>--no-bin</code></td><td>Skip role-specific launcher wrapper creation.</td></tr>
-  <tr><td><code>--no-desktop</code></td><td>Skip desktop entry creation.</td></tr>
+  <tr><td><code>--no-desktop</code></td><td>Skip desktop menu entry and desktop shortcut creation.</td></tr>
   <tr><td><code>--smoke-test</code></td><td>Run the installed package smoke test.</td></tr>
   <tr><td><code>--uninstall --confirm-delete "DELETE TALON DATA"</code></td><td>Remove local TALON desktop files, data, identities, documents, logs, and launchers.</td></tr>
 </table>
@@ -111,8 +112,8 @@ bash ./install.sh --yes</pre>
 
 <h2 id="setup">First Run, Reticulum, And Enrollment</h2>
 <h3>Unlock Or Create The Local Database</h3>
-<p>Launch <code>talon-desktop-client</code>. Enter the local database passphrase and select <strong>Unlock</strong>. A fresh client remains on the unlock surface until Reticulum setup and enrollment are complete.</p>
-<figure class="shot"><div class="frame"><img src="assets/client_login.png" alt="Client unlock window."></div><figcaption>Client unlock window.</figcaption></figure>
+<p>Launch <code>talon-desktop-client</code>. On a fresh client with no local database, enter a new passphrase, enter it again to confirm it, review the on-screen passphrase requirements, and select <strong>Create Passphrase</strong>. Existing clients enter the local database passphrase and select <strong>Unlock</strong>. A fresh client remains on the unlock surface until Reticulum setup and enrollment are complete.</p>
+<figure class="shot"><div class="frame"><img src="assets/client_login.png" alt="Client first-run passphrase setup window."></div><figcaption>Client first-run passphrase setup window.</figcaption></figure>
 
 <h3>Configure Reticulum</h3>
 <p>Network setup is available only after the encrypted database is unlocked. The client uses a TALON-owned Reticulum config under the client data directory. Match the client template to the server deployment path.</p>

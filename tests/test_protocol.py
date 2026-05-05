@@ -46,6 +46,30 @@ def test_encode_injects_protocol_version():
     assert msg["version"] == proto.PROTOCOL_VERSION
 
 
+def test_optional_peer_metadata_is_accepted():
+    msg = {
+        **_base(proto.MSG_HEARTBEAT),
+        "app_version": "0.2.0",
+        "role": "client",
+        "capabilities": ["protocol-v1", "peer-metadata-v1"],
+    }
+
+    assert proto.validate_client_message(msg) is msg
+
+
+def test_optional_peer_metadata_warns_on_role_mismatch():
+    msg = {
+        **_base(proto.MSG_HEARTBEAT_ACK),
+        "timestamp": 1,
+        "role": "client",
+    }
+
+    assert "expected 'server'" in proto.peer_metadata_warning(
+        msg,
+        expected_role="server",
+    )
+
+
 def test_decode_does_not_validate_message_shape():
     msg = proto.decode(b'{"type":"heartbeat"}')
 

@@ -208,6 +208,64 @@ sys.stderr.flush()
 os._exit(0)
 """
 
+_QT_INITIAL_SETUP_PASSWORD_SCRIPT = r"""
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_desktop.app import DesktopRuntime, LoginWindow
+
+config_path = sys.argv[1]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+runtime = DesktopRuntime(core, start_sync=False)
+try:
+    runtime.show_login()
+    window = runtime.login_window
+    assert window is not None
+    assert window._initial_setup is True
+    assert not window.confirm_passphrase.isHidden()
+    assert not window.requirements_label.isHidden()
+    assert "At least 12 characters." in window.requirements_label.text()
+    assert "three of:" in window.requirements_label.text()
+    assert window.unlock_button.text() == "Create Passphrase"
+
+    emitted = []
+    window.unlockRequested.connect(lambda value: emitted.append(value))
+    window.passphrase.setText("ValidPass-12")
+    window.confirm_passphrase.setText("ValidPass-13")
+    window._unlock_clicked()
+    assert emitted == []
+    assert "Passphrases do not match." in window.status_label.text()
+
+    window.confirm_passphrase.setText("ValidPass-12")
+    window._unlock_clicked()
+    assert emitted == ["ValidPass-12"]
+
+    existing = LoginWindow(core.mode, initial_setup=False)
+    try:
+        assert existing.confirm_passphrase.isHidden()
+        assert existing.requirements_label.isHidden()
+        assert existing.unlock_button.text() == "Unlock"
+    finally:
+        existing.close()
+
+    print("initial-setup-password-ok")
+finally:
+    if runtime.login_window is not None:
+        runtime.login_window.close()
+    runtime.shutdown()
+    app.processEvents()
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+"""
+
 _QT_RETICULUM_FAILURE_SCRIPT = r"""
 import os
 import sys
@@ -894,9 +952,16 @@ try:
         button.text() for button in dialog.findChildren(QtWidgets.QPushButton)
     )
     dialog._add_interface_template(tcp_server_config(listen_ip="0.0.0.0", port=4242))
+    address_popups = []
+    dialog._show_i2pd_server_address = lambda: address_popups.append("shown")
+    dialog._use_i2pd_server_template()
+    dialog._use_i2pd_server_template()
     editor_text = dialog.editor.toPlainText()
     assert "TALON AutoInterface" in editor_text
     assert "TALON TCP Server" in editor_text
+    assert "TALON i2pd Server" in editor_text
+    assert "TALON i2pd Server 2" not in editor_text
+    assert address_popups == ["shown", "shown"]
     print("|".join(texts))
 finally:
     if dialog is not None:
@@ -2183,6 +2248,20 @@ def test_qt_smoke_unlocks_desktop_runtime_paths(
     assert expected in result.stdout
 
 
+def test_qt_initial_setup_requires_confirmed_passphrase(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_INITIAL_SETUP_PASSWORD_SCRIPT,
+        tmp_path,
+        mode="client",
+        extra_arg="initial-setup-password",
+        timeout=30,
+    )
+
+    assert "initial-setup-password-ok" in result.stdout
+
+
 def test_qt_client_unlock_surfaces_reticulum_start_failure(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -2492,6 +2571,14 @@ def test_desktop_cli_exposes_package_loopback_smoke() -> None:
     args = build_parser().parse_args(["--loopback-smoke"])
 
     assert args.loopback_smoke is True
+
+
+def test_desktop_cli_can_disable_startup_update_check() -> None:
+    from talon_desktop.main import build_parser
+
+    args = build_parser().parse_args(["--no-update-check"])
+
+    assert args.no_update_check is True
 
 
 @pytest.mark.parametrize(

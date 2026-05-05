@@ -3,8 +3,13 @@ set -eu
 
 zero_sha=0000000000000000000000000000000000000000
 blocked_paths_file=$(mktemp)
-trap 'rm -f "$blocked_paths_file"' EXIT HUP INT TERM
+tag_errors_file=$(mktemp)
+trap 'rm -f "$blocked_paths_file" "$tag_errors_file"' EXIT HUP INT TERM
 
+# Release policy:
+# - CHANGELOG.md is the only Markdown file intended for remote pushes.
+# - Version tags are vX.Y.Z and must include a matching CHANGELOG.md section:
+#   ## [X.Y.Z] - YYYY-MM-DD
 while read -r local_ref local_sha remote_ref remote_sha
 do
     if [ -z "${local_ref:-}" ] || [ "$local_sha" = "$zero_sha" ]; then
@@ -16,6 +21,17 @@ do
         continue
     fi
 
+    case "$remote_ref" in
+        refs/tags/v*)
+            version=${remote_ref#refs/tags/v}
+            if ! git cat-file -e "$local_commit:CHANGELOG.md" 2>/dev/null; then
+                echo "$remote_ref requires CHANGELOG.md at the tagged commit." >> "$tag_errors_file"
+            elif ! git show "$local_commit:CHANGELOG.md" | grep -Fq "## [$version] - "; then
+                echo "$remote_ref requires a CHANGELOG.md section: ## [$version] - YYYY-MM-DD" >> "$tag_errors_file"
+            fi
+            ;;
+    esac
+
     commits=$(git rev-list "$local_commit" --not --remotes)
 
     for commit in $commits
@@ -26,8 +42,8 @@ do
                     status = substr($1, 1, 1)
                     for (i = 2; i <= NF; i++) {
                         path = tolower($i)
-                        allowed = (path == "readme-install.md")
-                        if (path ~ /\.(md|html)$/ && status != "D" && !allowed) {
+                        allowed = (path == "changelog.md")
+                        if (status != "D" && path ~ /\.(md|html)$/ && !allowed) {
                             print $i
                         }
                     }
@@ -36,14 +52,24 @@ do
     done
 done
 
+if [ -s "$tag_errors_file" ]; then
+    {
+        echo "TALON release policy: version tags must include a matching CHANGELOG.md entry."
+        echo
+        sort -u "$tag_errors_file" | sed 's/^/  - /'
+    } >&2
+    exit 1
+fi
+
 if [ -s "$blocked_paths_file" ]; then
     {
-        echo "TALON policy: Markdown and HTML files may be committed locally, but must not be pushed to a remote."
+        echo "TALON policy: .md and .html files may be committed locally but must not be pushed to remote."
+        echo "CHANGELOG.md is the only pushable Markdown release file."
         echo
-        echo "This push contains local-only paths:"
+        echo "This push contains blocked paths:"
         sort -u "$blocked_paths_file" | sed 's/^/  - /'
         echo
-        echo "Split or amend the pushed commits so Markdown and HTML changes stay local."
+        echo "Remove these files from the commits being pushed."
     } >&2
     exit 1
 fi

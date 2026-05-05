@@ -38,6 +38,8 @@ Error (either direction, any time):
 import json
 import typing
 
+from talon_core.version import peer_metadata as _peer_metadata
+
 # ---------------------------------------------------------------------------
 # Message type constants
 # ---------------------------------------------------------------------------
@@ -162,7 +164,33 @@ def validate_message(
     validator = _MESSAGE_VALIDATORS.get(msg_type)
     if validator is not None:
         validator(msg)
+    _validate_optional_peer_metadata(msg)
     return msg
+
+
+def peer_metadata(role: typing.Literal["client", "server"]) -> dict[str, object]:
+    """Return optional app compatibility metadata for outbound wire messages."""
+    return _peer_metadata(role)
+
+
+def peer_metadata_warning(
+    msg: dict,
+    *,
+    expected_role: typing.Literal["client", "server"] | None = None,
+) -> str:
+    """Return a warn-only compatibility message for optional peer metadata."""
+    role = msg.get("role")
+    if expected_role is not None and role is not None and role != expected_role:
+        return f"Peer identified as role {role!r}; expected {expected_role!r}"
+    version = msg.get("app_version")
+    if isinstance(version, str) and not version.strip():
+        return "Peer sent an empty app_version"
+    capabilities = msg.get("capabilities")
+    if isinstance(capabilities, list):
+        remote = {item for item in capabilities if isinstance(item, str)}
+        if "protocol-v1" not in remote:
+            return "Peer did not advertise protocol-v1 capability"
+    return ""
 
 
 def _is_int(value: typing.Any) -> bool:
@@ -203,6 +231,23 @@ def _is_dict(value: typing.Any) -> bool:
 
 def _is_list(value: typing.Any) -> bool:
     return isinstance(value, list)
+
+
+def _validate_optional_peer_metadata(msg: dict) -> None:
+    if "app_version" in msg and not _is_str(msg.get("app_version")):
+        raise ProtocolValidationError(f"{msg.get('type')}: app_version must be a string")
+    if "role" in msg and msg.get("role") not in {"client", "server"}:
+        raise ProtocolValidationError(
+            f"{msg.get('type')}: role must be 'client' or 'server'"
+        )
+    if "capabilities" in msg:
+        capabilities = msg.get("capabilities")
+        if not isinstance(capabilities, list) or not all(
+            isinstance(item, str) for item in capabilities
+        ):
+            raise ProtocolValidationError(
+                f"{msg.get('type')}: capabilities must be a list of strings"
+            )
 
 
 def _validate_enroll_request(msg: dict) -> None:

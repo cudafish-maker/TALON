@@ -7,4 +7,6 @@ inside modules that are loaded only by the desktop entry point.
 
 __all__ = ["__version__"]
 
-__version__ = "0.1.0"
+from talon_core.version import current_app_version
+
+__version__ = current_app_version()

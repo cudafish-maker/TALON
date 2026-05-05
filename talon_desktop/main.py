@@ -39,6 +39,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Unlock without starting Reticulum sync. Useful for local UI smoke tests.",
     )
     parser.add_argument(
+        "--no-update-check",
+        action="store_true",
+        help="Skip the startup TALON release update check.",
+    )
+    parser.add_argument(
+        "--update-manifest-url",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help=(
@@ -120,6 +130,8 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
         config_path=args.config,
         mode=args.mode,
         start_sync=not args.no_sync,
+        check_updates=not args.no_update_check,
+        update_manifest_url=args.update_manifest_url,
     )
 
 

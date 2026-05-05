@@ -118,6 +118,13 @@ class SyncEngine:
             if self._on_lease_renewed:
                 self._on_lease_renewed()
 
+    def check_now(self) -> None:
+        """Run the lease transition check immediately."""
+        try:
+            self._check_lease()
+        except Exception as exc:
+            _log.warning("Lease check error: %s", exc)
+
     # ------------------------------------------------------------------
     # Version-map helpers (used to build delta sync requests)
     # ------------------------------------------------------------------

@@ -1,0 +1,110 @@
+name: Publish TALON Update Manifest
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish the update manifest for"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  manifest:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install signing dependency
+        run: python -m pip install PyNaCl
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for desktop release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            talon-desktop-client-linux.tar.gz
+            talon-desktop-server-linux.tar.gz
+            talon-desktop-client-windows-setup.exe
+            talon-desktop-server-windows-setup.exe
+          )
+          for attempt in $(seq 1 60); do
+            names="$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+            missing=0
+            for name in "${required[@]}"; do
+              if ! grep -Fxq "$name" <<<"$names"; then
+                missing=1
+                break
+              fi
+            done
+            if [ "$missing" = "0" ]; then
+              exit 0
+            fi
+            sleep 30
+          done
+          printf 'Timed out waiting for release assets on %s\n' "$TAG" >&2
+          exit 1
+
+      - name: Download desktop release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          mkdir -p dist/update-assets
+          gh release download "$TAG" \
+            --dir dist/update-assets \
+            --pattern 'talon-desktop-client-linux.tar.gz' \
+            --pattern 'talon-desktop-server-linux.tar.gz' \
+            --pattern 'talon-desktop-client-windows-setup.exe' \
+            --pattern 'talon-desktop-server-windows-setup.exe'
+
+      - name: Generate signed update manifest
+        env:
+          TALON_UPDATE_SIGNING_KEY_B64: ${{ secrets.TALON_UPDATE_SIGNING_KEY_B64 }}
+        shell: bash
+        run: |
+          python build/generate-update-manifest.py \
+            --dist dist/update-assets \
+            --repository "${{ github.repository }}" \
+            --tag "${{ steps.release.outputs.tag }}" \
+            --version "${{ steps.release.outputs.version }}" \
+            --output dist/update-assets/talon-update.json
+          python build/sign-update-manifest.py \
+            dist/update-assets/talon-update.json \
+            dist/update-assets/talon-update.json.sig
+
+      - name: Publish update manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release upload "$TAG" \
+            dist/update-assets/talon-update.json \
+            dist/update-assets/talon-update.json.sig \
+            --clobber

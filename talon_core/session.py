@@ -409,6 +409,24 @@ class TalonCoreSession:
             marker_key=self._reticulum_config_marker_key(),
         )
 
+    def get_i2pd_server_b32(self):
+        """Return the existing TALON i2pd server B32 address, if available."""
+        self._require_unlocked()
+        if self.mode != "server":
+            raise CoreSessionError("The i2pd server address is only available in server mode.")
+        from talon_core.network.i2p_identity import get_i2pd_server_b32
+
+        return get_i2pd_server_b32(self.paths.rns_config_dir)
+
+    def ensure_i2pd_server_b32(self):
+        """Return or create the TALON i2pd server B32 address."""
+        self._require_unlocked()
+        if self.mode != "server":
+            raise CoreSessionError("The i2pd server address is only available in server mode.")
+        from talon_core.network.i2p_identity import ensure_i2pd_server_b32
+
+        return ensure_i2pd_server_b32(self.paths.rns_config_dir)
+
     def start_lease_monitor(self) -> None:
         """Start the lease heartbeat monitor without starting RNS sync."""
         self._require_unlocked()
@@ -584,6 +602,25 @@ class TalonCoreSession:
     def _trigger_client_lock_check(self, operator_id: int) -> None:
         if self._on_client_lock_check is not None:
             self._on_client_lock_check(operator_id)
+            return
+        self.check_operator_lease_now(operator_id)
+
+    def check_operator_lease_now(
+        self,
+        operator_id: typing.Optional[int] = None,
+    ) -> None:
+        """Ask the local lease monitor to evaluate the current operator now."""
+        if self._sync_engine is None:
+            return
+        if operator_id is not None and self._operator_id is not None:
+            try:
+                if int(operator_id) != int(self._operator_id):
+                    return
+            except (TypeError, ValueError):
+                return
+        check_now = getattr(self._sync_engine, "check_now", None)
+        if callable(check_now):
+            check_now()
 
     def command(
         self,

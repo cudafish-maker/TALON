@@ -290,7 +290,10 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
         self._add_interface_template(yggdrasil_client_config(address, port=port))
 
     def _use_i2pd_server_template(self) -> None:
-        self._add_interface_template(i2pd_server_config())
+        if not self._has_i2pd_server_template():
+            self._add_interface_template(i2pd_server_config())
+        if self._core.mode == "server":
+            self._show_i2pd_server_address()
 
     def _use_i2pd_client_template(self) -> None:
         peer, ok = QtWidgets.QInputDialog.getText(
@@ -311,3 +314,69 @@ class ReticulumConfigDialog(QtWidgets.QDialog):
                 mode=self._core.mode,
             )
         )
+
+    def _has_i2pd_server_template(self) -> bool:
+        try:
+            from RNS.vendor.configobj import ConfigObj
+
+            parsed = ConfigObj(self.editor.toPlainText().splitlines())
+            interfaces = parsed.get("interfaces", {})
+            server = interfaces.get("TALON i2pd Server")
+            if server is None:
+                return False
+            return str(server.get("type", "")).strip() == "I2PInterface"
+        except Exception:
+            return "[[TALON i2pd Server]]" in self.editor.toPlainText()
+
+    def _show_i2pd_server_address(self) -> None:
+        try:
+            result = self._core.ensure_i2pd_server_b32()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "i2pd Server Address",
+                (
+                    f"{exc}\n\n"
+                    "Save this i2pd server configuration and start TALON again "
+                    "after i2pd is running, then reopen Network Setup to show "
+                    "the server .b32.i2p address."
+                ),
+            )
+            return
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("i2pd Server Address")
+        dialog.setMinimumWidth(560)
+
+        label = QtWidgets.QLabel("Give this .b32.i2p address to TALON clients.")
+        label.setWordWrap(True)
+
+        address_field = QtWidgets.QLineEdit(result.address)
+        address_field.setReadOnly(True)
+        address_field.selectAll()
+
+        status = "Created server address." if result.generated else "Server address."
+        status_label = QtWidgets.QLabel(status)
+        status_label.setWordWrap(True)
+
+        copy_button = QtWidgets.QPushButton("Copy")
+        close_button = QtWidgets.QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+
+        def copy_address() -> None:
+            QtWidgets.QApplication.clipboard().setText(result.address)
+            copy_button.setText("Copied")
+
+        copy_button.clicked.connect(copy_address)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(copy_button)
+        button_row.addWidget(close_button)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(label)
+        layout.addWidget(address_field)
+        layout.addWidget(status_label)
+        layout.addLayout(button_row)
+        dialog.exec()

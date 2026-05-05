@@ -16,6 +16,7 @@ from talon_core.crypto.identity import (
 from talon_core.crypto.passphrase import (
     PassphrasePolicyError,
     evaluate_passphrase_strength,
+    passphrase_requirements_text,
     validate_passphrase_policy,
 )
 
@@ -149,6 +150,16 @@ class TestProtectedIdentity:
 class TestPassphrasePolicy:
     def test_accepts_twelve_chars_with_three_classes(self):
         validate_passphrase_policy("ValidPass-12")
+
+    def test_requirements_text_matches_user_facing_policy(self):
+        text = passphrase_requirements_text()
+
+        assert "At least 12 characters." in text
+        assert "lowercase letters" in text
+        assert "uppercase letters" in text
+        assert "numbers" in text
+        assert "symbols" in text
+        assert "predictable patterns" in text
 
     @pytest.mark.parametrize(
         "passphrase",

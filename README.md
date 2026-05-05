@@ -61,6 +61,13 @@ The installer creates a TALON-specific Reticulum config by default. Add any
 deployment-specific TCP, Yggdrasil, I2P, or RNode interface settings before
 depending on those transports in the field.
 
+## In-App Updates
+
+TALON checks the signed public update manifest at startup and prompts when a
+newer same-role desktop package is available. Disable this with
+`[updates] enabled = false` in `talon.ini` or by launching with
+`--no-update-check`.
+
 ## Default Paths
 
 - Install root: `$XDG_DATA_HOME/talon` or `~/.local/share/talon`

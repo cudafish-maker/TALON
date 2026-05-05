@@ -1,4 +1,6 @@
 import os
+import base64
+import hashlib
 import pathlib
 import stat
 import time
@@ -21,6 +23,7 @@ from talon_core.network.rns_config import (
 )
 
 TEST_KEY = bytes(range(32))
+I2P_TEST_PRIVATE_KEY = base64.b64encode(bytes(387)).decode("ascii")
 
 
 def _write_config(tmp_path: pathlib.Path, mode: str) -> pathlib.Path:
@@ -77,12 +80,35 @@ def test_core_session_starts_unlocks_and_closes_client(tmp_path: pathlib.Path) -
     assert int(row[0]) == DB_SCHEMA_VERSION
 
     session.close()
-
     assert session.conn is None
     assert session.is_unlocked is False
     assert session.read_model("session")["unlocked"] is False
     with pytest.raises(CoreSessionError):
         session.read_model("operators")
+
+
+def test_client_lock_check_rechecks_local_lease_without_callback(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    calls = []
+
+    class _LeaseMonitor:
+        def check_now(self) -> None:
+            calls.append("checked")
+
+        def stop(self) -> None:
+            return None
+
+    session._operator_id = 12
+    session._sync_engine = _LeaseMonitor()
+
+    session._trigger_client_lock_check(12)
+    session._trigger_client_lock_check(13)
+
+    assert calls == ["checked"]
+    session.close()
 
 
 def test_core_session_unlock_derives_key_from_passphrase(
@@ -1449,6 +1475,66 @@ def test_core_reticulum_yggdrasil_and_i2pd_templates_validate(
     )
     assert session.validate_reticulum_config_text(i2pd_client).valid is True
 
+    session.close()
+
+
+def test_core_i2pd_server_b32_reads_existing_destination(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    i2p_dir = session.paths.rns_config_dir / "storage" / "i2p"
+    i2p_dir.mkdir(parents=True)
+    destination_hash = hashlib.sha256(
+        hashlib.sha256(b"TALON i2pd Server").digest()
+    ).hexdigest()
+    key_path = i2p_dir / f"{destination_hash}.i2p"
+    key_path.write_text(I2P_TEST_PRIVATE_KEY, encoding="utf-8")
+
+    expected = (
+        base64.b32encode(hashlib.sha256(bytes(387)).digest())
+        .decode("ascii")[:52]
+        .lower()
+        + ".b32.i2p"
+    )
+    result = session.get_i2pd_server_b32()
+
+    assert result is not None
+    assert result.address == expected
+    assert result.key_path == key_path
+    assert result.generated is False
+    session.close()
+
+
+def test_core_i2pd_server_b32_generation_uses_reticulum_key_scheme(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    from talon_core.network import i2p_identity
+
+    monkeypatch.setattr(
+        i2p_identity,
+        "_generate_i2p_destination_private_key",
+        lambda: I2P_TEST_PRIVATE_KEY,
+    )
+    result = session.ensure_i2pd_server_b32()
+
+    assert result.generated is True
+    assert result.address.endswith(".b32.i2p")
+    assert result.key_path.is_file()
+    assert result.key_path.parent == session.paths.rns_config_dir / "storage" / "i2p"
+    assert (session.paths.rns_config_dir / "storage" / "transport_identity").is_file()
+    existing = session.get_i2pd_server_b32()
+    assert existing is not None
+    assert existing.address == result.address
+    assert existing.key_path == result.key_path
+    assert existing.generated is False
     session.close()
 
 

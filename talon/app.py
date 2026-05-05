@@ -124,7 +124,7 @@ class TalonApp(MDApp):
                 else None
             )
             if engine is not None:
-                engine.set_operator_id(operator_id)
+                self.core_session.check_operator_lease_now(operator_id)
 
         Clock.schedule_once(_dispatch, 0)
 

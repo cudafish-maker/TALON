@@ -1,5 +1,6 @@
 #:kivy 2.0
 #:import theme talon.ui.theme
+#:import dp kivy.metrics.dp
 
 <LoginScreen>:
     MDBoxLayout:
@@ -20,6 +21,7 @@
             text_size: self.width, None # takes full width of the parent
 
         MDLabel:
+            id: subtitle_label
             text: "Tactical Awareness & Linked Operations Network"
             halign: "center"
             font_style: "Body"
@@ -31,15 +33,41 @@
             mode: "outlined"
 
             MDTextFieldHintText:
+                id: passphrase_hint
                 text: "Passphrase"
+
+        MDTextField:
+            id: confirm_passphrase_field
+            password: True
+            mode: "outlined"
+            disabled: not root.initial_setup
+            opacity: 1 if root.initial_setup else 0
+            size_hint_y: None
+            height: dp(64) if root.initial_setup else 0
+
+            MDTextFieldHintText:
+                text: "Confirm passphrase"
+
+        MDLabel:
+            id: requirements_label
+            text: root.passphrase_requirements if root.initial_setup else ""
+            halign: "left"
+            valign: "middle"
+            font_style: "Body"
+            role: "small"
+            theme_text_color: "Secondary"
+            text_size: self.width, None
+            size_hint_y: None
+            height: dp(96) if root.initial_setup else 0
 
         MDButton:
             id: unlock_button
             style: "elevated"
             pos_hint: {"center_x": .5}
-            on_release: root.on_login_pressed(passphrase_field.text)
+            on_release: root.on_login_pressed(passphrase_field.text, confirm_passphrase_field.text)
 
             MDButtonText:
+                id: unlock_button_text
                 text: "UNLOCK"
 
         MDLabel:

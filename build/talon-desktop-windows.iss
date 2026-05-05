@@ -36,7 +36,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 UsePreviousAppDir=yes
-UninstallDisplayIcon={app}\talon-desktop.exe
+SetupIconFile=..\dist\talon-desktop-windows\_internal\Images\talonlogo.ico
+UninstallDisplayIcon={app}\_internal\Images\talonlogo.ico
 CloseApplications=yes
 RestartApplications=no
 
@@ -51,8 +52,8 @@ Source: "windows\talon-runtime.ps1"; DestDir: "{app}\tools"; Flags: ignoreversio
 Source: "..\README-install.md"; DestDir: "{app}"; DestName: "README-install.md"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\T.A.L.O.N. {#RoleTitle}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; WorkingDir: "{app}"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\tools\talon-runtime.ps1"" -Role {#ArtifactRole} -DataRoot ""{code:GetDataRoot}"" -Launch ""{app}\talon-desktop.exe"""
-Name: "{commondesktop}\T.A.L.O.N. {#RoleTitle}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; WorkingDir: "{app}"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\tools\talon-runtime.ps1"" -Role {#ArtifactRole} -DataRoot ""{code:GetDataRoot}"" -Launch ""{app}\talon-desktop.exe"""; Tasks: desktopicon
+Name: "{group}\T.A.L.O.N. {#RoleTitle}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; WorkingDir: "{app}"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\tools\talon-runtime.ps1"" -Role {#ArtifactRole} -DataRoot ""{code:GetDataRoot}"" -Launch ""{app}\talon-desktop.exe"""; IconFilename: "{app}\_internal\Images\talonlogo.ico"
+Name: "{commondesktop}\T.A.L.O.N. {#RoleTitle}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; WorkingDir: "{app}"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\tools\talon-runtime.ps1"" -Role {#ArtifactRole} -DataRoot ""{code:GetDataRoot}"" -Launch ""{app}\talon-desktop.exe"""; IconFilename: "{app}\_internal\Images\talonlogo.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked

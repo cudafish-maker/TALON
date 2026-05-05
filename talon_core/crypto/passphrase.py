@@ -9,11 +9,23 @@ class PassphrasePolicyError(ValueError):
     """Raised when a passphrase does not meet the TALON local policy."""
 
 
+PASSPHRASE_REQUIREMENTS = (
+    "At least 12 characters.",
+    "Include at least three of: lowercase letters, uppercase letters, numbers, symbols.",
+    "Avoid common words, keyboard or number sequences, repeated characters, and predictable patterns.",
+)
+
+
 @dataclasses.dataclass(frozen=True)
 class PassphraseStrengthResult:
     score: int
     valid: bool
     reason: str
+
+
+def passphrase_requirements_text() -> str:
+    """Return the local passphrase policy as UI-ready text."""
+    return "\n".join(f"- {requirement}" for requirement in PASSPHRASE_REQUIREMENTS)
 
 
 def validate_passphrase_policy(passphrase: str) -> None:

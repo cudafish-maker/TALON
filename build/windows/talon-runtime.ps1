@@ -106,6 +106,10 @@ lease_duration_seconds = 86400
 
 [documents]
 storage_path = $DocumentsDir
+
+[updates]
+enabled = true
+manifest_url = https://github.com/cudafish-maker/TALON/releases/latest/download/talon-update.json
 "@
 }
 

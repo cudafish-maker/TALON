@@ -19,6 +19,7 @@ import threading
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.properties import BooleanProperty, StringProperty
 from kivy.uix.modalview import ModalView
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDButton, MDButtonText
@@ -26,6 +27,7 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
+from talon_core.crypto.passphrase import passphrase_requirements_text
 from talon.utils.logging import get_logger
 
 _log = get_logger("ui.login")
@@ -34,16 +36,39 @@ _log = get_logger("ui.login")
 class LoginScreen(MDScreen):
     """Passphrase entry screen."""
 
+    initial_setup = BooleanProperty(False)
+    passphrase_requirements = StringProperty(passphrase_requirements_text())
+
     def on_kv_post(self, base_widget) -> None:
         app = App.get_running_app()
         mode_label = "Server" if app.mode == "server" else "Client"
         self.ids.title_label.text = f"T.A.L.O.N. {mode_label}"
+        self.initial_setup = not app.core_session.paths.db_path.exists()
+        self.ids.subtitle_label.text = (
+            "Create the local database passphrase."
+            if self.initial_setup
+            else "Tactical Awareness & Linked Operations Network"
+        )
+        self.ids.passphrase_hint.text = (
+            "New passphrase" if self.initial_setup else "Passphrase"
+        )
+        self.ids.unlock_button_text.text = (
+            "CREATE PASSPHRASE" if self.initial_setup else "UNLOCK"
+        )
 
-    def on_login_pressed(self, passphrase: str) -> None:
+    def on_login_pressed(self, passphrase: str, confirmation: str = "") -> None:
         """Called by the KV login button."""
         if not passphrase.strip():
             self.ids.error_label.text = "Passphrase is required."
             return
+        if self.initial_setup:
+            if not confirmation.strip():
+                self.ids.error_label.text = "Confirm passphrase is required."
+                return
+            if passphrase != confirmation:
+                self.ids.confirm_passphrase_field.text = ""
+                self.ids.error_label.text = "Passphrases do not match."
+                return
         self.ids.error_label.text = "Deriving key\u2026"
         self.ids.unlock_button.disabled = True
 

@@ -161,8 +161,15 @@ exit 1
 def _fake_desktop_bundle(tmp_path: Path, role: str) -> Path:
     bundle = tmp_path / f"talon-desktop-{role}-linux-source"
     internal = bundle / "_internal"
-    internal.mkdir(parents=True)
+    images = internal / "Images"
+    images.mkdir(parents=True)
     (internal / "base_library.zip").write_bytes(b"")
+    (images / "talonlogo.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+        b"\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
     (bundle / ".talon-artifact-role").write_text(f"{role}\n", encoding="utf-8")
 
     app = bundle / "talon-desktop"
@@ -263,14 +270,30 @@ def test_desktop_client_artifact_installs_only_client_launcher_and_entry(tmp_pat
     assert not (tmp_path / "bin" / "talon-desktop").exists()
     assert not (tmp_path / "bin" / "talon-desktop-server").exists()
     entry = tmp_path / "xdg-data" / "applications" / "talon-desktop-client.desktop"
+    desktop_shortcut = tmp_path / "home" / "Desktop" / "talon-desktop-client.desktop"
+    icon_path = (
+        tmp_path
+        / "install"
+        / "talon-desktop-client-linux"
+        / "_internal"
+        / "Images"
+        / "talonlogo.png"
+    )
     assert entry.is_file()
+    assert desktop_shortcut.is_file()
+    assert desktop_shortcut.stat().st_mode & stat.S_IXUSR
     text = entry.read_text(encoding="utf-8")
     assert "Name=T.A.L.O.N. Client" in text
     assert f"Exec={tmp_path / 'bin' / 'talon-desktop-client'}" in text
+    assert f"Icon={icon_path}" in text
+    assert desktop_shortcut.read_text(encoding="utf-8") == text
     assert not (tmp_path / "xdg-data" / "applications" / "talon-desktop.desktop").exists()
     assert not (tmp_path / "xdg-data" / "applications" / "talon-desktop-server.desktop").exists()
     assert (tmp_path / "home" / ".talon" / "talon.ini").is_file()
-    assert "mode = client" in (tmp_path / "home" / ".talon" / "talon.ini").read_text(encoding="utf-8")
+    config_text = (tmp_path / "home" / ".talon" / "talon.ini").read_text(encoding="utf-8")
+    assert "mode = client" in config_text
+    assert "[updates]" in config_text
+    assert "manifest_url = https://github.com/cudafish-maker/TALON/releases/latest/download/talon-update.json" in config_text
     rns_config = tmp_path / "home" / ".talon" / "reticulum" / "config"
     assert rns_config.is_file()
     rns_text = rns_config.read_text(encoding="utf-8")
@@ -294,12 +317,27 @@ def test_desktop_server_artifact_installs_only_server_launcher_and_entry(tmp_pat
     assert not (tmp_path / "bin" / "talon-desktop").exists()
     assert not (tmp_path / "bin" / "talon-desktop-client").exists()
     entry = tmp_path / "xdg-data" / "applications" / "talon-desktop-server.desktop"
+    desktop_shortcut = tmp_path / "home" / "Desktop" / "talon-desktop-server.desktop"
+    icon_path = (
+        tmp_path
+        / "install"
+        / "talon-desktop-server-linux"
+        / "_internal"
+        / "Images"
+        / "talonlogo.png"
+    )
     assert entry.is_file()
+    assert desktop_shortcut.is_file()
+    assert desktop_shortcut.stat().st_mode & stat.S_IXUSR
     text = entry.read_text(encoding="utf-8")
     assert "Name=T.A.L.O.N. Server" in text
     assert f"Exec={tmp_path / 'bin' / 'talon-desktop-server'}" in text
+    assert f"Icon={icon_path}" in text
+    assert desktop_shortcut.read_text(encoding="utf-8") == text
     assert (tmp_path / "home" / ".talon-server" / "talon.ini").is_file()
-    assert "mode = server" in (tmp_path / "home" / ".talon-server" / "talon.ini").read_text(encoding="utf-8")
+    config_text = (tmp_path / "home" / ".talon-server" / "talon.ini").read_text(encoding="utf-8")
+    assert "mode = server" in config_text
+    assert "[updates]" in config_text
     rns_config = tmp_path / "home" / ".talon-server" / "reticulum" / "config"
     assert rns_config.is_file()
     rns_text = rns_config.read_text(encoding="utf-8")
@@ -647,6 +685,14 @@ def test_desktop_installer_rejects_mode_option(tmp_path):
     assert "--mode is not supported" in result.stderr
 
 
+def test_desktop_installer_has_dependencies_only_mode():
+    text = DESKTOP_INSTALLER.read_text(encoding="utf-8")
+
+    assert "--deps-only" in text
+    assert "DEPS_ONLY" in text
+    assert "install_runtime_dependencies" in text
+
+
 def test_desktop_same_role_reinstall_preserves_config_without_confirmation(tmp_path):
     env = _desktop_env(tmp_path)
     bundle = _fake_desktop_bundle(tmp_path, "client")
@@ -743,7 +789,9 @@ def test_desktop_confirmed_role_switch_deletes_previous_talon_footprint(tmp_path
     assert not legacy_entry.exists()
     assert not (tmp_path / "bin" / "talon-desktop-client").exists()
     assert not (tmp_path / "xdg-data" / "applications" / "talon-desktop-client.desktop").exists()
+    assert not (home / "Desktop" / "talon-desktop-client.desktop").exists()
     assert (tmp_path / "bin" / "talon-desktop-server").exists()
+    assert (home / "Desktop" / "talon-desktop-server.desktop").exists()
     assert (home / ".talon-server" / "talon.ini").exists()
     assert not (state / "old.log").exists()
 
@@ -758,6 +806,7 @@ def test_desktop_uninstall_requires_delete_confirmation(tmp_path):
     assert "Uninstalling TALON requires" in result.stderr
     assert (tmp_path / "home" / ".talon" / "talon.ini").exists()
     assert (tmp_path / "bin" / "talon-desktop-client").exists()
+    assert (tmp_path / "home" / "Desktop" / "talon-desktop-client.desktop").exists()
 
 
 def test_desktop_uninstall_preserves_non_talon_named_files(tmp_path):
@@ -854,6 +903,8 @@ def test_desktop_confirmed_uninstall_deletes_current_legacy_and_custom_paths(tmp
         desktop_dir / "talon-desktop.desktop",
         desktop_dir / "talon-desktop-client.desktop",
         desktop_dir / "talon-desktop-server.desktop",
+        home / "Desktop" / "talon-desktop-client.desktop",
+        home / "Desktop" / "talon-desktop-server.desktop",
         settings_dir,
         state,
         custom_config,

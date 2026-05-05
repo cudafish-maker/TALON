@@ -44,8 +44,9 @@ Options:
                        Also required for full uninstall cleanup.
   --uninstall          Remove local TALON desktop/legacy installs and data, then exit.
   --yes                Assume yes for supported system package managers.
+  --deps-only          Install or update runtime dependencies, then exit.
   --no-deps            Do not install system runtime dependencies.
-  --no-desktop         Do not create a desktop launcher entry.
+  --no-desktop         Do not create desktop menu or desktop shortcut entries.
   --no-bin             Do not create the role-specific launcher wrapper.
   --smoke-test         Run the installed PySide6 package smoke test.
   -h, --help           Show this help.
@@ -657,6 +658,7 @@ validate_bundle() {
     local required=(
         "$bundle_dir/$APP_NAME"
         "$bundle_dir/_internal/base_library.zip"
+        "$bundle_dir/_internal/Images/talonlogo.png"
         "$bundle_dir/$ROLE_MARKER"
     )
     local path
@@ -742,6 +744,10 @@ lease_duration_seconds = 86400
 
 [documents]
 storage_path = $documents_dir
+
+[updates]
+enabled = true
+manifest_url = https://github.com/cudafish-maker/TALON/releases/latest/download/talon-update.json
 EOF
 
     chmod 600 "$config_path"
@@ -854,6 +860,35 @@ EOF
     log "Installed launcher: $wrapper"
 }
 
+resolve_desktop_shortcut_dir() {
+    local config="${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+    local line
+    local raw=""
+
+    if [[ -f $config ]]; then
+        while IFS= read -r line; do
+            case "$line" in
+                XDG_DESKTOP_DIR=*)
+                    raw=${line#XDG_DESKTOP_DIR=}
+                    ;;
+            esac
+        done < "$config"
+        raw=${raw%\"}
+        raw=${raw#\"}
+        raw=${raw//\$HOME/$HOME}
+    fi
+
+    [[ -n $raw ]] || raw="$HOME/Desktop"
+    make_abs_path "$raw"
+}
+
+mark_desktop_shortcut_trusted() {
+    local shortcut_path=$1
+    if command -v gio >/dev/null 2>&1; then
+        gio set "$shortcut_path" metadata::trusted true >/dev/null 2>&1 || true
+    fi
+}
+
 write_desktop_entry() {
     local target_dir=$1
     local bin_dir=$2
@@ -861,11 +896,14 @@ write_desktop_entry() {
     local launcher_name=$4
     local entry_name=$5
     local display_name=$6
+    local desktop_shortcut_dir=$7
     local entry_path=$desktop_dir/$entry_name
+    local shortcut_path=$desktop_shortcut_dir/$entry_name
     local icon_path=$target_dir/_internal/Images/talonlogo.png
 
     mkdir -p "$desktop_dir"
-    [[ -f $icon_path ]] || icon_path=
+    mkdir -p "$desktop_shortcut_dir"
+    [[ -f $icon_path ]] || die "TALON desktop bundle is missing application icon: $icon_path"
 
     cat > "$entry_path" <<EOF
 [Desktop Entry]
@@ -880,10 +918,14 @@ StartupNotify=true
 EOF
 
     chmod 644 "$entry_path"
+    cp "$entry_path" "$shortcut_path"
+    chmod 755 "$shortcut_path"
+    mark_desktop_shortcut_trusted "$shortcut_path"
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database "$desktop_dir" >/dev/null 2>&1 || true
     fi
     log "Installed desktop entry: $entry_path"
+    log "Installed desktop shortcut: $shortcut_path"
 }
 
 run_smoke_test() {
@@ -911,10 +953,11 @@ write_install_manifest() {
     local target_dir=$3
     local launcher_path=$4
     local desktop_entry_path=$5
-    local config_path=$6
-    local data_dir=$7
-    local rns_dir=$8
-    local documents_dir=$9
+    local desktop_shortcut_path=$6
+    local config_path=$7
+    local data_dir=$8
+    local rns_dir=$9
+    local documents_dir=${10}
 
     mkdir -p "$(dirname "$manifest_path")"
     chmod 700 "$(dirname "$manifest_path")"
@@ -923,6 +966,7 @@ role=$role
 bundle=$target_dir
 launcher=$launcher_path
 desktop_entry=$desktop_entry_path
+desktop_shortcut=$desktop_shortcut_path
 config=$config_path
 data=$data_dir
 rns=$rns_dir
@@ -985,7 +1029,7 @@ add_manifest_paths() {
     [[ -f $manifest_path ]] || return 0
     while IFS='=' read -r key value; do
         case "$key" in
-            bundle|launcher|desktop_entry|config|data|rns|documents)
+            bundle|launcher|desktop_entry|desktop_shortcut|config|data|rns|documents)
                 [[ -n $value && ( -e $value || -L $value ) ]] && target_ref+=("$value")
                 ;;
         esac
@@ -998,8 +1042,9 @@ collect_talon_footprint_paths() {
     local install_root=$2
     local bin_dir=$3
     local desktop_dir=$4
-    local state_dir=$5
-    local include_install_artifacts=${6:-0}
+    local desktop_shortcut_dir=$5
+    local state_dir=$6
+    local include_install_artifacts=${7:-0}
     local artifact_name
     local settings_home
 
@@ -1018,6 +1063,10 @@ collect_talon_footprint_paths() {
     add_talon_owned_file_path "$output_name" "$desktop_dir/talon-desktop.desktop"
     add_talon_owned_file_path "$output_name" "$desktop_dir/talon-desktop-client.desktop"
     add_talon_owned_file_path "$output_name" "$desktop_dir/talon-desktop-server.desktop"
+    add_talon_owned_file_path "$output_name" "$desktop_shortcut_dir/talon.desktop"
+    add_talon_owned_file_path "$output_name" "$desktop_shortcut_dir/talon-desktop.desktop"
+    add_talon_owned_file_path "$output_name" "$desktop_shortcut_dir/talon-desktop-client.desktop"
+    add_talon_owned_file_path "$output_name" "$desktop_shortcut_dir/talon-desktop-server.desktop"
     add_existing_path "$output_name" "$state_dir"
     add_manifest_paths "$output_name" "$(manifest_path_for_role "$state_dir" client)"
     add_manifest_paths "$output_name" "$(manifest_path_for_role "$state_dir" server)"
@@ -1115,15 +1164,17 @@ guard_role_switch() {
     local install_root=$2
     local bin_dir=$3
     local desktop_dir=$4
-    local state_dir=$5
-    local target_dir=$6
-    local launcher_path=$7
-    local desktop_entry_path=$8
-    local config_path=$9
-    local data_dir=${10}
-    local rns_dir=${11}
-    local documents_dir=${12}
-    local current_manifest=${13}
+    local desktop_shortcut_dir=$5
+    local state_dir=$6
+    local target_dir=$7
+    local launcher_path=$8
+    local desktop_entry_path=$9
+    local desktop_shortcut_path=${10}
+    local config_path=${11}
+    local data_dir=${12}
+    local rns_dir=${13}
+    local documents_dir=${14}
+    local current_manifest=${15}
     local -a detected=()
     local -a expected=()
     local -a unexpected=()
@@ -1134,6 +1185,7 @@ guard_role_switch() {
         "$target_dir"
         "$launcher_path"
         "$desktop_entry_path"
+        "$desktop_shortcut_path"
         "$config_path"
         "$data_dir"
         "$rns_dir"
@@ -1142,7 +1194,7 @@ guard_role_switch() {
         "$state_dir"
     )
 
-    collect_talon_footprint_paths detected "$install_root" "$bin_dir" "$desktop_dir" "$state_dir" 0
+    collect_talon_footprint_paths detected "$install_root" "$bin_dir" "$desktop_dir" "$desktop_shortcut_dir" "$state_dir" 0
     for path in "${detected[@]}"; do
         if ! path_in_list "$path" "${expected[@]}"; then
             unexpected+=("$path")
@@ -1159,11 +1211,12 @@ run_uninstall_cleanup() {
     local install_root=$1
     local bin_dir=$2
     local desktop_dir=$3
-    local state_dir=$4
+    local desktop_shortcut_dir=$4
+    local state_dir=$5
     local -a cleanup=()
     local removed_count
 
-    collect_talon_footprint_paths cleanup "$install_root" "$bin_dir" "$desktop_dir" "$state_dir" 1
+    collect_talon_footprint_paths cleanup "$install_root" "$bin_dir" "$desktop_dir" "$desktop_shortcut_dir" "$state_dir" 1
     add_existing_path cleanup "$CONFIG_PATH"
     add_existing_path cleanup "$DATA_DIR"
     add_existing_path cleanup "$RNS_DIR"
@@ -1201,6 +1254,7 @@ DESKTOP_DISPLAY_NAME=""
 CONFIRM_DELETE=""
 ASSUME_YES="0"
 INSTALL_DEPS="1"
+DEPS_ONLY="0"
 INSTALL_DESKTOP="1"
 INSTALL_BIN="1"
 SMOKE_TEST="0"
@@ -1286,6 +1340,10 @@ while (($#)); do
         --yes)
             ASSUME_YES="1"
             ;;
+        --deps-only)
+            DEPS_ONLY="1"
+            INSTALL_DEPS="1"
+            ;;
         --no-deps)
             INSTALL_DEPS="0"
             ;;
@@ -1328,6 +1386,7 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/talon"
 STATE_DIR=$(make_abs_path "$STATE_DIR")
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 DESKTOP_DIR=$(make_abs_path "$DESKTOP_DIR")
+DESKTOP_SHORTCUT_DIR=$(resolve_desktop_shortcut_dir)
 
 if [[ -n $CONFIG_PATH ]]; then
     CONFIG_PATH=$(make_abs_path "$CONFIG_PATH")
@@ -1345,7 +1404,15 @@ fi
 if [[ $UNINSTALL == "1" ]]; then
     ((${#positionals[@]} == 0)) || die "--uninstall does not accept a bundle path."
     [[ $SMOKE_TEST == "0" ]] || die "--smoke-test cannot be used with --uninstall."
-    run_uninstall_cleanup "$INSTALL_ROOT" "$BIN_DIR" "$DESKTOP_DIR" "$STATE_DIR"
+    [[ $DEPS_ONLY == "0" ]] || die "--deps-only cannot be used with --uninstall."
+    run_uninstall_cleanup "$INSTALL_ROOT" "$BIN_DIR" "$DESKTOP_DIR" "$DESKTOP_SHORTCUT_DIR" "$STATE_DIR"
+    exit 0
+fi
+
+if [[ $DEPS_ONLY == "1" ]]; then
+    ((${#positionals[@]} == 0)) || die "--deps-only does not accept a bundle path."
+    [[ $SMOKE_TEST == "0" ]] || die "--smoke-test cannot be used with --deps-only."
+    install_runtime_dependencies
     exit 0
 fi
 
@@ -1396,6 +1463,7 @@ CONFIG_PATH=$(make_abs_path "$CONFIG_PATH")
 TARGET_DIR="$INSTALL_ROOT/$BUNDLE_NAME"
 LAUNCHER_PATH="$BIN_DIR/$LAUNCHER_NAME"
 DESKTOP_ENTRY_PATH="$DESKTOP_DIR/$DESKTOP_ENTRY_NAME"
+DESKTOP_SHORTCUT_PATH="$DESKTOP_SHORTCUT_DIR/$DESKTOP_ENTRY_NAME"
 INSTALL_MANIFEST=$(manifest_path_for_role "$STATE_DIR" "$ARTIFACT_ROLE")
 
 enforce_role_path_reservation "$ARTIFACT_ROLE" "$DATA_DIR" "$CONFIG_PATH"
@@ -1404,10 +1472,12 @@ guard_role_switch \
     "$INSTALL_ROOT" \
     "$BIN_DIR" \
     "$DESKTOP_DIR" \
+    "$DESKTOP_SHORTCUT_DIR" \
     "$STATE_DIR" \
     "$TARGET_DIR" \
     "$LAUNCHER_PATH" \
     "$DESKTOP_ENTRY_PATH" \
+    "$DESKTOP_SHORTCUT_PATH" \
     "$CONFIG_PATH" \
     "$DATA_DIR" \
     "$RNS_DIR" \
@@ -1431,7 +1501,7 @@ else
 fi
 
 if [[ $INSTALL_DESKTOP == "1" && $INSTALL_BIN == "1" ]]; then
-    write_desktop_entry "$TARGET_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$LAUNCHER_NAME" "$DESKTOP_ENTRY_NAME" "$DESKTOP_DISPLAY_NAME"
+    write_desktop_entry "$TARGET_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$LAUNCHER_NAME" "$DESKTOP_ENTRY_NAME" "$DESKTOP_DISPLAY_NAME" "$DESKTOP_SHORTCUT_DIR"
 else
     log "Skipping desktop entry."
 fi
@@ -1442,6 +1512,7 @@ write_install_manifest \
     "$TARGET_DIR" \
     "$LAUNCHER_PATH" \
     "$DESKTOP_ENTRY_PATH" \
+    "$DESKTOP_SHORTCUT_PATH" \
     "$CONFIG_PATH" \
     "$DATA_DIR" \
     "$RNS_DIR" \

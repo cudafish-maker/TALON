@@ -324,6 +324,9 @@ class ServerLinkRouter:
             self._handler._send_error(link, str(exc))
             self._handler._teardown_link(link)
             return
+        warning = proto.peer_metadata_warning(msg, expected_role="client")
+        if warning:
+            self._log.warning("Client compatibility metadata warning: %s", warning)
 
         try:
             if msg_type == proto.MSG_ENROLL_REQUEST:
@@ -575,6 +578,7 @@ class ServerMessageHandlers:
                         "callsign": callsign,
                         "lease_expires_at": None,
                         "error": "enroll_request requires an identified RNS link",
+                        **proto.peer_metadata("server"),
                     }
                 ),
             )
@@ -599,6 +603,7 @@ class ServerMessageHandlers:
                         "callsign": callsign,
                         "lease_expires_at": None,
                         "error": "enroll_request missing token or callsign",
+                        **proto.peer_metadata("server"),
                     }
                 ),
             )
@@ -622,6 +627,7 @@ class ServerMessageHandlers:
                         "callsign": callsign[:32],
                         "lease_expires_at": None,
                         "error": "callsign must be 32 characters or fewer",
+                        **proto.peer_metadata("server"),
                     }
                 ),
             )
@@ -649,6 +655,7 @@ class ServerMessageHandlers:
                             "rns_hash must be a "
                             f"{expected_hash_len}-character hex string"
                         ),
+                        **proto.peer_metadata("server"),
                     }
                 ),
             )
@@ -672,6 +679,7 @@ class ServerMessageHandlers:
                         "callsign": op.callsign,
                         "lease_expires_at": op.lease_expires_at,
                         "error": None,
+                        **proto.peer_metadata("server"),
                     }
                 ),
             )
@@ -698,6 +706,7 @@ class ServerMessageHandlers:
                         "callsign": callsign,
                         "lease_expires_at": None,
                         "error": str(exc),
+                        **proto.peer_metadata("server"),
                     }
                 ),
             )
@@ -753,6 +762,7 @@ class ServerMessageHandlers:
                     "type": proto.MSG_SYNC_DONE,
                     "tombstones": tombstones,
                     "server_id_sets": server_id_sets,
+                    **proto.peer_metadata("server"),
                 }
             ),
         )
@@ -817,6 +827,7 @@ class ServerMessageHandlers:
                     "type": proto.MSG_HEARTBEAT_ACK,
                     "timestamp": now,
                     "lease_expires_at": lease_expires_at,
+                    **proto.peer_metadata("server"),
                 }
             ),
         )

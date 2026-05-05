@@ -555,15 +555,27 @@ class ClientRecordApplier:
         manager = self._manager
         if not lease_expires_at or not manager._operator_id:
             return
+        changed = False
         with manager._lock:
             try:
+                new_expiry = int(lease_expires_at)
+                row = manager._conn.execute(
+                    "SELECT lease_expires_at FROM operators WHERE id = ?",
+                    (manager._operator_id,),
+                ).fetchone()
+                if row is not None and int(row[0]) == new_expiry:
+                    return
                 manager._conn.execute(
                     "UPDATE operators SET lease_expires_at = ? WHERE id = ?",
-                    (int(lease_expires_at), manager._operator_id),
+                    (new_expiry, manager._operator_id),
                 )
                 manager._conn.commit()
+                changed = True
             except Exception as exc:
                 self._log.warning("Could not update lease in local DB: %s", exc)
+        if changed:
+            self._ui_dispatcher.notify("operators", badge=False)
+            manager._trigger_local_lock_check()
 
     def mark_operator_lease_expired(
         self,
@@ -698,6 +710,7 @@ class ClientRecordApplier:
 
         applied = False
         local_operator_was_revoked = False
+        local_operator_lease_expires_at: typing.Optional[int] = None
         with manager._lock:
             if table in _SERVER_OPERATOR_FK_TABLES:
                 try:
@@ -720,16 +733,18 @@ class ClientRecordApplier:
             if table == "operators" and record.get("id") == manager._operator_id:
                 try:
                     row = manager._conn.execute(
-                        "SELECT revoked, sync_status, skills, profile "
+                        "SELECT revoked, sync_status, skills, profile, lease_expires_at "
                         "FROM operators WHERE id = ?",
                         (manager._operator_id,),
                     ).fetchone()
                     local_operator_was_revoked = bool(row[0]) if row else False
+                    local_operator_lease_expires_at = int(row[4]) if row else None
                     if row and str(row[1]) == "pending":
                         record["skills"] = row[2]
                         record["profile"] = row[3]
                 except Exception:
                     local_operator_was_revoked = False
+                    local_operator_lease_expires_at = None
 
             try:
                 if table == "documents":
@@ -758,15 +773,25 @@ class ClientRecordApplier:
             if (
                 table == "operators"
                 and record.get("id") == manager._operator_id
-                and bool(record.get("revoked"))
-                and not local_operator_was_revoked
             ):
-                self._log.warning(
-                    "Local operator row is revoked by server: id=%s",
-                    manager._operator_id,
-                )
-                manager._trigger_local_lock_check()
-                self._burn_self_revocation(int(manager._operator_id))
+                if bool(record.get("revoked")):
+                    if not local_operator_was_revoked:
+                        self._log.warning(
+                            "Local operator row is revoked by server: id=%s",
+                            manager._operator_id,
+                        )
+                        manager._trigger_local_lock_check()
+                        self._burn_self_revocation(int(manager._operator_id))
+                elif "lease_expires_at" in record:
+                    try:
+                        lease_changed = (
+                            int(record["lease_expires_at"])
+                            != local_operator_lease_expires_at
+                        )
+                    except (TypeError, ValueError):
+                        lease_changed = False
+                    if lease_changed:
+                        manager._trigger_local_lock_check()
 
         return applied
 
@@ -1333,6 +1358,7 @@ class ClientEnrollment:
                     "type": proto.MSG_ENROLL_REQUEST,
                     "token": token,
                     "callsign": callsign,
+                    **proto.peer_metadata("client"),
                 }
             )
             try:
@@ -1353,6 +1379,12 @@ class ClientEnrollment:
                 proto.validate_server_message(result["msg"])
             except proto.ProtocolValidationError as exc:
                 result["error"] = f"Malformed response: {exc}"
+            warning = proto.peer_metadata_warning(
+                result["msg"],
+                expected_role="server",
+            )
+            if warning:
+                self._log.warning("Server compatibility metadata warning: %s", warning)
             event.set()
 
         def _on_closed(_link: RNS.Link) -> None:
@@ -1481,6 +1513,7 @@ class ClientLinkLifecycle:
                         "type": proto.MSG_SYNC_REQUEST,
                         "version_map": wire_vm,
                         "last_sync_at": manager._last_sync_at,
+                        **proto.peer_metadata("client"),
                     }
                 ),
             )
@@ -1591,6 +1624,7 @@ class ClientLinkLifecycle:
                     proto.encode(
                         {
                             "type": proto.MSG_HEARTBEAT,
+                            **proto.peer_metadata("client"),
                         }
                     ),
                 )
@@ -1768,6 +1802,7 @@ class ClientLinkLifecycle:
                         "type": proto.MSG_SYNC_REQUEST,
                         "version_map": wire_vm,
                         "last_sync_at": manager._last_sync_at,
+                        **proto.peer_metadata("client"),
                     }
                 ),
             )
@@ -1840,6 +1875,7 @@ class ClientLinkLifecycle:
                 proto.encode(
                     {
                         "type": proto.MSG_HEARTBEAT,
+                        **proto.peer_metadata("client"),
                     }
                 ),
             )
@@ -1901,6 +1937,9 @@ class ClientLinkLifecycle:
             return
 
         msg_type = msg.get("type")
+        warning = proto.peer_metadata_warning(msg, expected_role="server")
+        if warning:
+            self._log.warning("Server compatibility metadata warning: %s", warning)
         if msg_type == proto.MSG_SYNC_RESPONSE:
             table = msg.get("table", "")
             record = msg.get("record")

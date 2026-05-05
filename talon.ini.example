@@ -25,3 +25,11 @@ lease_duration_seconds = 86400
 ; Files are field-encrypted before writing; filenames on disk are opaque UUIDs.
 ; Leave blank to use <data_dir>/documents (~/.talon/documents by default).
 storage_path =
+
+[updates]
+; Check public TALON GitHub releases at startup. Set enabled = false for
+; deployments where startup network contact is not acceptable.
+enabled = true
+manifest_url = https://github.com/cudafish-maker/TALON/releases/latest/download/talon-update.json
+; public_key_b64 can override the built-in Ed25519 update verification key.
+public_key_b64 =

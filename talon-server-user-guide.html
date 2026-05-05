@@ -81,7 +81,7 @@ figcaption { color:var(--muted); font-size:9pt; margin-top:0.05in; }
 
 <h2 id="install">Installation</h2>
 <h3>Install The Server Artifact</h3>
-<p>Use the server-specific Linux artifact. The installer reads the role marker from the extracted bundle and creates a server launcher. Do not pass a role flag to the installer.</p>
+<p>Use the server-specific Linux artifact. The installer reads the role marker from the extracted bundle and creates a server launcher, desktop menu entry, and desktop shortcut using the bundled TALON logo. Do not pass a role flag to the installer.</p>
 <pre>tar -xzf talon-desktop-server-linux.tar.gz
 cd talon-desktop-server-linux
 bash ./install.sh --yes</pre>
@@ -90,7 +90,8 @@ bash ./install.sh --yes</pre>
 <table>
   <tr><th>Item</th><th>Default path or name</th></tr>
   <tr><td>Launcher</td><td><code>~/.local/bin/talon-desktop-server</code></td></tr>
-  <tr><td>Desktop entry</td><td><code>talon-desktop-server.desktop</code>, displayed as <strong>T.A.L.O.N. Server</strong></td></tr>
+  <tr><td>Desktop menu entry</td><td><code>${XDG_DATA_HOME:-~/.local/share}/applications/talon-desktop-server.desktop</code>, displayed as <strong>T.A.L.O.N. Server</strong></td></tr>
+  <tr><td>Desktop shortcut</td><td><code>~/Desktop/talon-desktop-server.desktop</code></td></tr>
   <tr><td>Data directory</td><td><code>~/.talon-server</code></td></tr>
   <tr><td>Application config</td><td><code>~/.talon-server/talon.ini</code></td></tr>
   <tr><td>TALON Reticulum config</td><td><code>~/.talon-server/reticulum/config</code></td></tr>
@@ -104,7 +105,7 @@ bash ./install.sh --yes</pre>
   <tr><td><code>--yes</code></td><td>Assume yes for supported system package managers.</td></tr>
   <tr><td><code>--no-deps</code></td><td>Skip system runtime dependency installation.</td></tr>
   <tr><td><code>--no-bin</code></td><td>Skip role-specific launcher wrapper creation.</td></tr>
-  <tr><td><code>--no-desktop</code></td><td>Skip desktop entry creation.</td></tr>
+  <tr><td><code>--no-desktop</code></td><td>Skip desktop menu entry and desktop shortcut creation.</td></tr>
   <tr><td><code>--smoke-test</code></td><td>Run the installed package smoke test.</td></tr>
   <tr><td><code>--uninstall --confirm-delete "DELETE TALON DATA"</code></td><td>Remove local TALON desktop files, data, identities, documents, logs, and launchers.</td></tr>
 </table>
@@ -112,10 +113,10 @@ bash ./install.sh --yes</pre>
 
 <h2 id="setup">First Run And Reticulum Setup</h2>
 <h3>Unlock Or Create The Local Database</h3>
-<p>Launch <code>talon-desktop-server</code>. Enter the server database passphrase and select <strong>Unlock</strong>. On a fresh database, choose a strong local passphrase that meets the TALON passphrase policy.</p>
+<p>Launch <code>talon-desktop-server</code>. On a fresh server with no local database, enter a new passphrase, enter it again to confirm it, review the on-screen passphrase requirements, and select <strong>Create Passphrase</strong>. Existing servers enter the server database passphrase and select <strong>Unlock</strong>.</p>
 <figure class="shot">
-  <div class="frame"><img src="assets/server_login.png" alt="Server unlock window."></div>
-  <figcaption>Server unlock window.</figcaption>
+  <div class="frame"><img src="assets/server_login.png" alt="Server first-run passphrase setup window."></div>
+  <figcaption>Server first-run passphrase setup window.</figcaption>
 </figure>
 
 <h3>Configure Reticulum</h3>

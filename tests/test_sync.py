@@ -13,6 +13,7 @@ from talon.db.migrations import apply_migrations
 from talon.documents import DocumentError, cache_document_download
 from talon.network import protocol as proto
 from talon.network import registry
+from talon.network.client_components import ClientUiDispatcher
 from talon.network.client_sync import ClientSyncManager
 from talon.network.sync import SyncEngine, _validated_table
 from talon.server import net_components, net_handler
@@ -2115,6 +2116,95 @@ class TestClientServerPushIntegration:
             ).fetchone()
             assert row == (0, operator_hash, expired_at)
             assert lock_checks == [True]
+
+        finally:
+            close_db(client_conn)
+
+    def test_operator_lease_renewal_push_triggers_local_lock_check(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_lease_renewed.db", test_key)
+        try:
+            operator_hash = "6" * 64
+            _insert_operator(client_conn, 62, "RECOVER", operator_hash)
+            expired_at = int(time.time()) - 30
+            client_conn.execute(
+                "UPDATE operators SET lease_expires_at = ?, version = 1 WHERE id = 62",
+                (expired_at,),
+            )
+            client_conn.commit()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=62)
+            lock_checks = []
+            manager._trigger_local_lock_check = lambda: lock_checks.append(True)
+            renewed_at = int(time.time()) + 3600
+
+            applied = manager._apply_record(
+                "operators",
+                {
+                    "id": 62,
+                    "callsign": "RECOVER",
+                    "rns_hash": operator_hash,
+                    "skills": "[]",
+                    "profile": "{}",
+                    "enrolled_at": 1000,
+                    "lease_expires_at": renewed_at,
+                    "revoked": 0,
+                    "version": 2,
+                },
+            )
+
+            row = client_conn.execute(
+                "SELECT revoked, rns_hash, lease_expires_at, version "
+                "FROM operators WHERE id = 62"
+            ).fetchone()
+            assert applied is True
+            assert row == (0, operator_hash, renewed_at, 2)
+            assert lock_checks == [True]
+
+        finally:
+            close_db(client_conn)
+
+    def test_heartbeat_lease_update_triggers_local_lock_check(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_heartbeat_renewed.db", test_key)
+        try:
+            operator_hash = "7" * 64
+            _insert_operator(client_conn, 63, "HEART", operator_hash)
+            expired_at = int(time.time()) - 30
+            client_conn.execute(
+                "UPDATE operators SET lease_expires_at = ? WHERE id = 63",
+                (expired_at,),
+            )
+            client_conn.commit()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=63)
+            lock_checks = []
+            refreshes = []
+            manager._trigger_local_lock_check = lambda: lock_checks.append(True)
+            manager._notify_ui = (
+                lambda table, **kwargs: refreshes.append((table, kwargs))
+            )
+            manager._ui_dispatcher = ClientUiDispatcher(
+                notify_ui=manager._notify_ui
+            )
+            manager._record_applier._ui_dispatcher = manager._ui_dispatcher
+            renewed_at = int(time.time()) + 3600
+
+            manager._update_lease_expiry(renewed_at)
+
+            row = client_conn.execute(
+                "SELECT lease_expires_at FROM operators WHERE id = 63"
+            ).fetchone()
+            assert row == (renewed_at,)
+            assert lock_checks == [True]
+            assert refreshes == [
+                (
+                    "operators",
+                    {"badge": False, "action": "changed", "record_id": None},
+                )
+            ]
 
         finally:
             close_db(client_conn)

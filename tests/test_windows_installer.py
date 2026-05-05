@@ -9,6 +9,7 @@ INNO_SCRIPT = REPO_ROOT / "build" / "talon-desktop-windows.iss"
 RUNTIME_SCRIPT = REPO_ROOT / "build" / "windows" / "talon-runtime.ps1"
 DOWNLOAD_SCRIPT = REPO_ROOT / "build" / "windows" / "download-runtime.ps1"
 WINDOWS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build-talon-desktop-windows.yml"
+UPDATE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish-talon-update-manifest.yml"
 
 
 def test_windows_pyinstaller_spec_uses_pyside_desktop_entrypoint():
@@ -19,6 +20,9 @@ def test_windows_pyinstaller_spec_uses_pyside_desktop_entrypoint():
     assert 'name="talon-desktop-windows"' in text
     assert 'collect_submodules("talon_core")' in text
     assert 'collect_submodules("talon_desktop")' in text
+    assert 'root / "Images" / "talonlogo.png"' in text
+    assert '"talonlogo.ico"' in text
+    assert 'icon=str(app_icon_path) if app_icon_path is not None else None' in text
     assert '"kivy"' in text
     assert '"kivymd"' in text
     assert '"mapview"' in text
@@ -35,6 +39,9 @@ def test_windows_inno_installer_is_role_aware_and_upgrade_safe():
     assert "TALONDesktopClient" in text
     assert "TALONDesktopServer" in text
     assert "talon-desktop-{#OutputRole}-windows-setup" in text
+    assert "SetupIconFile=..\\dist\\talon-desktop-windows\\_internal\\Images\\talonlogo.ico" in text
+    assert "UninstallDisplayIcon={app}\\_internal\\Images\\talonlogo.ico" in text
+    assert 'IconFilename: "{app}\\_internal\\Images\\talonlogo.ico"' in text
     assert "SameRoleDetected" in text
     assert "same-role upgrade detected" in text
     assert "FindSameRoleDataRoot" in text
@@ -64,17 +71,13 @@ def test_windows_installer_bundles_yggdrasil_and_i2pd():
     assert "innosetup" in workflow
 
 
-def test_windows_workflow_only_runs_on_dev_push():
+def test_windows_workflow_publishes_tagged_release_assets():
     workflow = WINDOWS_WORKFLOW.read_text(encoding="utf-8")
 
     assert "  push:" in workflow
-    assert "      - dev" in workflow
-    assert "workflow_dispatch" not in workflow
-    assert "      - main" not in workflow
-    assert "tags:" not in workflow
-    assert "softprops/action-gh-release" not in workflow
-    assert "contents: read" in workflow
-    assert "contents: write" not in workflow
+    assert "tags:" in workflow
+    assert "softprops/action-gh-release" in workflow
+    assert "contents: write" in workflow
 
 
 def test_windows_workflow_pytest_fails_fast_with_diagnostics():
@@ -94,6 +97,8 @@ def test_windows_runtime_script_writes_talon_specific_configs():
     assert "mode = $Role" in text
     assert "rns_config_dir = $RnsDir" in text
     assert "storage_path = $DocumentsDir" in text
+    assert "[updates]" in text
+    assert "manifest_url = https://github.com/cudafish-maker/TALON/releases/latest/download/talon-update.json" in text
     assert "share_instance = No" in text
     assert "TALON AutoInterface" in text
     assert "TALON i2pd $i2pRole" in text
@@ -104,3 +109,26 @@ def test_windows_runtime_script_writes_talon_specific_configs():
     assert "port = 7656" in text
     assert "Keeping existing $Path" in text
     assert ".talon-artifact-role" in text
+
+
+def test_update_manifest_workflow_signs_all_desktop_artifacts():
+    text = UPDATE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "talon-update.json" in text
+    assert "talon-update.json.sig" in text
+    assert "TALON_UPDATE_SIGNING_KEY_B64" in text
+    assert "talon-desktop-client-linux.tar.gz" in text
+    assert "talon-desktop-server-linux.tar.gz" in text
+    assert "talon-desktop-client-windows-setup.exe" in text
+    assert "talon-desktop-server-windows-setup.exe" in text
+    assert "build/generate-update-manifest.py" in text
+    assert "build/sign-update-manifest.py" in text
+
+
+def test_update_signing_key_generator_exists():
+    text = (REPO_ROOT / "build" / "generate-update-signing-key.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "TALON_UPDATE_SIGNING_KEY_B64" in text
+    assert "TALON_UPDATE_VERIFY_KEY_B64" in text

@@ -9,7 +9,9 @@ import typing
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from talon_core import TalonCoreSession
+from talon_core.crypto.passphrase import passphrase_requirements_text
 from talon_core.utils.logging import get_logger
+from talon_core.version import current_app_version
 
 from talon_desktop.asset_page import AssetPage
 from talon_desktop.chat_page import ChatPage
@@ -39,6 +41,7 @@ from talon_desktop.settings import (
 from talon_desktop.sitrep_page import SitrepAlertOverlay, SitrepPage, latest_sitrep_item
 from talon_desktop.sitreps import feed_item_from_entry, mission_operator_callsigns
 from talon_desktop.theme import apply_desktop_theme
+from talon_desktop import updater
 
 _log = get_logger("desktop")
 
@@ -63,12 +66,13 @@ class LoginWindow(QtWidgets.QWidget):
     enrollRequested = QtCore.Signal(str, str)
     networkSetupRequested = QtCore.Signal()
 
-    def __init__(self, mode: str) -> None:
+    def __init__(self, mode: str, *, initial_setup: bool = False) -> None:
         super().__init__()
         app = QtWidgets.QApplication.instance()
         if app is not None:
             apply_desktop_theme(app)
         self._mode = mode
+        self._initial_setup = initial_setup
         self.setWindowTitle(f"T.A.L.O.N. Desktop [{mode.upper()}]")
         self.setMinimumWidth(520)
         self.setObjectName("loginWindow")
@@ -76,20 +80,42 @@ class LoginWindow(QtWidgets.QWidget):
 
         title = QtWidgets.QLabel(f"T.A.L.O.N. {mode.upper()} Desktop")
         title.setObjectName("title")
-        subtitle = QtWidgets.QLabel("Unlock the local SQLCipher database.")
+        subtitle_text = (
+            "Create the local SQLCipher database passphrase."
+            if initial_setup
+            else "Unlock the local SQLCipher database."
+        )
+        subtitle = QtWidgets.QLabel(subtitle_text)
         subtitle.setObjectName("subtitle")
 
         self.passphrase = QtWidgets.QLineEdit()
         self.passphrase.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.passphrase.setPlaceholderText("Passphrase")
-        self.passphrase.returnPressed.connect(self._unlock_clicked)
+        self.passphrase.setPlaceholderText(
+            "New passphrase" if initial_setup else "Passphrase"
+        )
 
-        self.unlock_button = QtWidgets.QPushButton("Unlock")
+        self.confirm_passphrase = QtWidgets.QLineEdit()
+        self.confirm_passphrase.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.confirm_passphrase.setPlaceholderText("Confirm passphrase")
+        self.confirm_passphrase.returnPressed.connect(self._unlock_clicked)
+        self.confirm_passphrase.setVisible(initial_setup)
+        if initial_setup:
+            self.passphrase.returnPressed.connect(self.confirm_passphrase.setFocus)
+        else:
+            self.passphrase.returnPressed.connect(self._unlock_clicked)
+
+        self.unlock_button = QtWidgets.QPushButton(
+            "Create Passphrase" if initial_setup else "Unlock"
+        )
         self.unlock_button.clicked.connect(self._unlock_clicked)
 
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setWordWrap(True)
         self.status_label.setObjectName("statusLabel")
+        self.requirements_label = QtWidgets.QLabel(passphrase_requirements_text())
+        self.requirements_label.setWordWrap(True)
+        self.requirements_label.setObjectName("statusLabel")
+        self.requirements_label.setVisible(initial_setup)
         self.network_status_label = QtWidgets.QLabel(
             "Network setup is available after unlock."
         )
@@ -101,7 +127,10 @@ class LoginWindow(QtWidgets.QWidget):
         self.network_setup_button.clicked.connect(self.networkSetupRequested.emit)
 
         form = QtWidgets.QFormLayout()
-        form.addRow("Passphrase", self.passphrase)
+        form.addRow("New passphrase" if initial_setup else "Passphrase", self.passphrase)
+        if initial_setup:
+            form.addRow("Confirm passphrase", self.confirm_passphrase)
+            form.addRow("Requirements", self.requirements_label)
 
         self.enrollment_group = QtWidgets.QGroupBox("Client Enrollment")
         enrollment_layout = QtWidgets.QFormLayout(self.enrollment_group)
@@ -138,6 +167,7 @@ class LoginWindow(QtWidgets.QWidget):
         self.paste_token_button.setDisabled(busy)
         self.network_setup_button.setDisabled(busy or not self._unlocked)
         self.passphrase.setDisabled(busy or self._unlocked)
+        self.confirm_passphrase.setDisabled(busy or self._unlocked)
         self.status_label.setText(message)
 
     def show_error(self, message: str) -> None:
@@ -163,6 +193,17 @@ class LoginWindow(QtWidgets.QWidget):
         if not passphrase.strip():
             self.show_error("Passphrase is required.")
             return
+        if self._initial_setup:
+            confirmation = self.confirm_passphrase.text()
+            if not confirmation.strip():
+                self.show_error("Confirm passphrase is required.")
+                self.confirm_passphrase.setFocus()
+                return
+            if passphrase != confirmation:
+                self.show_error("Passphrases do not match.")
+                self.confirm_passphrase.clear()
+                self.confirm_passphrase.setFocus()
+                return
         self.unlockRequested.emit(passphrase)
 
     def _enroll_clicked(self) -> None:
@@ -2103,10 +2144,19 @@ class DesktopRuntime(QtCore.QObject):
     lockRequested = QtCore.Signal(str)
     leaseRenewed = QtCore.Signal()
 
-    def __init__(self, core: TalonCoreSession, *, start_sync: bool) -> None:
+    def __init__(
+        self,
+        core: TalonCoreSession,
+        *,
+        start_sync: bool,
+        check_updates: bool = False,
+        update_manifest_url: str | None = None,
+    ) -> None:
         super().__init__()
         self.core = core
         self.start_sync = start_sync
+        self.check_updates = check_updates
+        self.update_manifest_url = update_manifest_url
         self.event_bridge = CoreEventBridge()
         self.core.subscribe(self.event_bridge.handle_core_event)
         self.event_bridge.lockRequested.connect(self.lockRequested)
@@ -2116,13 +2166,209 @@ class DesktopRuntime(QtCore.QObject):
         self.main_window: MainWindow | None = None
         self.lock_window: LockWindow | None = None
         self._workers: list[_WorkerSignals] = []
+        self._update_progress: QtWidgets.QProgressDialog | None = None
 
     def show_login(self) -> None:
-        self.login_window = LoginWindow(self.core.mode)
+        self.login_window = LoginWindow(
+            self.core.mode,
+            initial_setup=not self.core.paths.db_path.exists(),
+        )
         self.login_window.unlockRequested.connect(self.unlock)
         self.login_window.enrollRequested.connect(self.enroll)
         self.login_window.networkSetupRequested.connect(self.configure_network)
         self.login_window.show()
+
+    def start_update_check(self) -> None:
+        if not self.check_updates:
+            return
+        if not updater.update_checks_enabled(self.core.cfg):
+            _log.info("Startup update check disabled by configuration.")
+            return
+        role = self.core.mode
+        manifest_url = (
+            self.update_manifest_url
+            or self.core.cfg.get(
+                "updates",
+                "manifest_url",
+                fallback=updater.DEFAULT_MANIFEST_URL,
+            ).strip()
+        )
+        signature_url = self.core.cfg.get(
+            "updates",
+            "signature_url",
+            fallback="",
+        ).strip() or None
+        public_key_b64 = self.core.cfg.get(
+            "updates",
+            "public_key_b64",
+            fallback=updater.DEFAULT_VERIFY_KEY_B64,
+        ).strip()
+        try:
+            timeout_s = self.core.cfg.getfloat(
+                "updates",
+                "timeout_seconds",
+                fallback=updater.DEFAULT_TIMEOUT_S,
+            )
+        except ValueError:
+            timeout_s = updater.DEFAULT_TIMEOUT_S
+
+        signals = _WorkerSignals()
+        self._workers.append(signals)
+        signals.succeeded.connect(self._update_check_succeeded)
+        signals.failed.connect(self._update_check_failed)
+
+        def _worker() -> None:
+            try:
+                result = updater.check_for_update(
+                    role=role,
+                    manifest_url=manifest_url,
+                    signature_url=signature_url,
+                    public_key_b64=public_key_b64,
+                    timeout_s=timeout_s,
+                )
+                signals.succeeded.emit(result)
+            except Exception as exc:
+                signals.failed.emit(str(exc))
+
+        threading.Thread(
+            target=_worker,
+            daemon=True,
+            name="talon-desktop-update-check",
+        ).start()
+
+    @QtCore.Slot(object)
+    def _update_check_succeeded(self, payload: object) -> None:
+        result = typing.cast(updater.UpdateCheckResult, payload)
+        if not result.update_available:
+            if result.compatibility_warning:
+                _log.warning(result.compatibility_warning)
+            return
+        parent = self.main_window if self.main_window is not None else self.login_window
+        if result.asset is None:
+            QtWidgets.QMessageBox.warning(
+                parent,
+                "TALON Update",
+                (
+                    f"TALON {result.latest_version} is available, but this "
+                    f"{self.core.mode} build does not have a matching "
+                    f"{updater.platform_key()} update artifact. Download the "
+                    "correct package manually."
+                ),
+            )
+            return
+
+        box = QtWidgets.QMessageBox(parent)
+        box.setIcon(QtWidgets.QMessageBox.Information)
+        box.setWindowTitle("TALON Update Available")
+        box.setText(
+            f"TALON {result.latest_version} is available.\n\n"
+            f"Current version: {result.current_version}\n"
+            f"Role: {self.core.mode}\n\n"
+            "Update now and restart TALON?"
+        )
+        update_button = box.addButton(
+            "Update and Restart",
+            QtWidgets.QMessageBox.AcceptRole,
+        )
+        continue_button = box.addButton(
+            "Continue",
+            QtWidgets.QMessageBox.RejectRole,
+        )
+        box.setDefaultButton(update_button)
+        box.exec()
+        if box.clickedButton() is update_button:
+            self._download_update(result)
+            return
+        if box.clickedButton() is continue_button:
+            QtWidgets.QMessageBox.warning(
+                parent,
+                "TALON Update Declined",
+                (
+                    "This TALON version is not current. Not all features may "
+                    "work correctly until this node is updated."
+                ),
+            )
+
+    @QtCore.Slot(str)
+    def _update_check_failed(self, message: str) -> None:
+        _log.warning("Startup update check failed: %s", message)
+
+    def _download_update(self, result: updater.UpdateCheckResult) -> None:
+        parent = self.main_window if self.main_window is not None else self.login_window
+        self._update_progress = QtWidgets.QProgressDialog(
+            "Downloading and verifying TALON update...",
+            "",
+            0,
+            0,
+            parent,
+        )
+        self._update_progress.setCancelButton(None)
+        self._update_progress.setWindowModality(QtCore.Qt.ApplicationModal)
+        self._update_progress.setMinimumDuration(0)
+        self._update_progress.show()
+
+        try:
+            timeout_s = self.core.cfg.getfloat(
+                "updates",
+                "download_timeout_seconds",
+                fallback=60.0,
+            )
+        except ValueError:
+            timeout_s = 60.0
+
+        signals = _WorkerSignals()
+        self._workers.append(signals)
+        signals.succeeded.connect(self._update_download_succeeded)
+        signals.failed.connect(self._update_download_failed)
+
+        def _worker() -> None:
+            try:
+                downloaded = updater.download_update(result, timeout_s=timeout_s)
+                signals.succeeded.emit(downloaded)
+            except Exception as exc:
+                signals.failed.emit(str(exc))
+
+        threading.Thread(
+            target=_worker,
+            daemon=True,
+            name="talon-desktop-update-download",
+        ).start()
+
+    @QtCore.Slot(object)
+    def _update_download_succeeded(self, payload: object) -> None:
+        if self._update_progress is not None:
+            self._update_progress.close()
+            self._update_progress = None
+        downloaded = typing.cast(updater.DownloadedUpdate, payload)
+        parent = self.main_window if self.main_window is not None else self.login_window
+        try:
+            updater.spawn_installer_and_restart(
+                downloaded,
+                role=self.core.mode,
+                paths=self.core.paths,
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                parent,
+                "TALON Update Failed",
+                f"Update could not be staged: {exc}",
+            )
+            return
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    @QtCore.Slot(str)
+    def _update_download_failed(self, message: str) -> None:
+        if self._update_progress is not None:
+            self._update_progress.close()
+            self._update_progress = None
+        parent = self.main_window if self.main_window is not None else self.login_window
+        QtWidgets.QMessageBox.warning(
+            parent,
+            "TALON Update Failed",
+            f"Update download or verification failed: {message}",
+        )
 
     @QtCore.Slot(str)
     def unlock(self, passphrase: str) -> None:
@@ -2363,6 +2609,8 @@ def run_desktop(
     config_path: pathlib.Path | None = None,
     mode: typing.Literal["server", "client"] | None = None,
     start_sync: bool = True,
+    check_updates: bool = True,
+    update_manifest_url: str | None = None,
 ) -> int:
     app = QtWidgets.QApplication.instance()
     owns_app = app is None
@@ -2371,6 +2619,7 @@ def run_desktop(
     app.setOrganizationName("TALON")
     apply_desktop_theme(app)
     app.setApplicationName("T.A.L.O.N.")
+    app.setApplicationVersion(current_app_version())
     install_desktop_log_buffer()
 
     runtime_ref: dict[str, DesktopRuntime] = {}
@@ -2391,10 +2640,16 @@ def run_desktop(
         on_lease_expired=_lease_expired,
         on_lease_renewed=_lease_renewed,
     ).start()
-    runtime = DesktopRuntime(core, start_sync=start_sync)
+    runtime = DesktopRuntime(
+        core,
+        start_sync=start_sync,
+        check_updates=check_updates,
+        update_manifest_url=update_manifest_url,
+    )
     runtime_ref["runtime"] = runtime
     app.aboutToQuit.connect(runtime.shutdown)
     runtime.show_login()
+    runtime.start_update_check()
     return app.exec() if owns_app else 0
 
 

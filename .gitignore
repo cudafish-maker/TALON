@@ -31,6 +31,7 @@ bin/
 build/dist/
 build/build/
 build/pyinstaller-*/
+build/.generated/
 build/.smoke-client-data/
 build/.smoke-client-rns/
 
@@ -49,6 +50,7 @@ cache/
 # Local-only design artifacts
 /wireframes/
 .codex
+/docs/user-guides/assets/
 
 # OS
 .DS_Store

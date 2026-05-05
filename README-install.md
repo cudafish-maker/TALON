@@ -53,8 +53,8 @@ The installer creates role-specific launchers:
 - Client: `talon-desktop-client`
 - Server: `talon-desktop-server`
 
-Desktop menu entries are also created when desktop launcher installation is
-enabled.
+Desktop menu entries and desktop shortcuts are also created with the bundled
+TALON logo when desktop launcher installation is enabled.
 
 ## Windows Install
 
@@ -88,6 +88,22 @@ the opposite role, it stops instead of overwriting that role's local data.
 The installer creates a TALON-specific Reticulum config by default. Add any
 deployment-specific TCP, Yggdrasil, I2P, or RNode interface settings before
 depending on those transports in the field.
+
+## In-App Updates
+
+On startup, TALON checks the signed public update manifest published with the
+latest GitHub release. If a newer same-role package is available, TALON prompts
+to download, verify, install, and restart. Continuing without the update is
+allowed, but TALON warns that mixed versions may not support every feature.
+
+Set `[updates] enabled = false` in `talon.ini`, or launch with
+`--no-update-check`, to disable the startup check for sensitive or offline
+deployments.
+
+Release maintainers should generate an Ed25519 update keypair with
+`python build/generate-update-signing-key.py`, store
+`TALON_UPDATE_SIGNING_KEY_B64` as a GitHub Actions secret, and commit the
+matching public verification key in the updater configuration.
 
 ## Default Paths
 
