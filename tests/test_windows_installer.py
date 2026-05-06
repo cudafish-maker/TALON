@@ -76,7 +76,9 @@ def test_windows_workflow_publishes_tagged_release_assets():
 
     assert "  push:" in workflow
     assert "tags:" in workflow
-    assert "softprops/action-gh-release" in workflow
+    assert "build/upload-release-assets.sh" in workflow
+    assert "GITHUB_REF_NAME" in workflow
+    assert "GH_TOKEN: ${{ github.token }}" in workflow
     assert "contents: write" in workflow
 
 
