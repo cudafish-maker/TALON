@@ -1344,6 +1344,99 @@ def test_core_start_reticulum_requires_main_thread(tmp_path: pathlib.Path) -> No
     session.close()
 
 
+@pytest.mark.parametrize("mode", ("server", "client"))
+def test_reticulum_startup_panic_becomes_runtime_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    from talon_core.network import node
+
+    original_panic = node.RNS.panic
+
+    class FakeReticulum:
+        _Reticulum__instance = object()
+        _Reticulum__exit_handler_ran = True
+        _Reticulum__interface_detach_ran = True
+
+        def __init__(self, *args, **kwargs) -> None:
+            del args
+            logdest = kwargs.get("logdest")
+            if callable(logdest):
+                node.RNS.logdest = node.RNS.LOG_CALLBACK
+                node.RNS.logcall = logdest
+            node.RNS.log(
+                'The interface "TALON TCP Server" could not be created.',
+                node.RNS.LOG_ERROR,
+            )
+            node.RNS.log(
+                "The contained exception was: [Errno 98] Address already in use",
+                node.RNS.LOG_ERROR,
+            )
+            node.RNS.panic()
+
+    monkeypatch.setattr(node, "_ensure_rns_interface_globals", lambda: None)
+    monkeypatch.setattr(node.RNS, "Reticulum", FakeReticulum)
+    monkeypatch.setattr(node.RNS, "logdest", node.RNS.logdest)
+    monkeypatch.setattr(node.RNS, "logcall", node.RNS.logcall)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        node.init_reticulum(tmp_path / "rns", mode=mode)
+
+    message = str(exc_info.value)
+    assert "Reticulum startup failed" in message
+    assert "TALON TCP Server" in message
+    assert "Address already in use" in message
+    assert node.RNS.panic is original_panic
+    assert FakeReticulum._Reticulum__instance is None
+    assert FakeReticulum._Reticulum__exit_handler_ran is False
+    assert FakeReticulum._Reticulum__interface_detach_ran is False
+
+
+@pytest.mark.parametrize("mode", ("server", "client"))
+def test_reticulum_duplicate_interface_panic_is_caught(
+    tmp_path: pathlib.Path,
+    mode: str,
+) -> None:
+    from talon_core.network import node
+
+    rns_dir = tmp_path / "rns"
+    rns_dir.mkdir()
+    (rns_dir / "config").write_text(
+        "\n".join(
+            [
+                "[reticulum]",
+                "  enable_transport = False",
+                "  share_instance = No",
+                "",
+                "[logging]",
+                "  loglevel = 4",
+                "",
+                "[interfaces]",
+                "  [[TALON Duplicate]]",
+                "    type = TCPClientInterface",
+                "    enabled = No",
+                "    target_host = 127.0.0.1",
+                "    target_port = 1",
+                "",
+                "  [[TALON Duplicate]]",
+                "    type = TCPClientInterface",
+                "    enabled = No",
+                "    target_host = 127.0.0.1",
+                "    target_port = 2",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        node.init_reticulum(rns_dir, mode=mode)
+
+    assert "Reticulum startup failed" in str(exc_info.value)
+    assert "Could not parse the configuration" in str(exc_info.value)
+
+
 def test_core_reticulum_invalid_config_returns_blocking_errors(
     tmp_path: pathlib.Path,
 ) -> None:

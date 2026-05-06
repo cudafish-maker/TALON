@@ -12,6 +12,7 @@ import pathlib
 import typing
 import importlib
 import os
+import contextlib
 
 import RNS
 
@@ -37,6 +38,10 @@ _RNS_INTERFACE_MODULES = (
     "PipeInterface",
     "WeaveInterface",
 )
+
+
+class _ReticulumPanic(RuntimeError):
+    """Raised when Reticulum tries to terminate the process during startup."""
 
 
 def is_transport_started() -> bool:
@@ -67,7 +72,20 @@ def init_reticulum(
     except PermissionError as exc:
         raise RuntimeError(f"Could not secure Reticulum config directory {config_dir}") from exc
     _ensure_rns_interface_globals()
-    reticulum = RNS.Reticulum(configdir=str(config_dir))
+    rns_log_lines: list[str] = []
+    try:
+        with _rns_panic_as_exception():
+            reticulum = RNS.Reticulum(
+                configdir=str(config_dir),
+                logdest=_rns_log_callback(rns_log_lines),
+            )
+    except _ReticulumPanic as exc:
+        _reset_failed_reticulum_start()
+        detail = _reticulum_startup_error_detail(rns_log_lines)
+        raise RuntimeError(f"Reticulum startup failed: {detail}") from exc
+    except Exception:
+        _reset_failed_reticulum_start()
+        raise
 
     if mode == "server" or enable_transport:
         is_started = getattr(RNS.Transport, "is_started", None)
@@ -77,6 +95,85 @@ def init_reticulum(
 
     _log.info("Reticulum initialised (mode=%s, config=%s)", mode, config_dir)
     return reticulum
+
+
+@contextlib.contextmanager
+def _rns_panic_as_exception() -> typing.Iterator[None]:
+    """Convert Reticulum's process-exiting panic into a catchable exception."""
+    original_panic = RNS.panic
+
+    def _panic() -> None:
+        raise _ReticulumPanic("Reticulum panic during startup")
+
+    RNS.panic = _panic
+    try:
+        yield
+    finally:
+        RNS.panic = original_panic
+
+
+def _rns_log_callback(lines: list[str]) -> typing.Callable[[str], None]:
+    def _callback(line: str) -> None:
+        text = str(line)
+        lines.append(text)
+        if len(lines) > 50:
+            del lines[:-50]
+        if "[Error]" in text or "[Critical]" in text:
+            _log.error("%s", text)
+        elif "[Warning]" in text:
+            _log.warning("%s", text)
+        else:
+            _log.info("%s", text)
+
+    return _callback
+
+
+def _reticulum_startup_error_detail(lines: list[str]) -> str:
+    errors = [
+        _clean_rns_log_line(line) for line in lines
+        if "[Error]" in line or "[Critical]" in line
+    ]
+    errors = [
+        line for line in errors
+        if line
+        and not line.startswith("Traceback ")
+        and not line.startswith("An unhandled ")
+    ]
+    relevant = errors[-3:] if errors else lines[-3:]
+    if relevant:
+        return " ".join(relevant)
+    return "Reticulum aborted startup without a diagnostic message."
+
+
+def _clean_rns_log_line(line: str) -> str:
+    text = str(line).splitlines()[0].strip()
+    parts = text.split("] ", 2)
+    if len(parts) == 3 and parts[0].startswith("[") and parts[1].startswith("["):
+        return parts[2].strip()
+    return text
+
+
+def _reset_failed_reticulum_start() -> None:
+    """Clear Reticulum singleton state after a failed constructor panic."""
+    try:
+        RNS.Transport.detach_interfaces()
+    except Exception:
+        pass
+    try:
+        RNS.Transport.interfaces = []
+    except Exception:
+        pass
+    reticulum_cls = getattr(RNS, "Reticulum", None)
+    if reticulum_cls is not None:
+        for name, value in (
+            ("_Reticulum__instance", None),
+            ("_Reticulum__exit_handler_ran", False),
+            ("_Reticulum__interface_detach_ran", False),
+        ):
+            try:
+                setattr(reticulum_cls, name, value)
+            except Exception:
+                pass
 
 
 def _ensure_rns_interface_globals() -> None:

@@ -43,6 +43,9 @@ All notable user-facing changes to TALON are documented here.
 - Client desktop enrollment now prepares Reticulum networking on the main
   thread before the background enrollment exchange, avoiding Python signal
   handler failures during first enrollment.
+- Desktop startup now converts Reticulum interface startup panics into a normal
+  UI error instead of letting a bad or unavailable server interface terminate
+  the app after password entry.
 - Desktop release artifacts now report version `0.1.1` after installation so
   the updater does not repeatedly offer the same release.
 
