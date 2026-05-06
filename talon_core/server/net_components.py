@@ -786,7 +786,7 @@ class ServerMessageHandlers:
 
         with handler._lock:
             row = handler._conn.execute(
-                "SELECT id, lease_expires_at, revoked FROM operators WHERE id = ?",
+                "SELECT id, lease_expires_at, revoked, version FROM operators WHERE id = ?",
                 (auth.operator_id,),
             ).fetchone()
 
@@ -799,13 +799,14 @@ class ServerMessageHandlers:
                 handler._teardown_link(link)
                 return
 
-            operator_id, lease_expires_at, _revoked = row
+            operator_id, lease_expires_at, _revoked, version = row
             if lease_expires_at < now:
                 handler._send_error(
                     link,
                     "Operator lease has expired",
                     code=proto.ERROR_LEASE_EXPIRED,
                     lease_expires_at=int(lease_expires_at),
+                    operator_version=int(version),
                 )
                 handler._teardown_link(link)
                 return

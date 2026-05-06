@@ -190,6 +190,7 @@ def test_error_accepts_lease_expired_code_and_expiry_metadata():
         "message": "Operator lease has expired",
         "code": proto.ERROR_LEASE_EXPIRED,
         "lease_expires_at": 123,
+        "operator_version": 7,
     }
 
     assert proto.validate_server_message(msg) is msg

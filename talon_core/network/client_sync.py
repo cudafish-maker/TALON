@@ -111,6 +111,7 @@ class ClientSyncManager:
         # Handle to the current persistent link (None when disconnected).
         self._link: typing.Optional[RNS.Link] = None
         self._connection_session_id: int = 0
+        self._operator_lease_version_seen: int = 0
         self._chunk_reassembler = ChunkReassembler(logger=_log)
         # Compatibility aliases for existing tests and diagnostic inspection.
         self._chunk_buffers = self._chunk_reassembler.buffers
@@ -351,8 +352,12 @@ class ClientSyncManager:
     def _handle_lease_expired(
         self,
         lease_expires_at: typing.Optional[typing.Any] = None,
+        operator_version: typing.Optional[typing.Any] = None,
     ) -> None:
-        self._record_applier.mark_operator_lease_expired(lease_expires_at)
+        self._record_applier.mark_operator_lease_expired(
+            lease_expires_at,
+            operator_version,
+        )
 
     def _trigger_local_lock_check(self) -> None:
         """

@@ -411,6 +411,8 @@ def _validate_error(msg: dict) -> None:
         and not _is_str(msg.get("code"))
     ):
         raise ProtocolValidationError("error: code must be a string")
+    if "operator_version" in msg and not _is_int(msg.get("operator_version")):
+        raise ProtocolValidationError("error: operator_version must be an integer")
 
 
 def _validate_chunk(msg: dict) -> None:

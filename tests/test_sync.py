@@ -675,6 +675,7 @@ class TestServerClientPush:
         assert row == (expired_at, 0)
         assert sent[-1]["code"] == proto.ERROR_LEASE_EXPIRED
         assert sent[-1]["lease_expires_at"] == expired_at
+        assert sent[-1]["operator_version"] == 1
         assert link.torn_down is True
 
     def test_valid_near_expiry_heartbeat_auto_renews(
@@ -2107,6 +2108,7 @@ class TestClientServerPushIntegration:
                     "message": "Operator lease has expired",
                     "code": proto.ERROR_LEASE_EXPIRED,
                     "lease_expires_at": expired_at,
+                    "operator_version": 1,
                 },
                 threading.Event(),
             )
@@ -2115,6 +2117,62 @@ class TestClientServerPushIntegration:
                 "SELECT revoked, rns_hash, lease_expires_at FROM operators WHERE id = 61"
             ).fetchone()
             assert row == (0, operator_hash, expired_at)
+            assert lock_checks == [True]
+
+        finally:
+            close_db(client_conn)
+
+    def test_stale_lease_expired_error_does_not_downgrade_renewed_lease(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_stale_lease_expired.db", test_key)
+        try:
+            operator_hash = "8" * 64
+            _insert_operator(client_conn, 64, "RECOVERED", operator_hash)
+            renewed_at = int(time.time()) + 3600
+            expired_at = int(time.time()) - 30
+            client_conn.execute(
+                "UPDATE operators SET lease_expires_at = ?, version = 1 WHERE id = 64",
+                (expired_at,),
+            )
+            client_conn.commit()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=64)
+            lock_checks = []
+            manager._trigger_local_lock_check = lambda: lock_checks.append(True)
+            assert manager._apply_record(
+                "operators",
+                {
+                    "id": 64,
+                    "callsign": "RECOVERED",
+                    "rns_hash": operator_hash,
+                    "skills": "[]",
+                    "profile": "{}",
+                    "enrolled_at": 1000,
+                    "lease_expires_at": renewed_at,
+                    "revoked": 0,
+                    "version": 2,
+                },
+            )
+            lock_checks.clear()
+
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_ERROR,
+                    "message": "Operator lease has expired",
+                    "code": proto.ERROR_LEASE_EXPIRED,
+                    "lease_expires_at": expired_at,
+                    "operator_version": 1,
+                },
+                threading.Event(),
+            )
+
+            row = client_conn.execute(
+                "SELECT revoked, rns_hash, lease_expires_at, version "
+                "FROM operators WHERE id = 64"
+            ).fetchone()
+            assert row == (0, operator_hash, renewed_at, 2)
             assert lock_checks == [True]
 
         finally:

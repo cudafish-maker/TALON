@@ -421,7 +421,7 @@ class ServerNetHandler:
         if cached is not None:
             with self._lock:
                 row = self._conn.execute(
-                    "SELECT lease_expires_at, revoked FROM operators WHERE id = ?",
+                    "SELECT lease_expires_at, revoked, version FROM operators WHERE id = ?",
                     (cached.operator_id,),
                 ).fetchone()
             if row is not None and not bool(row[1]) and int(row[0]) >= now:
@@ -440,6 +440,7 @@ class ServerNetHandler:
                     code=proto.ERROR_LEASE_EXPIRED,
                     message="Operator lease has expired",
                     lease_expires_at=int(row[0]),
+                    operator_version=int(row[2]),
                 )
             with self._auth_lock:
                 self._link_auth.pop(link_key, None)
@@ -450,7 +451,7 @@ class ServerNetHandler:
             return None
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, callsign, lease_expires_at, revoked "
+                "SELECT id, callsign, lease_expires_at, revoked, version "
                 "FROM operators WHERE rns_hash = ?",
                 (rns_hash,),
             ).fetchone()
@@ -462,6 +463,7 @@ class ServerNetHandler:
                 code=proto.ERROR_LEASE_EXPIRED,
                 message="Operator lease has expired",
                 lease_expires_at=int(row[2]),
+                operator_version=int(row[4]),
             )
             return None
         auth = AuthenticatedOperator(
@@ -481,10 +483,13 @@ class ServerNetHandler:
         code: str,
         message: str,
         lease_expires_at: typing.Optional[int] = None,
+        operator_version: typing.Optional[int] = None,
     ) -> None:
         failure: dict[str, typing.Any] = {"code": code, "message": message}
         if lease_expires_at is not None:
             failure["lease_expires_at"] = int(lease_expires_at)
+        if operator_version is not None:
+            failure["operator_version"] = int(operator_version)
         with self._auth_lock:
             self._link_auth_failures[id(link)] = failure
 

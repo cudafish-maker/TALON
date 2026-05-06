@@ -580,6 +580,7 @@ class ClientRecordApplier:
     def mark_operator_lease_expired(
         self,
         lease_expires_at: typing.Optional[typing.Any] = None,
+        operator_version: typing.Optional[typing.Any] = None,
     ) -> None:
         manager = self._manager
         if manager._operator_id is None:
@@ -588,14 +589,40 @@ class ClientRecordApplier:
             expires_at = int(lease_expires_at) if lease_expires_at is not None else int(time.time())
         except (TypeError, ValueError):
             expires_at = int(time.time())
+        try:
+            server_version = (
+                int(operator_version) if operator_version is not None else None
+            )
+        except (TypeError, ValueError):
+            server_version = None
+        try:
+            seen_lease_version = int(
+                getattr(manager, "_operator_lease_version_seen", 0) or 0
+            )
+        except (TypeError, ValueError):
+            seen_lease_version = 0
 
+        stale_expiry = False
         with manager._lock:
             try:
-                manager._conn.execute(
-                    "UPDATE operators SET lease_expires_at = ? WHERE id = ?",
-                    (expires_at, manager._operator_id),
-                )
-                manager._conn.commit()
+                row = manager._conn.execute(
+                    "SELECT lease_expires_at FROM operators WHERE id = ?",
+                    (manager._operator_id,),
+                ).fetchone()
+                local_expires_at = int(row[0]) if row is not None else None
+                if (
+                    server_version is not None
+                    and seen_lease_version > server_version
+                    and local_expires_at is not None
+                    and expires_at < local_expires_at
+                ):
+                    stale_expiry = True
+                else:
+                    manager._conn.execute(
+                        "UPDATE operators SET lease_expires_at = ? WHERE id = ?",
+                        (expires_at, manager._operator_id),
+                    )
+                    manager._conn.commit()
             except Exception as exc:
                 self._log.warning(
                     "Could not mark local lease expired id=%s: %s",
@@ -603,6 +630,17 @@ class ClientRecordApplier:
                     exc,
                 )
                 return
+
+        if stale_expiry:
+            self._log.info(
+                "Ignored stale lease-expired notice for operator %s: "
+                "reported_expiry=%s local_expiry=%s",
+                manager._operator_id,
+                expires_at,
+                local_expires_at,
+            )
+            manager._trigger_local_lock_check()
+            return
 
         self._ui_dispatcher.notify("operators")
         self._log.warning(
@@ -774,6 +812,14 @@ class ClientRecordApplier:
                 table == "operators"
                 and record.get("id") == manager._operator_id
             ):
+                if "lease_expires_at" in record:
+                    try:
+                        manager._operator_lease_version_seen = max(
+                            int(getattr(manager, "_operator_lease_version_seen", 0)),
+                            int(record.get("version") or 0),
+                        )
+                    except (TypeError, ValueError):
+                        pass
                 if bool(record.get("revoked")):
                     if not local_operator_was_revoked:
                         self._log.warning(
@@ -1695,6 +1741,7 @@ class ClientLinkLifecycle:
             elif msg.get("type") == proto.MSG_ERROR:
                 result["error"] = msg.get("code") or msg.get("message", "unknown error")
                 result["lease_expires_at"] = msg.get("lease_expires_at")
+                result["operator_version"] = msg.get("operator_version")
             else:
                 result["error"] = f"unexpected response: {msg.get('type')}"
             event.set()
@@ -1718,7 +1765,10 @@ class ClientLinkLifecycle:
             if result["error"] == proto.ERROR_OPERATOR_INACTIVE:
                 manager._handle_operator_inactive()
             elif result["error"] == proto.ERROR_LEASE_EXPIRED:
-                manager._handle_lease_expired(result.get("lease_expires_at"))
+                manager._handle_lease_expired(
+                    result.get("lease_expires_at"),
+                    result.get("operator_version"),
+                )
         elif result["ack"]:
             ack = result["ack"]
             manager._apply_push_ack(
@@ -1785,6 +1835,7 @@ class ClientLinkLifecycle:
             elif msg_type == proto.MSG_ERROR:
                 result["error"] = msg.get("code") or msg.get("message", "unknown error")
                 result["lease_expires_at"] = msg.get("lease_expires_at")
+                result["operator_version"] = msg.get("operator_version")
                 event.set()
 
         def _on_established(link: RNS.Link) -> None:
@@ -1830,7 +1881,10 @@ class ClientLinkLifecycle:
             if result["error"] == proto.ERROR_OPERATOR_INACTIVE:
                 manager._handle_operator_inactive()
             elif result["error"] == proto.ERROR_LEASE_EXPIRED:
-                manager._handle_lease_expired(result.get("lease_expires_at"))
+                manager._handle_lease_expired(
+                    result.get("lease_expires_at"),
+                    result.get("operator_version"),
+                )
             self._teardown(link)
             return
 
@@ -1920,7 +1974,10 @@ class ClientLinkLifecycle:
             if msg.get("code") == proto.ERROR_OPERATOR_INACTIVE:
                 manager._handle_operator_inactive()
             elif msg.get("code") == proto.ERROR_LEASE_EXPIRED:
-                manager._handle_lease_expired(msg.get("lease_expires_at"))
+                manager._handle_lease_expired(
+                    msg.get("lease_expires_at"),
+                    msg.get("operator_version"),
+                )
         self._teardown(link)
 
     def handle_incoming(
@@ -2038,7 +2095,10 @@ class ClientLinkLifecycle:
                 if manager._link is not None:
                     self._teardown(manager._link)
             elif msg.get("code") == proto.ERROR_LEASE_EXPIRED:
-                manager._handle_lease_expired(msg.get("lease_expires_at"))
+                manager._handle_lease_expired(
+                    msg.get("lease_expires_at"),
+                    msg.get("operator_version"),
+                )
                 if manager._link is not None:
                     self._teardown(manager._link)
 
