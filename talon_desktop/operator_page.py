@@ -447,6 +447,19 @@ class EnrollmentPage(QtWidgets.QWidget):
                     address = None
                 if address is not None:
                     self.i2p_peer_field.setText(str(getattr(address, "address", "") or ""))
+            if not self.yggdrasil_address_field.text().strip():
+                try:
+                    endpoint = self._core.get_yggdrasil_server_endpoint()
+                except Exception:
+                    endpoint = None
+                if endpoint is not None:
+                    self.yggdrasil_address_field.setText(
+                        str(getattr(endpoint, "address", "") or "")
+                    )
+                    try:
+                        self.yggdrasil_port_field.setValue(int(getattr(endpoint, "port", 4343)))
+                    except (TypeError, ValueError):
+                        pass
             self._items = items_from_enrollment_tokens(
                 self._core.read_model("enrollment.pending_tokens")
             )

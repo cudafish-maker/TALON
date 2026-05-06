@@ -19,6 +19,7 @@ from talon_core.network.rns_config import (
     reticulum_acceptance_path,
     tcp_client_config,
     tcp_server_config,
+    yggdrasil_server_endpoint_from_text,
     yggdrasil_client_config,
     yggdrasil_server_config,
 )
@@ -1517,6 +1518,23 @@ def test_core_reticulum_yggdrasil_and_i2pd_templates_validate(
     assert "type = TCPServerInterface" in yggdrasil_server
     assert "device = tun0" in yggdrasil_server
     assert session.validate_reticulum_config_text(yggdrasil_server).valid is True
+    ygg_endpoint = yggdrasil_server_endpoint_from_text(
+        yggdrasil_server.replace("listen_port = 4343", "listen_port = 4444"),
+        local_addresses={
+            "eth0": ("fd00::1",),
+            "tun0": ("fe80::1", "201:5d78:af73:5caf:a4de:a79f:3278:71e5"),
+        },
+    )
+    assert ygg_endpoint is not None
+    assert ygg_endpoint.address == "201:5d78:af73:5caf:a4de:a79f:3278:71e5"
+    assert ygg_endpoint.port == 4444
+    assert ygg_endpoint.device == "tun0"
+    fallback_ygg_endpoint = yggdrasil_server_endpoint_from_text(
+        yggdrasil_server,
+        local_addresses={"ygg0": ("201:5d78:af73:5caf:a4de:a79f:3278:71e5",)},
+    )
+    assert fallback_ygg_endpoint is not None
+    assert fallback_ygg_endpoint.address == "201:5d78:af73:5caf:a4de:a79f:3278:71e5"
 
     i2pd_server = i2pd_server_config()
     assert "TALON i2pd Server" in i2pd_server

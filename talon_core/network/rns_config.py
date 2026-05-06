@@ -73,6 +73,15 @@ class ReticulumTransportSummary:
     enabled_methods: tuple[str, ...] = ()
 
 
+@dataclasses.dataclass(frozen=True)
+class YggdrasilServerEndpoint:
+    address: str
+    port: int
+    interface_name: str
+    device: str = ""
+    source: str = ""
+
+
 _TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 _FALSE_VALUES = {"0", "false", "no", "off", "disabled"}
 _ACCEPTANCE_MARKER_NAME = ".talon-reticulum-config.accepted"
@@ -355,6 +364,60 @@ def reticulum_transport_summary_from_runtime(
         direct_tcp_warning=(selected == "tcp"),
         enabled_methods=unique_methods,
     )
+
+
+def get_yggdrasil_server_endpoint(
+    config_dir: pathlib.Path,
+) -> YggdrasilServerEndpoint | None:
+    """Return the server Yggdrasil endpoint clients should target, if discoverable."""
+    text = load_reticulum_config_text(config_dir, mode="server")
+    return yggdrasil_server_endpoint_from_text(text)
+
+
+def yggdrasil_server_endpoint_from_text(
+    text: str,
+    *,
+    local_addresses: typing.Mapping[str, typing.Iterable[str]] | None = None,
+) -> YggdrasilServerEndpoint | None:
+    """Derive the client-facing Yggdrasil endpoint from server config text."""
+    try:
+        from RNS.vendor.configobj import ConfigObj
+
+        parsed = ConfigObj(text.splitlines())
+    except Exception:
+        return None
+
+    interfaces = _section(parsed, "interfaces")
+    if interfaces is None:
+        return None
+    addresses = local_addresses if local_addresses is not None else _local_yggdrasil_addresses()
+    for interface_name, interface in _iter_interface_sections(interfaces):
+        if not _as_bool(interface.get("enabled"), default=False):
+            continue
+        if str(interface.get("type", "")).strip() != "TCPServerInterface":
+            continue
+        if not _is_yggdrasil_tcp_interface(interface_name.lower(), interface):
+            continue
+        port = _normalise_optional_port(interface.get("listen_port"), default=4343)
+        listen_ip = str(interface.get("listen_ip", "")).strip()
+        if _is_yggdrasil_address(listen_ip):
+            return YggdrasilServerEndpoint(
+                address=_normalise_ip_address(listen_ip),
+                port=port,
+                interface_name=interface_name,
+                device=str(interface.get("device", "")).strip(),
+                source="listen_ip",
+            )
+        device = str(interface.get("device", "")).strip()
+        for address in _addresses_for_yggdrasil_device(addresses, device):
+            return YggdrasilServerEndpoint(
+                address=_normalise_ip_address(address),
+                port=port,
+                interface_name=interface_name,
+                device=device,
+                source="device" if device else "host",
+            )
+    return None
 
 
 def merge_reticulum_interface_template(
@@ -896,6 +959,102 @@ def _is_yggdrasil_address(value: object) -> bool:
         return address in ipaddress.ip_network("200::/7")
     except ValueError:
         return False
+
+
+def _normalise_ip_address(value: object) -> str:
+    return str(value).strip().split("%", 1)[0].lower()
+
+
+def _normalise_optional_port(value: object, *, default: int) -> int:
+    if value is None or str(value).strip() == "":
+        return default
+    try:
+        port = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    if port < 1 or port > 65535:
+        return default
+    return port
+
+
+def _addresses_for_yggdrasil_device(
+    addresses: typing.Mapping[str, typing.Iterable[str]],
+    device: str,
+) -> typing.Iterator[str]:
+    if device:
+        candidates = tuple(addresses.get(device, ()))
+        matched = [str(address) for address in candidates if _is_yggdrasil_address(address)]
+        if matched:
+            yield from matched
+            return
+        all_matches = tuple(
+            dict.fromkeys(
+                str(address)
+                for device_addresses in addresses.values()
+                for address in device_addresses
+                if _is_yggdrasil_address(address)
+            )
+        )
+        if len(all_matches) == 1:
+            yield all_matches[0]
+        return
+    else:
+        candidates = (
+            address
+            for device_addresses in addresses.values()
+            for address in device_addresses
+        )
+    for address in candidates:
+        if _is_yggdrasil_address(address):
+            yield str(address)
+
+
+def _local_yggdrasil_addresses() -> dict[str, tuple[str, ...]]:
+    addresses = _linux_if_inet6_addresses()
+    if addresses:
+        return addresses
+    return _hostname_yggdrasil_addresses()
+
+
+def _linux_if_inet6_addresses(
+    path: pathlib.Path = pathlib.Path("/proc/net/if_inet6"),
+) -> dict[str, tuple[str, ...]]:
+    try:
+        text = path.read_text(encoding="ascii")
+    except OSError:
+        return {}
+    values: dict[str, list[str]] = {}
+    try:
+        import ipaddress
+
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            raw_address = parts[0]
+            device = parts[5]
+            if len(raw_address) != 32:
+                continue
+            address = str(ipaddress.IPv6Address(int(raw_address, 16)))
+            if _is_yggdrasil_address(address):
+                values.setdefault(device, []).append(address)
+    except ValueError:
+        return {}
+    return {device: tuple(device_addresses) for device, device_addresses in values.items()}
+
+
+def _hostname_yggdrasil_addresses() -> dict[str, tuple[str, ...]]:
+    try:
+        import socket
+
+        found: list[str] = []
+        for *_, sockaddr in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
+            address = str(sockaddr[0]).split("%", 1)[0]
+            if _is_yggdrasil_address(address):
+                found.append(address)
+        return {"": tuple(dict.fromkeys(found))} if found else {}
+    except Exception:
+        return {}
 
 
 def _select_method(methods: tuple[str, ...]) -> str:

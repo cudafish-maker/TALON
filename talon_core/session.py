@@ -441,6 +441,15 @@ class TalonCoreSession:
 
         return get_i2pd_server_b32(self.paths.rns_config_dir)
 
+    def get_yggdrasil_server_endpoint(self):
+        """Return the client-facing server Yggdrasil endpoint, if discoverable."""
+        self._require_unlocked()
+        if self.mode != "server":
+            raise CoreSessionError("The Yggdrasil server endpoint is only available in server mode.")
+        from talon_core.network.rns_config import get_yggdrasil_server_endpoint
+
+        return get_yggdrasil_server_endpoint(self.paths.rns_config_dir)
+
     def ensure_i2pd_server_b32(self):
         """Return or create the TALON i2pd server B32 address."""
         self._require_unlocked()
