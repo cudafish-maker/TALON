@@ -4,10 +4,14 @@ set -eu
 zero_sha=0000000000000000000000000000000000000000
 blocked_paths_file=$(mktemp)
 tag_errors_file=$(mktemp)
-trap 'rm -f "$blocked_paths_file" "$tag_errors_file"' EXIT HUP INT TERM
+branch_errors_file=$(mktemp)
+trap 'rm -f "$blocked_paths_file" "$tag_errors_file" "$branch_errors_file"' EXIT HUP INT TERM
 
 # Release policy:
-# - CHANGELOG.md is the only Markdown file intended for remote pushes.
+# - Only dev and main branch refs are intended for remote pushes.
+# - local-docs stays local-only.
+# - CHANGELOG.md and generated *-user-guide.pdf files are the only docs intended
+#   for remote pushes.
 # - Version tags are vX.Y.Z and must include a matching CHANGELOG.md section:
 #   ## [X.Y.Z] - YYYY-MM-DD
 while read -r local_ref local_sha remote_ref remote_sha
@@ -20,6 +24,14 @@ do
     if [ -z "$local_commit" ]; then
         continue
     fi
+
+    case "$remote_ref" in
+        refs/heads/dev|refs/heads/main)
+            ;;
+        refs/heads/*)
+            echo "$remote_ref" >> "$branch_errors_file"
+            ;;
+    esac
 
     case "$remote_ref" in
         refs/tags/v*)
@@ -42,8 +54,11 @@ do
                     status = substr($1, 1, 1)
                     for (i = 2; i <= NF; i++) {
                         path = tolower($i)
-                        allowed = (path == "changelog.md")
-                        if (status != "D" && path ~ /\.(md|html)$/ && !allowed) {
+                        allowed_md = (path == "changelog.md")
+                        allowed_pdf = (path ~ /(^|\/)[^\/]*-user-guide\.pdf$/)
+                        if (status != "D" && path ~ /\.(md|html)$/ && !allowed_md) {
+                            print $i
+                        } else if (status != "D" && path ~ /\.pdf$/ && !allowed_pdf) {
                             print $i
                         }
                     }
@@ -61,10 +76,21 @@ if [ -s "$tag_errors_file" ]; then
     exit 1
 fi
 
+if [ -s "$branch_errors_file" ]; then
+    {
+        echo "TALON branch policy: only dev and main may be pushed to remote."
+        echo "local-docs stays local-only."
+        echo
+        echo "This push targets blocked branch refs:"
+        sort -u "$branch_errors_file" | sed 's/^/  - /'
+    } >&2
+    exit 1
+fi
+
 if [ -s "$blocked_paths_file" ]; then
     {
-        echo "TALON policy: .md and .html files may be committed locally but must not be pushed to remote."
-        echo "CHANGELOG.md is the only pushable Markdown release file."
+        echo "TALON policy: local docs may be committed locally but must not be pushed to remote."
+        echo "Allowed pushed docs: CHANGELOG.md and generated *-user-guide.pdf files."
         echo
         echo "This push contains blocked paths:"
         sort -u "$blocked_paths_file" | sed 's/^/  - /'
