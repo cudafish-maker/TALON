@@ -345,6 +345,13 @@ class TalonCoreSession:
         self._require_unlocked()
         if self._reticulum_started:
             return
+        import threading
+
+        if threading.current_thread() is not threading.main_thread():
+            raise CoreSessionError(
+                "Reticulum startup must run on the main thread. "
+                "Start networking before launching background enrollment work."
+            )
         status = self.reticulum_config_status()
         if not status.exists:
             raise CoreSessionError(
@@ -362,6 +369,20 @@ class TalonCoreSession:
 
         init_reticulum(self.paths.rns_config_dir, mode=self.mode)
         self._reticulum_started = True
+
+    def prepare_client_enrollment_network(self, combined: str) -> None:
+        """Apply token transport hints and start Reticulum before enrollment."""
+        self._require_unlocked()
+        if self.mode != "client":
+            raise CoreSessionError("Client enrollment is only valid in client mode.")
+        config_result = self.configure_reticulum_from_enrollment_token(combined)
+        if config_result is not None and config_result.restart_required:
+            raise CoreSessionError(
+                "Network settings from the enrollment token were saved. "
+                "Restart TALON before enrolling so Reticulum can use them."
+            )
+        if not self._reticulum_started:
+            self.start_reticulum()
 
     def reticulum_config_status(self) -> ReticulumConfigStatus:
         """Return the TALON-owned Reticulum config status after DB unlock."""
@@ -530,14 +551,7 @@ class TalonCoreSession:
         self._require_unlocked()
         if self.mode != "client":
             raise CoreSessionError("Client enrollment is only valid in client mode.")
-        config_result = self.configure_reticulum_from_enrollment_token(combined)
-        if config_result is not None and config_result.restart_required:
-            raise CoreSessionError(
-                "Network settings from the enrollment token were saved. "
-                "Restart TALON before enrolling so Reticulum can use them."
-            )
-        if not self._reticulum_started:
-            self.start_reticulum()
+        self.prepare_client_enrollment_network(combined)
         if self._client_sync is None:
             self.start_sync(init_reticulum=False)
 

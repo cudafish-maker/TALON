@@ -98,11 +98,12 @@ jobs:
             --pattern 'talon-desktop-client-windows-setup.exe' \
             --pattern 'talon-desktop-server-windows-setup.exe'
 
-      - name: Generate signed update manifest
+      - name: Generate signed update manifest and release metadata
         env:
           TALON_UPDATE_SIGNING_KEY_B64: ${{ secrets.TALON_UPDATE_SIGNING_KEY_B64 }}
         shell: bash
         run: |
+          set -euo pipefail
           python build/generate-update-manifest.py \
             --dist dist/update-assets \
             --repository "${{ github.repository }}" \
@@ -112,13 +113,41 @@ jobs:
           python build/sign-update-manifest.py \
             dist/update-assets/talon-update.json \
             dist/update-assets/talon-update.json.sig
+          (
+            cd dist/update-assets
+            sha256sum \
+              talon-desktop-client-linux.tar.gz \
+              talon-desktop-server-linux.tar.gz \
+              talon-desktop-client-windows-setup.exe \
+              talon-desktop-server-windows-setup.exe \
+              talon-update.json \
+              talon-update.json.sig > SHA256SUMS
+          )
+          bash build/generate-release-notes.sh \
+            "${{ steps.release.outputs.tag }}" \
+            "${{ github.repository }}" \
+            dist/update-assets/release-notes.md
 
-      - name: Publish update manifest
+      - name: Publish update manifest and grouped release notes
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
         run: |
+          set -euo pipefail
           gh release upload "$TAG" \
             dist/update-assets/talon-update.json \
             dist/update-assets/talon-update.json.sig \
+            dist/update-assets/SHA256SUMS \
             --clobber
+          gh release edit "$TAG" \
+            --title "$TAG" \
+            --notes-file dist/update-assets/release-notes.md
+          while IFS= read -r asset_name; do
+            [ -n "$asset_name" ] || continue
+            gh release delete-asset "$TAG" "$asset_name" --yes || true
+          done < <(
+            gh release view "$TAG" \
+              --json assets \
+              --jq '.assets[].name | select(endswith(".sha256"))'
+          )

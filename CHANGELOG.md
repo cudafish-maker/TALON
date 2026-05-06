@@ -32,11 +32,17 @@ All notable user-facing changes to TALON are documented here.
 
 ### Changed
 
+- GitHub release publishing now groups desktop download links in the release
+  notes and publishes one `SHA256SUMS` checksum asset instead of per-file
+  checksum sidecars.
 - Desktop enrollment token expiration now uses local date and time controls
   instead of a raw minute-duration field.
 
 ### Fixed
 
+- Client desktop enrollment now prepares Reticulum networking on the main
+  thread before the background enrollment exchange, avoiding Python signal
+  handler failures during first enrollment.
 - Desktop release artifacts now report version `0.1.1` after installation so
   the updater does not repeatedly offer the same release.
 

@@ -3,6 +3,7 @@ import base64
 import hashlib
 import pathlib
 import stat
+import threading
 import time
 
 import pytest
@@ -1313,6 +1314,32 @@ def test_core_reticulum_existing_unaccepted_config_still_needs_setup(
     assert accepted.accepted is True
     assert accepted.needs_setup is False
     assert reticulum_acceptance_path(session.paths.rns_config_dir).is_file()
+
+    session.close()
+
+
+def test_core_start_reticulum_requires_main_thread(tmp_path: pathlib.Path) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.save_reticulum_config_text(default_reticulum_config("client"))
+    errors: list[BaseException] = []
+
+    def _worker() -> None:
+        try:
+            session.start_reticulum()
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=_worker, name="test-reticulum-worker")
+    thread.start()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], CoreSessionError)
+    assert "main thread" in str(errors[0])
+    assert session.reticulum_started is False
 
     session.close()
 

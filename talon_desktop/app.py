@@ -2551,6 +2551,14 @@ class DesktopRuntime(QtCore.QObject):
     @QtCore.Slot(str, str)
     def enroll(self, token_and_hash: str, callsign: str) -> None:
         assert self.login_window is not None
+        self.login_window.set_busy(True, "Preparing network...")
+        try:
+            self.core.prepare_client_enrollment_network(token_and_hash)
+        except Exception as exc:
+            _log.warning("Desktop enrollment network preparation failed: %s", exc)
+            self._enroll_failed(str(exc))
+            return
+
         self.login_window.set_busy(True, "Enrolling client...")
         signals = _WorkerSignals()
         self._workers.append(signals)

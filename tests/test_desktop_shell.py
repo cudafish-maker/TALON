@@ -1901,6 +1901,70 @@ finally:
     app.processEvents()
 """
 
+_QT_CLIENT_ENROLLMENT_RETICULUM_THREAD_SCRIPT = r"""
+import os
+import sys
+import threading
+import time
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtWidgets
+
+from talon_core import TalonCoreSession
+from talon_desktop.app import DesktopRuntime, LoginWindow
+
+config_path = sys.argv[1]
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+core = TalonCoreSession(config_path=config_path).start()
+runtime = DesktopRuntime(core, start_sync=True)
+events = []
+main_thread = threading.current_thread()
+try:
+    core.unlock_with_key(bytes(range(32)))
+
+    def _prepare_client_enrollment_network(combined):
+        assert combined == "TOKEN:HASH"
+        assert threading.current_thread() is main_thread
+        events.append(("prepare", threading.current_thread().name))
+        core._reticulum_started = True
+
+    def _enroll_client(combined, callsign):
+        assert combined == "TOKEN:HASH"
+        assert callsign == "OWL"
+        assert threading.current_thread() is not main_thread
+        assert core.reticulum_started is True
+        events.append(("enroll", threading.current_thread().name))
+        return 42
+
+    core.prepare_client_enrollment_network = _prepare_client_enrollment_network
+    core.enroll_client = _enroll_client
+    runtime.login_window = LoginWindow(core.mode)
+    shown = []
+    runtime.show_main = lambda *, sync_warning="": shown.append(sync_warning)
+
+    runtime.enroll("TOKEN:HASH", "OWL")
+
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        app.processEvents()
+        if shown:
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError("desktop enrollment smoke timed out")
+
+    assert [event[0] for event in events] == ["prepare", "enroll"], events
+    assert shown == [""]
+    print("client-enrollment-reticulum-main-thread-ok")
+finally:
+    if runtime.login_window is not None:
+        runtime.login_window.close()
+    runtime.shutdown()
+    app.processEvents()
+"""
+
 _QT_ENROLLMENT_EXPIRY_PICKER_SCRIPT = r"""
 import os
 import types
@@ -2649,6 +2713,20 @@ def test_qt_enrollment_expiration_uses_local_date_time_picker(
     )
 
     assert "enrollment-expiry-picker-ok" in result.stdout
+
+
+def test_qt_client_enrollment_prepares_reticulum_on_main_thread(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_CLIENT_ENROLLMENT_RETICULUM_THREAD_SCRIPT,
+        tmp_path,
+        mode="client",
+        extra_arg="client-enroll-thread",
+        timeout=30,
+    )
+
+    assert "client-enrollment-reticulum-main-thread-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))

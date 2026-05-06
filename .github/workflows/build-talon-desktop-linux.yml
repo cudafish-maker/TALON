@@ -93,7 +93,6 @@ jobs:
             cp build/install-talon-desktop.sh "$role_dir/install.sh"
             chmod +x "$role_dir/install.sh"
             tar -C dist -czf "dist/talon-desktop-${role}-linux.tar.gz" "talon-desktop-${role}-linux"
-            sha256sum "dist/talon-desktop-${role}-linux.tar.gz" > "dist/talon-desktop-${role}-linux.tar.gz.sha256"
           done
 
       - name: Smoke install Linux release artifacts
@@ -127,9 +126,7 @@ jobs:
           name: talon-desktop-linux
           path: |
             dist/talon-desktop-client-linux.tar.gz
-            dist/talon-desktop-client-linux.tar.gz.sha256
             dist/talon-desktop-server-linux.tar.gz
-            dist/talon-desktop-server-linux.tar.gz.sha256
 
       - name: Publish Linux release assets
         if: startsWith(github.ref, 'refs/tags/')
@@ -139,6 +136,4 @@ jobs:
         run: |
           build/upload-release-assets.sh "$GITHUB_REF_NAME" \
             dist/talon-desktop-client-linux.tar.gz \
-            dist/talon-desktop-client-linux.tar.gz.sha256 \
-            dist/talon-desktop-server-linux.tar.gz \
-            dist/talon-desktop-server-linux.tar.gz.sha256
+            dist/talon-desktop-server-linux.tar.gz

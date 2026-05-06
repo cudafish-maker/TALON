@@ -93,12 +93,6 @@ jobs:
         run: |
           if (!(Test-Path dist\talon-desktop-client-windows-setup.exe)) { throw "Missing client setup" }
           if (!(Test-Path dist\talon-desktop-server-windows-setup.exe)) { throw "Missing server setup" }
-          Get-FileHash dist\talon-desktop-client-windows-setup.exe -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash)  talon-desktop-client-windows-setup.exe" } |
-            Set-Content dist\talon-desktop-client-windows-setup.exe.sha256
-          Get-FileHash dist\talon-desktop-server-windows-setup.exe -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash)  talon-desktop-server-windows-setup.exe" } |
-            Set-Content dist\talon-desktop-server-windows-setup.exe.sha256
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -106,9 +100,7 @@ jobs:
           name: talon-desktop-windows
           path: |
             dist/talon-desktop-client-windows-setup.exe
-            dist/talon-desktop-client-windows-setup.exe.sha256
             dist/talon-desktop-server-windows-setup.exe
-            dist/talon-desktop-server-windows-setup.exe.sha256
 
       - name: Publish Windows release assets
         if: startsWith(github.ref, 'refs/tags/')
@@ -118,6 +110,4 @@ jobs:
         run: |
           build/upload-release-assets.sh "$GITHUB_REF_NAME" \
             dist/talon-desktop-client-windows-setup.exe \
-            dist/talon-desktop-client-windows-setup.exe.sha256 \
-            dist/talon-desktop-server-windows-setup.exe \
-            dist/talon-desktop-server-windows-setup.exe.sha256
+            dist/talon-desktop-server-windows-setup.exe
