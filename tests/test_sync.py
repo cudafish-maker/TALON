@@ -869,6 +869,48 @@ class TestServerClientPush:
         assert row is None
         assert sent[-1]["accepted"] == []
 
+    def test_sync_done_includes_authenticated_operator_lease_metadata(
+        self, tmp_db, test_key, monkeypatch
+    ):
+        conn, _ = tmp_db
+        operator_hash = "c" * 64
+        lease_expires_at = int(time.time()) + 3600
+        conn.execute(
+            "INSERT INTO operators "
+            "(id, callsign, rns_hash, skills, profile, enrolled_at, "
+            "lease_expires_at, revoked, version) "
+            "VALUES (7, 'SYNCLEASE', ?, '[]', '{}', 1000, ?, 0, 4)",
+            (operator_hash, lease_expires_at),
+        )
+        conn.commit()
+
+        sent = []
+        monkeypatch.setattr(
+            net_handler,
+            "_smart_send",
+            lambda _link, data: sent.append(proto.decode(data)),
+        )
+        handler = net_handler.ServerNetHandler(
+            conn,
+            configparser.ConfigParser(),
+            test_key,
+        )
+
+        handler._handle_sync(
+            _FakeLink(operator_hash),
+            {
+                "type": proto.MSG_SYNC_REQUEST,
+                "version_map": {"operators": {"7": 4}},
+                "last_sync_at": 0,
+            },
+        )
+
+        sync_done = sent[-1]
+        assert sync_done["type"] == proto.MSG_SYNC_DONE
+        assert sync_done["operator_id"] == 7
+        assert sync_done["lease_expires_at"] == lease_expires_at
+        assert sync_done["operator_version"] == 4
+
 
 class TestClientServerPushIntegration:
     def test_sync_response_order_applies_mission_before_linked_asset(
@@ -2174,6 +2216,61 @@ class TestClientServerPushIntegration:
             ).fetchone()
             assert row == (0, operator_hash, renewed_at, 2)
             assert lock_checks == [True]
+
+        finally:
+            close_db(client_conn)
+
+    def test_sync_done_lease_metadata_repairs_equal_version_expired_local_lease(
+        self, tmp_path, test_key
+    ):
+        client_conn = _open_test_db(tmp_path, "client_sync_done_lease.db", test_key)
+        try:
+            operator_hash = "9" * 64
+            _insert_operator(client_conn, 65, "SYNCDONE", operator_hash)
+            renewed_at = int(time.time()) + 3600
+            expired_at = int(time.time()) - 30
+            client_conn.execute(
+                "UPDATE operators SET lease_expires_at = ?, version = 4 WHERE id = 65",
+                (expired_at,),
+            )
+            client_conn.commit()
+
+            manager = _make_client_manager(client_conn, test_key, operator_id=65)
+            lock_checks = []
+            refreshes = []
+            manager._trigger_local_lock_check = lambda: lock_checks.append(True)
+            manager._notify_ui = (
+                lambda table, **kwargs: refreshes.append((table, kwargs))
+            )
+            manager._ui_dispatcher = ClientUiDispatcher(
+                notify_ui=manager._notify_ui
+            )
+            manager._record_applier._ui_dispatcher = manager._ui_dispatcher
+
+            sync_done_event = threading.Event()
+            manager._handle_incoming(
+                {
+                    "version": proto.PROTOCOL_VERSION,
+                    "type": proto.MSG_SYNC_DONE,
+                    "tombstones": [],
+                    "server_id_sets": {"operators": [65]},
+                    "operator_id": 65,
+                    "lease_expires_at": renewed_at,
+                    "operator_version": 4,
+                },
+                sync_done_event,
+            )
+
+            row = client_conn.execute(
+                "SELECT lease_expires_at, version FROM operators WHERE id = 65"
+            ).fetchone()
+            assert row == (renewed_at, 4)
+            assert manager._operator_lease_version_seen == 4
+            assert lock_checks == [True]
+            assert (
+                "operators",
+                {"badge": False, "action": "changed", "record_id": None},
+            ) in refreshes
 
         finally:
             close_db(client_conn)

@@ -317,6 +317,16 @@ def _validate_sync_done(msg: dict) -> None:
             raise ProtocolValidationError(
                 "sync_done: server_id_sets ids must be integers"
             )
+    if "operator_id" in msg and not _is_int(msg.get("operator_id")):
+        raise ProtocolValidationError("sync_done: operator_id must be an integer")
+    if "lease_expires_at" in msg and not _is_int(msg.get("lease_expires_at")):
+        raise ProtocolValidationError(
+            "sync_done: lease_expires_at must be an integer"
+        )
+    if "operator_version" in msg and not _is_int(msg.get("operator_version")):
+        raise ProtocolValidationError(
+            "sync_done: operator_version must be an integer"
+        )
 
 
 def _validate_heartbeat(msg: dict) -> None:

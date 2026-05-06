@@ -11,7 +11,8 @@ All notable user-facing changes to TALON are documented here.
 ### Fixed
 
 - Clients no longer stay soft-locked if a stale lease-expired network error
-  arrives after the renewed lease state has already been applied.
+  arrives after renewal, or if the local lease expiry is stale while the
+  operator version already matches the server.
 
 ### Security
 

@@ -319,8 +319,15 @@ class ClientSyncManager:
     def _apply_record(self, table: str, record: dict, *, badge: bool = True) -> bool:
         return self._record_applier.apply_record(table, record, badge=badge)
 
-    def _update_lease_expiry(self, lease_expires_at: typing.Any) -> None:
-        self._record_applier.update_lease_expiry(lease_expires_at)
+    def _update_lease_expiry(
+        self,
+        lease_expires_at: typing.Any,
+        operator_version: typing.Optional[typing.Any] = None,
+    ) -> None:
+        self._record_applier.update_lease_expiry(
+            lease_expires_at,
+            operator_version,
+        )
 
     def _handle_document_response(self, msg: dict) -> None:
         self._document_transfers.handle_response(msg)

@@ -196,6 +196,19 @@ def test_error_accepts_lease_expired_code_and_expiry_metadata():
     assert proto.validate_server_message(msg) is msg
 
 
+def test_sync_done_accepts_operator_lease_metadata():
+    msg = {
+        **_base(proto.MSG_SYNC_DONE),
+        "tombstones": [],
+        "server_id_sets": {},
+        "operator_id": 3,
+        "lease_expires_at": 123,
+        "operator_version": 7,
+    }
+
+    assert proto.validate_server_message(msg) is msg
+
+
 def test_server_rejects_invalid_payload_before_handler_dispatch(tmp_db, test_key, monkeypatch):
     conn, _ = tmp_db
     handler = net_handler.ServerNetHandler(conn, configparser.ConfigParser(), test_key)

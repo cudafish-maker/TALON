@@ -754,6 +754,10 @@ class ServerMessageHandlers:
 
             tombstones = handler._get_tombstones(last_sync_at)
             server_id_sets = handler._get_server_id_sets()
+            operator_row = handler._conn.execute(
+                "SELECT lease_expires_at, version FROM operators WHERE id = ?",
+                (auth.operator_id,),
+            ).fetchone()
 
         self._smart_send(
             link,
@@ -762,6 +766,15 @@ class ServerMessageHandlers:
                     "type": proto.MSG_SYNC_DONE,
                     "tombstones": tombstones,
                     "server_id_sets": server_id_sets,
+                    "operator_id": auth.operator_id,
+                    "lease_expires_at": (
+                        int(operator_row[0])
+                        if operator_row is not None
+                        else auth.lease_expires_at
+                    ),
+                    "operator_version": (
+                        int(operator_row[1]) if operator_row is not None else 0
+                    ),
                     **proto.peer_metadata("server"),
                 }
             ),

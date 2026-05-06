@@ -551,10 +551,20 @@ class ClientRecordApplier:
     def gc_chunk_buffers(self) -> None:
         self._manager._chunk_reassembler.gc()
 
-    def update_lease_expiry(self, lease_expires_at: typing.Any) -> None:
+    def update_lease_expiry(
+        self,
+        lease_expires_at: typing.Any,
+        operator_version: typing.Optional[typing.Any] = None,
+    ) -> None:
         manager = self._manager
         if not lease_expires_at or not manager._operator_id:
             return
+        try:
+            server_version = (
+                int(operator_version) if operator_version is not None else None
+            )
+        except (TypeError, ValueError):
+            server_version = None
         changed = False
         with manager._lock:
             try:
@@ -563,6 +573,11 @@ class ClientRecordApplier:
                     "SELECT lease_expires_at FROM operators WHERE id = ?",
                     (manager._operator_id,),
                 ).fetchone()
+                if server_version is not None:
+                    manager._operator_lease_version_seen = max(
+                        int(getattr(manager, "_operator_lease_version_seen", 0) or 0),
+                        server_version,
+                    )
                 if row is not None and int(row[0]) == new_expiry:
                     return
                 manager._conn.execute(
@@ -1831,6 +1846,9 @@ class ClientLinkLifecycle:
                 result["done"] = True
                 result["tombstones"] = msg.get("tombstones") or []
                 result["server_id_sets"] = msg.get("server_id_sets") or {}
+                result["operator_id"] = msg.get("operator_id")
+                result["lease_expires_at"] = msg.get("lease_expires_at")
+                result["operator_version"] = msg.get("operator_version")
                 event.set()
             elif msg_type == proto.MSG_ERROR:
                 result["error"] = msg.get("code") or msg.get("message", "unknown error")
@@ -1898,6 +1916,7 @@ class ClientLinkLifecycle:
                 applied += 1
 
         if result["done"]:
+            self._apply_sync_done_lease_metadata(result)
             manager._apply_tombstones(result["tombstones"], badge=notify_badge)
             manager._reconcile_with_server(
                 result["server_id_sets"],
@@ -2011,6 +2030,7 @@ class ClientLinkLifecycle:
             was_initial_sync_done = manager._initial_sync_done
             tombstones = msg.get("tombstones") or []
             notify_badge = not manager._suppress_startup_sync_badges
+            self._apply_sync_done_lease_metadata(msg)
             manager._apply_tombstones(tombstones, badge=notify_badge)
             manager._reconcile_with_server(
                 msg.get("server_id_sets") or {},
@@ -2119,4 +2139,20 @@ class ClientLinkLifecycle:
                     "records": outbox,
                 }
             ),
+        )
+
+    def _apply_sync_done_lease_metadata(self, msg: dict) -> None:
+        manager = self._manager
+        if "lease_expires_at" not in msg:
+            return
+        operator_id = msg.get("operator_id")
+        if operator_id is not None and manager._operator_id is not None:
+            try:
+                if int(operator_id) != int(manager._operator_id):
+                    return
+            except (TypeError, ValueError):
+                return
+        manager._update_lease_expiry(
+            msg.get("lease_expires_at"),
+            msg.get("operator_version"),
         )
