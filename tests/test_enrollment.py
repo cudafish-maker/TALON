@@ -10,6 +10,56 @@ from talon.server.enrollment import (
     renew_lease,
 )
 from talon_core.server.enrollment import _stored_token_key
+from talon_core.enrollment_tokens import (
+    format_enrollment_token,
+    parse_enrollment_token,
+)
+
+
+def test_v2_enrollment_token_round_trips_transport_hints():
+    combined = format_enrollment_token(
+        "a" * 64,
+        "b" * 32,
+        transports=[
+            {
+                "type": "i2p",
+                "peer": "5URVJICPZI7Q3YBZTSEF4I5OW2AQ4SOKTFJ7ZEDZ53S47R54JNQQ.B32.I2P",
+            },
+            {
+                "type": "yggdrasil",
+                "address": "201:5d78:af73:5caf:a4de:a79f:3278:71e5",
+                "port": "4343",
+            },
+        ],
+    )
+
+    parsed = parse_enrollment_token(combined)
+
+    assert combined.startswith("TALON2:")
+    assert parsed.version == 2
+    assert parsed.token == "a" * 64
+    assert parsed.server_hash == "b" * 32
+    assert parsed.transports[0].peer.endswith(".b32.i2p")
+    assert parsed.transports[1].address == "201:5d78:af73:5caf:a4de:a79f:3278:71e5"
+    assert parsed.transports[1].port == 4343
+
+
+def test_legacy_enrollment_token_still_parses():
+    parsed = parse_enrollment_token(f"{'a' * 64}:{'b' * 32}")
+
+    assert parsed.version == 1
+    assert parsed.token == "a" * 64
+    assert parsed.server_hash == "b" * 32
+    assert parsed.transports == ()
+
+
+def test_v2_enrollment_token_rejects_unknown_transport():
+    with pytest.raises(ValueError, match="Unsupported enrollment transport"):
+        format_enrollment_token(
+            "a" * 64,
+            "b" * 32,
+            transports=[{"type": "raw_config", "text": "[interfaces]"}],
+        )
 
 
 class TestGenerateEnrollmentToken:

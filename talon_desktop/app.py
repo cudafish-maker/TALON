@@ -135,7 +135,7 @@ class LoginWindow(QtWidgets.QWidget):
         self.enrollment_group = QtWidgets.QGroupBox("Client Enrollment")
         enrollment_layout = QtWidgets.QFormLayout(self.enrollment_group)
         self.token_field = QtWidgets.QLineEdit()
-        self.token_field.setPlaceholderText("TOKEN:SERVER_HASH")
+        self.token_field.setPlaceholderText("TOKEN:SERVER_HASH or TALON2:...")
         self.paste_token_button = QtWidgets.QPushButton("Paste")
         self.paste_token_button.clicked.connect(self._paste_token)
         token_row = QtWidgets.QHBoxLayout()
@@ -210,7 +210,7 @@ class LoginWindow(QtWidgets.QWidget):
         token = self.token_field.text().strip()
         callsign = self.callsign_field.text().strip()
         if not token:
-            self.show_error("TOKEN:SERVER_HASH is required.")
+            self.show_error("Enrollment token is required.")
             return
         if not callsign:
             self.show_error("Callsign is required.")
@@ -2401,16 +2401,16 @@ class DesktopRuntime(QtCore.QObject):
         sync_warning = ""
         assert self.login_window is not None
         self.login_window.mark_unlocked()
-        if self.start_sync:
-            network_result = self._start_network_for_unlocked_session()
-            if network_result is None:
-                return
-            sync_warning = network_result
         if self.login_window is not None and self.core.mode == "client":
             operator_id = getattr(result, "operator_id", None)
             if operator_id is None:
                 self.login_window.show_enrollment()
                 return
+        if self.start_sync:
+            network_result = self._start_network_for_unlocked_session()
+            if network_result is None:
+                return
+            sync_warning = network_result
         self.show_main(sync_warning=sync_warning)
 
     def _start_network_for_unlocked_session(self) -> str | None:

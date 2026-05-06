@@ -4,7 +4,8 @@ Client sync manager — enrollment and real-time delta sync over RNS.
 Responsibilities
 ----------------
 1. Load/create the client's RNS identity (``client.identity`` in data_dir).
-2. Provide ``enroll()`` — one-shot enrollment using a TOKEN:SERVER_HASH string.
+2. Provide ``enroll()`` — one-shot enrollment using a TOKEN:SERVER_HASH or
+   TALON2 enrollment string.
 3. Run a background connection loop that:
    a. Opens a **persistent** RNS Link to the server.
    b. Pushes any locally-created offline records (outbox) BEFORE sync_request.
@@ -437,18 +438,11 @@ def _notify_ui(
 
 
 def _parse_combined(combined: str) -> tuple:
-    """Split a ``TOKEN:SERVER_HASH`` string into ``(token, server_hash_hex)``."""
-    combined = combined.strip()
-    if ":" not in combined:
-        raise ValueError("Invalid enrollment string — expected TOKEN:SERVER_HASH format")
-    token, server_hash_hex = combined.split(":", 1)
-    token = token.strip()
-    server_hash_hex = server_hash_hex.strip()
-    if not token:
-        raise ValueError("Token part is empty in enrollment string")
-    if not server_hash_hex:
-        raise ValueError("Server hash part is empty in enrollment string")
-    return token, server_hash_hex
+    """Return ``(token, server_hash_hex)`` from a legacy or v2 enrollment string."""
+    from talon_core.enrollment_tokens import parse_enrollment_token
+
+    parsed = parse_enrollment_token(combined)
+    return parsed.token, parsed.server_hash
 
 
 def _recall_dest(

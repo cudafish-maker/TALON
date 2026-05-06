@@ -5,6 +5,7 @@ starting Reticulum or opening network sockets.
 """
 from __future__ import annotations
 
+import collections.abc
 import dataclasses
 import hashlib
 import hmac
@@ -380,6 +381,38 @@ def merge_reticulum_interface_template(
     return _append_interface_blocks(existing_text, tuple(merged_blocks))
 
 
+def apply_client_transport_hints(
+    existing_text: str,
+    transports: typing.Iterable[object],
+) -> str:
+    """Merge typed enrollment transport hints into a client Reticulum config."""
+    text = existing_text
+    for hint in transports:
+        kind = (
+            str(_hint_value(hint, "type") or _hint_value(hint, "kind") or "")
+            .strip()
+            .lower()
+        )
+        if kind == "i2p":
+            peer = str(_hint_value(hint, "peer") or "").strip()
+            if peer and not _has_i2p_client_peer(text, peer):
+                text = merge_reticulum_interface_template(
+                    text,
+                    i2pd_client_config(peer),
+                    mode="client",
+                )
+        elif kind == "yggdrasil":
+            address = str(_hint_value(hint, "address") or "").strip()
+            port = int(_hint_value(hint, "port") or 4343)
+            if address and not _has_tcp_client_target(text, address, port):
+                text = merge_reticulum_interface_template(
+                    text,
+                    yggdrasil_client_config(address, port=port),
+                    mode="client",
+                )
+    return text
+
+
 def save_reticulum_config_text(
     config_dir: pathlib.Path,
     text: str,
@@ -601,6 +634,61 @@ def _iter_interface_sections(
         value = interfaces.get(name)
         if isinstance(value, dict) or hasattr(value, "items"):
             yield str(name), typing.cast(typing.Mapping[str, typing.Any], value)
+
+
+def _hint_value(item: object, key: str) -> object:
+    if isinstance(item, collections.abc.Mapping):
+        return item.get(key)
+    return getattr(item, key, None)
+
+
+def _has_i2p_client_peer(text: str, peer: str) -> bool:
+    peer = peer.strip().lower()
+    try:
+        from RNS.vendor.configobj import ConfigObj
+
+        parsed = ConfigObj(text.splitlines())
+        interfaces = _section(parsed, "interfaces")
+        if interfaces is None:
+            return False
+        for _interface_name, interface in _iter_interface_sections(interfaces):
+            if str(interface.get("type", "")).strip() != "I2PInterface":
+                continue
+            if _as_bool(interface.get("connectable"), default=False):
+                continue
+            peers = [value.strip().lower() for value in _as_list(interface.get("peers"))]
+            if peer in peers:
+                return True
+    except Exception:
+        return peer in text.lower()
+    return False
+
+
+def _has_tcp_client_target(text: str, host: str, port: int) -> bool:
+    host = host.strip().lower()
+    try:
+        from RNS.vendor.configobj import ConfigObj
+
+        parsed = ConfigObj(text.splitlines())
+        interfaces = _section(parsed, "interfaces")
+        if interfaces is None:
+            return False
+        for _interface_name, interface in _iter_interface_sections(interfaces):
+            if str(interface.get("type", "")).strip() != "TCPClientInterface":
+                continue
+            target_host = str(interface.get("target_host", "")).strip().lower()
+            if target_host != host:
+                continue
+            try:
+                target_port = int(str(interface.get("target_port", "")).strip())
+            except (TypeError, ValueError):
+                continue
+            if target_port == int(port):
+                return True
+    except Exception:
+        lowered = text.lower()
+        return host in lowered and f"target_port = {int(port)}" in lowered
+    return False
 
 
 def _extract_interface_blocks(text: str) -> tuple[tuple[str, str], ...]:

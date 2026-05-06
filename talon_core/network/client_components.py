@@ -1399,7 +1399,7 @@ class ClientEnrollment:
         if dest is None:
             on_error(
                 "Server not reachable - could not find server on the network.\n"
-                "Check that the server is running and the RNS loopback interfaces are configured."
+                "Check that the server is running and the Reticulum interfaces are configured."
             )
             return
 

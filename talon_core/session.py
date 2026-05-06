@@ -23,6 +23,7 @@ from talon_core.crypto.keystore import derive_key, load_or_create_salt
 from talon_core.crypto.passphrase import validate_passphrase_policy
 from talon_core.db.connection import close_db, open_db
 from talon_core.db.migrations import apply_migrations
+from talon_core.enrollment_tokens import EnrollmentTransportHint
 from talon_core.network.rns_config import (
     ReticulumConfigSaveResult,
     ReticulumConfigStatus,
@@ -104,6 +105,7 @@ class EnrollmentTokenResult:
     token: str
     server_hash: str
     combined: str
+    transports: tuple[EnrollmentTransportHint, ...] = ()
     events: tuple[DomainEvent, ...] = ()
 
 
@@ -409,6 +411,27 @@ class TalonCoreSession:
             marker_key=self._reticulum_config_marker_key(),
         )
 
+    def configure_reticulum_from_enrollment_token(
+        self,
+        combined: str,
+    ) -> ReticulumConfigSaveResult | None:
+        """Persist client Reticulum interface hints carried by a v2 token."""
+        self._require_unlocked()
+        if self.mode != "client":
+            raise CoreSessionError("Enrollment token network setup is only valid in client mode.")
+        from talon_core.enrollment_tokens import parse_enrollment_token
+        from talon_core.network.rns_config import apply_client_transport_hints
+
+        parsed = parse_enrollment_token(combined)
+        if not parsed.transports:
+            return None
+        existing_text = self.load_reticulum_config_text()
+        merged_text = apply_client_transport_hints(existing_text, parsed.transports)
+        status = self.reticulum_config_status()
+        if merged_text == existing_text and status.exists and status.accepted:
+            return None
+        return self.save_reticulum_config_text(merged_text)
+
     def get_i2pd_server_b32(self):
         """Return the existing TALON i2pd server B32 address, if available."""
         self._require_unlocked()
@@ -495,6 +518,14 @@ class TalonCoreSession:
         self._require_unlocked()
         if self.mode != "client":
             raise CoreSessionError("Client enrollment is only valid in client mode.")
+        config_result = self.configure_reticulum_from_enrollment_token(combined)
+        if config_result is not None and config_result.restart_required:
+            raise CoreSessionError(
+                "Network settings from the enrollment token were saved. "
+                "Restart TALON before enrolling so Reticulum can use them."
+            )
+        if not self._reticulum_started:
+            self.start_reticulum()
         if self._client_sync is None:
             self.start_sync(init_reticulum=False)
 
@@ -1495,7 +1526,7 @@ class TalonCoreSession:
             return self._documents_delete_folder(**payload)
 
         if name == "enrollment.generate_token":
-            return self._generate_enrollment_token()
+            return self._generate_enrollment_token(**payload)
 
         raise KeyError(f"Unknown command: {name}")
 
@@ -2292,16 +2323,48 @@ class TalonCoreSession:
         role = operator.profile.get("role", "") if isinstance(operator.profile, dict) else ""
         return {"id": operator.id, "callsign": operator.callsign, "role": role}
 
-    def _generate_enrollment_token(self) -> EnrollmentTokenResult:
+    def _generate_enrollment_token(
+        self,
+        *,
+        i2p_peer: str = "",
+        yggdrasil_address: str = "",
+        yggdrasil_port: typing.Optional[int] = None,
+        transports: typing.Iterable[object] = (),
+    ) -> EnrollmentTokenResult:
         self._require_server_mode("Enrollment token generation")
+        from talon_core.enrollment_tokens import (
+            format_enrollment_token,
+            normalise_enrollment_transports,
+        )
         from talon_core.server.enrollment import generate_enrollment_token
 
-        token = generate_enrollment_token(self._conn)
+        requested_transports = list(transports or ())
+        if str(i2p_peer or "").strip():
+            requested_transports.append({"type": "i2p", "peer": i2p_peer})
+        if str(yggdrasil_address or "").strip():
+            requested_transports.append(
+                {
+                    "type": "yggdrasil",
+                    "address": yggdrasil_address,
+                    "port": yggdrasil_port or 4343,
+                }
+            )
+        transport_hints = normalise_enrollment_transports(requested_transports)
         server_hash = self._server_rns_hash()
+        if transport_hints and not server_hash:
+            raise CoreSessionError(
+                "Start server networking before generating a token with network settings."
+            )
+        token = generate_enrollment_token(self._conn)
         return EnrollmentTokenResult(
             token=token,
             server_hash=server_hash,
-            combined=f"{token}:{server_hash}" if server_hash else token,
+            combined=format_enrollment_token(
+                token,
+                server_hash,
+                transports=transport_hints,
+            ),
+            transports=transport_hints,
         )
 
     def _server_rns_hash(self) -> str:

@@ -279,6 +279,7 @@ from PySide6 import QtCore, QtWidgets
 from talon_core import TalonCoreSession
 from talon_core.crypto.keystore import derive_key, load_or_create_salt
 from talon_core.network.rns_config import save_reticulum_config_text
+import talon_desktop.app as app_module
 from talon_desktop.app import DesktopRuntime, LoginWindow
 
 config_path = sys.argv[1]
@@ -309,9 +310,24 @@ try:
     )
     def _fail_reticulum():
         raise RuntimeError("rns unavailable")
+    class FakeReticulumConfigDialog:
+        def __init__(self, core, parent=None):
+            assert core.is_unlocked is True
+        def exec(self):
+            return QtWidgets.QDialog.Accepted
+    app_module.ReticulumConfigDialog = FakeReticulumConfigDialog
     core.start_reticulum = _fail_reticulum
-    runtime.login_window = LoginWindow(core.mode)
+    runtime.show_login()
     runtime.unlock("DesktopSmoke-1")
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        app.processEvents()
+        if not runtime.login_window.enrollment_group.isHidden():
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(runtime.login_window.status_label.text())
+    runtime.login_window.network_setup_button.click()
     deadline = time.time() + 5.0
     while time.time() < deadline:
         app.processEvents()
@@ -527,7 +543,10 @@ try:
             break
         time.sleep(0.02)
     assert result is not None, "config gate continue smoke timed out"
-    assert events == ["config", "reticulum", "sync"], events
+    if mode == "server":
+        assert events == ["config", "reticulum", "sync"], events
+    else:
+        assert events == [], events
     print("config-gate-continued-" + result)
 finally:
     if runtime.main_window is not None:
@@ -591,16 +610,25 @@ try:
     deadline = time.time() + 15.0
     while time.time() < deadline:
         app.processEvents()
-        if (
-            runtime.login_window is not None
-            and "Reticulum setup is required before network startup."
-            in runtime.login_window.status_label.text()
-        ):
+        if runtime.login_window is not None and not runtime.login_window.enrollment_group.isHidden():
             break
         time.sleep(0.02)
     else:
         raise AssertionError(runtime.login_window.status_label.text())
     assert runtime.login_window.network_setup_button.isEnabled()
+    runtime.login_window.network_setup_button.click()
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        app.processEvents()
+        if (
+            "config-reject" in events
+            and runtime.login_window is not None
+            and runtime.login_window.network_setup_button.isEnabled()
+        ):
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError((events, runtime.login_window.status_label.text()))
     runtime.login_window.network_setup_button.click()
     deadline = time.time() + 15.0
     while time.time() < deadline:
@@ -2262,7 +2290,7 @@ def test_qt_initial_setup_requires_confirmed_passphrase(
     assert "initial-setup-password-ok" in result.stdout
 
 
-def test_qt_client_unlock_surfaces_reticulum_start_failure(
+def test_qt_client_network_setup_surfaces_reticulum_start_failure(
     tmp_path: pathlib.Path,
 ) -> None:
     result = _run_qt_subprocess(
@@ -2296,7 +2324,7 @@ def test_qt_missing_reticulum_config_opens_setup_before_network_start(
     result = _run_qt_subprocess(
         _QT_CONFIG_GATE_REJECT_SCRIPT,
         tmp_path,
-        mode="client",
+        mode="server",
         extra_arg="config-gate-reject",
         timeout=30,
     )

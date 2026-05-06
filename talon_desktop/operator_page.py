@@ -391,6 +391,13 @@ class EnrollmentPage(QtWidgets.QWidget):
         self.token_field.setReadOnly(True)
         self.server_hash_field = QtWidgets.QLineEdit()
         self.server_hash_field.setReadOnly(True)
+        self.i2p_peer_field = QtWidgets.QLineEdit()
+        self.i2p_peer_field.setPlaceholderText("server-address.b32.i2p")
+        self.yggdrasil_address_field = QtWidgets.QLineEdit()
+        self.yggdrasil_address_field.setPlaceholderText("200:...")
+        self.yggdrasil_port_field = QtWidgets.QSpinBox()
+        self.yggdrasil_port_field.setRange(1, 65535)
+        self.yggdrasil_port_field.setValue(4343)
 
         self.generate_button = QtWidgets.QPushButton("Generate Token")
         self.generate_button.clicked.connect(self._generate_token)
@@ -419,6 +426,9 @@ class EnrollmentPage(QtWidgets.QWidget):
         form = QtWidgets.QFormLayout()
         form.addRow("Generated Token", token_row)
         form.addRow("Server Hash", self.server_hash_field)
+        form.addRow("I2P Peer", self.i2p_peer_field)
+        form.addRow("Yggdrasil Address", self.yggdrasil_address_field)
+        form.addRow("Yggdrasil Port", self.yggdrasil_port_field)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(action_row)
@@ -430,6 +440,13 @@ class EnrollmentPage(QtWidgets.QWidget):
     def refresh(self) -> None:
         try:
             self.server_hash_field.setText(self._core.read_model("enrollment.server_hash") or "")
+            if not self.i2p_peer_field.text().strip():
+                try:
+                    address = self._core.get_i2pd_server_b32()
+                except Exception:
+                    address = None
+                if address is not None:
+                    self.i2p_peer_field.setText(str(getattr(address, "address", "") or ""))
             self._items = items_from_enrollment_tokens(
                 self._core.read_model("enrollment.pending_tokens")
             )
@@ -448,13 +465,22 @@ class EnrollmentPage(QtWidgets.QWidget):
 
     def _generate_token(self) -> None:
         try:
-            result = self._core.command("enrollment.generate_token")
+            result = self._core.command(
+                "enrollment.generate_token",
+                i2p_peer=self.i2p_peer_field.text().strip(),
+                yggdrasil_address=self.yggdrasil_address_field.text().strip(),
+                yggdrasil_port=int(self.yggdrasil_port_field.value()),
+            )
         except Exception as exc:
             _log.warning("Token generation failed: %s", exc)
             self.status_label.setText(f"Token generation failed: {exc}")
             return
         self.token_field.setText(str(getattr(result, "combined", "")))
-        self.status_label.setText("Enrollment token generated.")
+        transports = tuple(getattr(result, "transports", ()) or ())
+        if transports:
+            self.status_label.setText("Enrollment token generated with network settings.")
+        else:
+            self.status_label.setText("Enrollment token generated.")
         self.refresh()
 
     def _copy_token(self) -> None:

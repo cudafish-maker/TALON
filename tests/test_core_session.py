@@ -10,6 +10,7 @@ import pytest
 from talon.constants import DB_SCHEMA_VERSION
 from talon.documents import DocumentError
 from talon_core import CoreSessionError, TalonCoreSession
+from talon_core.enrollment_tokens import format_enrollment_token, parse_enrollment_token
 from talon_core.network.rns_config import (
     default_reticulum_config,
     i2pd_client_config,
@@ -1114,6 +1115,37 @@ def test_core_session_server_admin_boundary(tmp_path: pathlib.Path) -> None:
     session.close()
 
 
+def test_core_session_generates_v2_enrollment_token_with_network_hints(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    session.conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('server_rns_hash', ?)",
+        ("b" * 32,),
+    )
+    session.conn.commit()
+
+    token_result = session.command(
+        "enrollment.generate_token",
+        i2p_peer="5URVJICPZI7Q3YBZTSEF4I5OW2AQ4SOKTFJ7ZEDZ53S47R54JNQQ.B32.I2P",
+        yggdrasil_address="201:5d78:af73:5caf:a4de:a79f:3278:71e5",
+        yggdrasil_port=4343,
+    )
+
+    parsed = parse_enrollment_token(token_result.combined)
+    assert token_result.combined.startswith("TALON2:")
+    assert parsed.token == token_result.token
+    assert parsed.server_hash == "b" * 32
+    assert parsed.transports[0].type == "i2p"
+    assert parsed.transports[0].peer.endswith(".b32.i2p")
+    assert parsed.transports[1].type == "yggdrasil"
+    assert parsed.transports[1].port == 4343
+
+    session.close()
+
+
 def test_core_session_dashboard_and_sync_status_read_models(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -1272,6 +1304,48 @@ def test_core_reticulum_save_writes_private_permissions_and_backup(
         assert stat.S_IMODE(second.backup_path.stat().st_mode) == 0o600
         acceptance_mode = reticulum_acceptance_path(session.paths.rns_config_dir).stat().st_mode
         assert stat.S_IMODE(acceptance_mode) == 0o600
+
+    session.close()
+
+
+def test_core_reticulum_configures_client_from_v2_enrollment_token(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "client")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+    combined = format_enrollment_token(
+        "a" * 64,
+        "b" * 32,
+        transports=[
+            {
+                "type": "i2p",
+                "peer": "5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p",
+            },
+            {
+                "type": "yggdrasil",
+                "address": "201:5d78:af73:5caf:a4de:a79f:3278:71e5",
+                "port": 4343,
+            },
+        ],
+    )
+
+    first = session.configure_reticulum_from_enrollment_token(combined)
+    second = session.configure_reticulum_from_enrollment_token(combined)
+    text = session.load_reticulum_config_text()
+
+    assert first is not None
+    assert second is None
+    assert "TALON i2pd Client" in text
+    assert "peers = 5urvjicpzi7q3ybztsef4i5ow2aq4soktfj7zedz53s47r54jnqq.b32.i2p" in text
+    assert "TALON Yggdrasil Client" in text
+    assert "target_host = 201:5d78:af73:5caf:a4de:a79f:3278:71e5" in text
+    assert "TALON i2pd Client 2" not in text
+    assert "TALON Yggdrasil Client 2" not in text
+    assert session.reticulum_config_status().accepted is True
+    session._reticulum_started = True
+    assert session.configure_reticulum_from_enrollment_token(combined) is None
+    session._reticulum_started = False
 
     session.close()
 

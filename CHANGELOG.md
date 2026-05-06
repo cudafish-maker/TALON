@@ -6,6 +6,10 @@ All notable user-facing changes to TALON are documented here.
 
 ### Added
 
+- Enrollment tokens can now carry constrained I2P and Yggdrasil transport hints
+  so an unenrolled client can configure TALON Reticulum interfaces from the
+  pasted token before enrollment.
+
 ### Changed
 
 ### Fixed
