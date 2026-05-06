@@ -3,6 +3,10 @@ import time
 
 import pytest
 
+from talon_core.constants import (
+    ENROLLMENT_TOKEN_MAX_EXPIRY_S,
+    ENROLLMENT_TOKEN_MIN_EXPIRY_S,
+)
 from talon.server.enrollment import (
     create_operator,
     generate_enrollment_token,
@@ -96,6 +100,22 @@ class TestGenerateEnrollmentToken:
             "SELECT expires_at FROM enrollment_tokens ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
         assert row[0] > before
+
+    def test_token_accepts_custom_expiry(self, tmp_db):
+        conn, _ = tmp_db
+        generate_enrollment_token(conn, expires_in_s=15 * 60)
+        row = conn.execute(
+            "SELECT created_at, expires_at FROM enrollment_tokens ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        assert row[1] - row[0] == 15 * 60
+
+    def test_token_rejects_expiry_outside_bounds(self, tmp_db):
+        conn, _ = tmp_db
+
+        with pytest.raises(ValueError, match="at least 1 minute"):
+            generate_enrollment_token(conn, expires_in_s=ENROLLMENT_TOKEN_MIN_EXPIRY_S - 1)
+        with pytest.raises(ValueError, match="no more than 7 days"):
+            generate_enrollment_token(conn, expires_in_s=ENROLLMENT_TOKEN_MAX_EXPIRY_S + 1)
 
 
 class TestListPendingTokens:

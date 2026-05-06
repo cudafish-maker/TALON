@@ -4,6 +4,11 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from talon_core import TalonCoreSession
+from talon_core.constants import (
+    ENROLLMENT_TOKEN_EXPIRY_S,
+    ENROLLMENT_TOKEN_MAX_EXPIRY_S,
+    ENROLLMENT_TOKEN_MIN_EXPIRY_S,
+)
 from talon_core.utils.logging import get_logger
 from talon_desktop.operators import (
     DesktopAuditEntryItem,
@@ -393,6 +398,14 @@ class EnrollmentPage(QtWidgets.QWidget):
         self.server_hash_field.setReadOnly(True)
         self.i2p_peer_field = QtWidgets.QLineEdit()
         self.i2p_peer_field.setPlaceholderText("server-address.b32.i2p")
+        self.expiry_minutes_field = QtWidgets.QSpinBox()
+        self.expiry_minutes_field.setRange(
+            max(1, ENROLLMENT_TOKEN_MIN_EXPIRY_S // 60),
+            max(1, ENROLLMENT_TOKEN_MAX_EXPIRY_S // 60),
+        )
+        self.expiry_minutes_field.setValue(max(1, ENROLLMENT_TOKEN_EXPIRY_S // 60))
+        self.expiry_minutes_field.setSuffix(" min")
+        self.expiry_minutes_field.setMinimumWidth(120)
         self.yggdrasil_address_field = QtWidgets.QLineEdit()
         self.yggdrasil_address_field.setPlaceholderText("200:...")
         self.yggdrasil_port_field = QtWidgets.QSpinBox()
@@ -425,6 +438,7 @@ class EnrollmentPage(QtWidgets.QWidget):
 
         form = QtWidgets.QFormLayout()
         form.addRow("Generated Token", token_row)
+        form.addRow("Token Expiration", self.expiry_minutes_field)
         form.addRow("Server Hash", self.server_hash_field)
         form.addRow("I2P Peer", self.i2p_peer_field)
         form.addRow("Yggdrasil Address", self.yggdrasil_address_field)
@@ -480,6 +494,7 @@ class EnrollmentPage(QtWidgets.QWidget):
         try:
             result = self._core.command(
                 "enrollment.generate_token",
+                expires_in_minutes=int(self.expiry_minutes_field.value()),
                 i2p_peer=self.i2p_peer_field.text().strip(),
                 yggdrasil_address=self.yggdrasil_address_field.text().strip(),
                 yggdrasil_port=int(self.yggdrasil_port_field.value()),
@@ -491,9 +506,14 @@ class EnrollmentPage(QtWidgets.QWidget):
         self.token_field.setText(str(getattr(result, "combined", "")))
         transports = tuple(getattr(result, "transports", ()) or ())
         if transports:
-            self.status_label.setText("Enrollment token generated with network settings.")
+            self.status_label.setText(
+                "Enrollment token generated with network settings. "
+                f"Expires in {self.expiry_minutes_field.value()} minutes."
+            )
         else:
-            self.status_label.setText("Enrollment token generated.")
+            self.status_label.setText(
+                f"Enrollment token generated. Expires in {self.expiry_minutes_field.value()} minutes."
+            )
         self.refresh()
 
     def _copy_token(self) -> None:

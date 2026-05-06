@@ -6,10 +6,6 @@ All notable user-facing changes to TALON are documented here.
 
 ### Added
 
-- Enrollment tokens can now carry constrained I2P and Yggdrasil transport hints
-  so an unenrolled client can configure TALON Reticulum interfaces from the
-  pasted token before enrollment.
-
 ### Changed
 
 ### Fixed
@@ -28,6 +24,11 @@ All notable user-facing changes to TALON are documented here.
 - Optional app version, role, and capability metadata on TALON protocol messages
   to warn about mixed-version deployments without blocking field operation.
 - Server i2pd Network Setup now shows the server `.b32.i2p` address for clients.
+- Enrollment tokens can now carry constrained I2P and Yggdrasil transport hints
+  so an unenrolled client can configure TALON Reticulum interfaces from the
+  pasted token before enrollment.
+- Server operators can choose how long generated enrollment tokens remain valid,
+  within the core minimum and maximum expiration policy.
 
 ### Changed
 

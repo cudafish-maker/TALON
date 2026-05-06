@@ -63,8 +63,10 @@ ASSET_CATEGORIES: Final = (
 # Default chat channels
 DEFAULT_CHANNELS: Final = ("#flash", "#general", "#sitrep-feed", "#alerts")
 
-# Enrollment token expiry (seconds) — 60 minutes
+# Enrollment token expiry bounds.
 ENROLLMENT_TOKEN_EXPIRY_S: Final = 3600
+ENROLLMENT_TOKEN_MIN_EXPIRY_S: Final = 60
+ENROLLMENT_TOKEN_MAX_EXPIRY_S: Final = 7 * 86400
 
 # ---------------------------------------------------------------------------
 # Document management

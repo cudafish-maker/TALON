@@ -1116,6 +1116,40 @@ def test_core_session_server_admin_boundary(tmp_path: pathlib.Path) -> None:
     session.close()
 
 
+def test_core_session_generates_enrollment_token_with_custom_expiry(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    token_result = session.command("enrollment.generate_token", expires_in_minutes=15)
+    pending = session.read_model("enrollment.pending_tokens")
+
+    assert token_result.expires_in_s == 15 * 60
+    assert len(pending) == 1
+    assert pending[0].expires_at - pending[0].created_at == 15 * 60
+
+    session.close()
+
+
+def test_core_session_rejects_ambiguous_enrollment_token_expiry(
+    tmp_path: pathlib.Path,
+) -> None:
+    config_path = _write_config(tmp_path, "server")
+    session = TalonCoreSession(config_path=config_path).start()
+    session.unlock_with_key(TEST_KEY)
+
+    with pytest.raises(CoreSessionError, match="either minutes or seconds"):
+        session.command(
+            "enrollment.generate_token",
+            expires_in_minutes=15,
+            expires_in_s=900,
+        )
+
+    session.close()
+
+
 def test_core_session_generates_v2_enrollment_token_with_network_hints(
     tmp_path: pathlib.Path,
 ) -> None:

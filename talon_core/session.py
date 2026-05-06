@@ -19,6 +19,7 @@ from talon_core.config import (
     get_salt_path,
     load_config,
 )
+from talon_core.constants import ENROLLMENT_TOKEN_EXPIRY_S
 from talon_core.crypto.keystore import derive_key, load_or_create_salt
 from talon_core.crypto.passphrase import validate_passphrase_policy
 from talon_core.db.connection import close_db, open_db
@@ -105,6 +106,7 @@ class EnrollmentTokenResult:
     token: str
     server_hash: str
     combined: str
+    expires_in_s: int = ENROLLMENT_TOKEN_EXPIRY_S
     transports: tuple[EnrollmentTransportHint, ...] = ()
     events: tuple[DomainEvent, ...] = ()
 
@@ -2335,6 +2337,8 @@ class TalonCoreSession:
     def _generate_enrollment_token(
         self,
         *,
+        expires_in_minutes: typing.Optional[int] = None,
+        expires_in_s: typing.Optional[int] = None,
         i2p_peer: str = "",
         yggdrasil_address: str = "",
         yggdrasil_port: typing.Optional[int] = None,
@@ -2346,6 +2350,19 @@ class TalonCoreSession:
             normalise_enrollment_transports,
         )
         from talon_core.server.enrollment import generate_enrollment_token
+
+        if expires_in_minutes is not None and expires_in_s is not None:
+            raise CoreSessionError(
+                "Specify enrollment token expiration in either minutes or seconds, not both."
+            )
+        requested_expiry_s = expires_in_s
+        if expires_in_minutes is not None:
+            try:
+                requested_expiry_s = int(expires_in_minutes) * 60
+            except (TypeError, ValueError) as exc:
+                raise CoreSessionError(
+                    "Enrollment token expiration must be a whole number of minutes."
+                ) from exc
 
         requested_transports = list(transports or ())
         if str(i2p_peer or "").strip():
@@ -2364,7 +2381,8 @@ class TalonCoreSession:
             raise CoreSessionError(
                 "Start server networking before generating a token with network settings."
             )
-        token = generate_enrollment_token(self._conn)
+        token = generate_enrollment_token(self._conn, expires_in_s=requested_expiry_s)
+        expiry_s = ENROLLMENT_TOKEN_EXPIRY_S if requested_expiry_s is None else int(requested_expiry_s)
         return EnrollmentTokenResult(
             token=token,
             server_hash=server_hash,
@@ -2373,6 +2391,7 @@ class TalonCoreSession:
                 server_hash,
                 transports=transport_hints,
             ),
+            expires_in_s=expiry_s,
             transports=transport_hints,
         )
 

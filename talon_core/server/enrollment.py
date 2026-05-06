@@ -9,7 +9,8 @@ Enrollment flow:
   4. Server calls create_operator() which validates the token and provisions
      the operator record.
 
-Tokens expire after ENROLLMENT_TOKEN_EXPIRY_S seconds.
+Tokens expire after the requested duration, defaulting to
+ENROLLMENT_TOKEN_EXPIRY_S seconds.
 Each token can only be consumed once.
 """
 import hashlib
@@ -17,7 +18,12 @@ import os
 import time
 import uuid as _uuid_mod
 
-from talon_core.constants import ENROLLMENT_TOKEN_EXPIRY_S, LEASE_DURATION_S
+from talon_core.constants import (
+    ENROLLMENT_TOKEN_EXPIRY_S,
+    ENROLLMENT_TOKEN_MAX_EXPIRY_S,
+    ENROLLMENT_TOKEN_MIN_EXPIRY_S,
+    LEASE_DURATION_S,
+)
 from talon_core.db.connection import Connection
 from talon_core.db.models import EnrollmentToken, Operator
 from talon_core.utils.logging import audit, get_logger
@@ -25,25 +31,51 @@ from talon_core.utils.logging import audit, get_logger
 _log = get_logger("server.enrollment")
 
 
-def generate_enrollment_token(conn: Connection) -> str:
+def generate_enrollment_token(
+    conn: Connection,
+    *,
+    expires_in_s: int | None = None,
+) -> str:
     """
     Generate a cryptographically random one-time enrollment token,
     persist it, and return the hex string to present to the operator.
     """
+    expiry_s = normalise_enrollment_token_expiry_s(expires_in_s)
     token = os.urandom(32).hex()
     token_hash = _hash_token(token)
     now = int(time.time())
+    expires_at = now + expiry_s
     conn.execute(
         "INSERT INTO enrollment_tokens "
         "(token, token_preview, created_at, expires_at) VALUES (?, ?, ?, ?)",
-        (_stored_token_key(token), _token_preview(token), now, now + ENROLLMENT_TOKEN_EXPIRY_S),
+        (_stored_token_key(token), _token_preview(token), now, expires_at),
     )
     conn.commit()
     # BUG-009: log a hash of the token so it can be correlated later without
     # exposing the raw token value in the audit record.
-    audit("enrollment_token_generated", expires_at=now + ENROLLMENT_TOKEN_EXPIRY_S, token_hash=token_hash)
-    _log.info("Enrollment token generated (expires in %ds)", ENROLLMENT_TOKEN_EXPIRY_S)
+    audit(
+        "enrollment_token_generated",
+        expires_at=expires_at,
+        expires_in_s=expiry_s,
+        token_hash=token_hash,
+    )
+    _log.info("Enrollment token generated (expires in %ds)", expiry_s)
     return token
+
+
+def normalise_enrollment_token_expiry_s(expires_in_s: int | None = None) -> int:
+    """Validate and return an enrollment token expiry duration in seconds."""
+    if expires_in_s is None:
+        return ENROLLMENT_TOKEN_EXPIRY_S
+    try:
+        expiry_s = int(expires_in_s)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Enrollment token expiration must be a whole number of seconds.") from exc
+    if expiry_s < ENROLLMENT_TOKEN_MIN_EXPIRY_S:
+        raise ValueError("Enrollment token expiration must be at least 1 minute.")
+    if expiry_s > ENROLLMENT_TOKEN_MAX_EXPIRY_S:
+        raise ValueError("Enrollment token expiration must be no more than 7 days.")
+    return expiry_s
 
 
 def list_pending_tokens(conn: Connection) -> list[EnrollmentToken]:
