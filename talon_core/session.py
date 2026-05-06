@@ -107,6 +107,7 @@ class EnrollmentTokenResult:
     server_hash: str
     combined: str
     expires_in_s: int = ENROLLMENT_TOKEN_EXPIRY_S
+    expires_at: int = 0
     transports: tuple[EnrollmentTransportHint, ...] = ()
     events: tuple[DomainEvent, ...] = ()
 
@@ -2339,6 +2340,7 @@ class TalonCoreSession:
         *,
         expires_in_minutes: typing.Optional[int] = None,
         expires_in_s: typing.Optional[int] = None,
+        expires_at: typing.Optional[int] = None,
         i2p_peer: str = "",
         yggdrasil_address: str = "",
         yggdrasil_port: typing.Optional[int] = None,
@@ -2349,11 +2351,18 @@ class TalonCoreSession:
             format_enrollment_token,
             normalise_enrollment_transports,
         )
-        from talon_core.server.enrollment import generate_enrollment_token
+        from talon_core.server.enrollment import (
+            _stored_token_key,
+            generate_enrollment_token,
+        )
 
-        if expires_in_minutes is not None and expires_in_s is not None:
+        provided_expiration_count = sum(
+            value is not None for value in (expires_in_minutes, expires_in_s, expires_at)
+        )
+        if provided_expiration_count > 1:
             raise CoreSessionError(
-                "Specify enrollment token expiration in either minutes or seconds, not both."
+                "Specify enrollment token expiration in minutes, seconds, "
+                "or timestamp, not more than one."
             )
         requested_expiry_s = expires_in_s
         if expires_in_minutes is not None:
@@ -2381,8 +2390,23 @@ class TalonCoreSession:
             raise CoreSessionError(
                 "Start server networking before generating a token with network settings."
             )
-        token = generate_enrollment_token(self._conn, expires_in_s=requested_expiry_s)
-        expiry_s = ENROLLMENT_TOKEN_EXPIRY_S if requested_expiry_s is None else int(requested_expiry_s)
+        token = generate_enrollment_token(
+            self._conn,
+            expires_in_s=requested_expiry_s,
+            expires_at=expires_at,
+        )
+        pending_rows = self._conn.execute(
+            "SELECT created_at, expires_at FROM enrollment_tokens "
+            "WHERE token = ?",
+            (_stored_token_key(token),),
+        ).fetchone()
+        if pending_rows is None:
+            raise CoreSessionError(
+                "Enrollment token was generated but could not be loaded."
+            )
+        created_at = int(pending_rows[0] or 0)
+        token_expires_at = int(pending_rows[1] or 0)
+        expiry_s = max(0, token_expires_at - created_at)
         return EnrollmentTokenResult(
             token=token,
             server_hash=server_hash,
@@ -2392,6 +2416,7 @@ class TalonCoreSession:
                 transports=transport_hints,
             ),
             expires_in_s=expiry_s,
+            expires_at=token_expires_at,
             transports=transport_hints,
         )
 

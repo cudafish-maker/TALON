@@ -32,6 +32,9 @@ All notable user-facing changes to TALON are documented here.
 
 ### Changed
 
+- Desktop enrollment token expiration now uses local date and time controls
+  instead of a raw minute-duration field.
+
 ### Fixed
 
 - Desktop release artifacts now report version `0.1.1` after installation so

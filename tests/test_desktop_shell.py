@@ -1901,6 +1901,75 @@ finally:
     app.processEvents()
 """
 
+_QT_ENROLLMENT_EXPIRY_PICKER_SCRIPT = r"""
+import os
+import types
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6 import QtCore, QtWidgets
+
+from talon_desktop.operator_page import EnrollmentPage
+
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+class FakeCore:
+    mode = "server"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def read_model(self, name, filters=None):
+        if name == "enrollment.server_hash":
+            return ""
+        if name == "enrollment.pending_tokens":
+            return []
+        raise KeyError(name)
+
+    def get_i2pd_server_b32(self):
+        return None
+
+    def get_yggdrasil_server_endpoint(self):
+        return None
+
+    def command(self, name, **kwargs):
+        self.calls.append((name, kwargs))
+        return types.SimpleNamespace(combined="token", transports=())
+
+
+core = FakeCore()
+page = EnrollmentPage(core)
+try:
+    assert isinstance(page.expiry_date_field, QtWidgets.QDateEdit)
+    assert isinstance(page.expiry_time_field, QtWidgets.QTimeEdit)
+    assert page.expiry_date_field.calendarPopup()
+    assert page.expiry_local_label.text() == "Local time"
+    assert (
+        QtCore.QDateTime.currentDateTime().secsTo(page._minimum_expiry_datetime())
+        >= 60
+    )
+
+    target = QtCore.QDateTime.currentDateTime().addSecs(2 * 3600)
+    target = QtCore.QDateTime(
+        target.date(),
+        QtCore.QTime(target.time().hour(), target.time().minute()),
+    )
+    page._set_expiry_datetime(target)
+    page._generate_token()
+
+    assert core.calls
+    command_name, payload = core.calls[-1]
+    assert command_name == "enrollment.generate_token"
+    assert payload["expires_at"] == int(target.toSecsSinceEpoch())
+    assert "Expires at" in page.status_label.text()
+    assert "local time" in page.status_label.text()
+    print("enrollment-expiry-picker-ok")
+finally:
+    page.close()
+    app.processEvents()
+"""
+
 _QT_ICON_RENDER_SCRIPT = r"""
 import os
 
@@ -2566,6 +2635,20 @@ def test_qt_assignment_board_shows_assigned_work(
     )
 
     assert "assignment-board-assigned-work-ok" in result.stdout
+
+
+def test_qt_enrollment_expiration_uses_local_date_time_picker(
+    tmp_path: pathlib.Path,
+) -> None:
+    result = _run_qt_subprocess(
+        _QT_ENROLLMENT_EXPIRY_PICKER_SCRIPT,
+        tmp_path,
+        mode="server",
+        extra_arg="enrollment-expiry-picker",
+        timeout=30,
+    )
+
+    assert "enrollment-expiry-picker-ok" in result.stdout
 
 
 @pytest.mark.parametrize("mode", ("client", "server"))

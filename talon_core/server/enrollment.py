@@ -10,7 +10,7 @@ Enrollment flow:
      the operator record.
 
 Tokens expire after the requested duration, defaulting to
-ENROLLMENT_TOKEN_EXPIRY_S seconds.
+ENROLLMENT_TOKEN_EXPIRY_S seconds, or at a requested absolute timestamp.
 Each token can only be consumed once.
 """
 import hashlib
@@ -35,16 +35,20 @@ def generate_enrollment_token(
     conn: Connection,
     *,
     expires_in_s: int | None = None,
+    expires_at: int | None = None,
 ) -> str:
     """
     Generate a cryptographically random one-time enrollment token,
     persist it, and return the hex string to present to the operator.
     """
-    expiry_s = normalise_enrollment_token_expiry_s(expires_in_s)
+    now = int(time.time())
+    expiry_s, expires_at = normalise_enrollment_token_expiration(
+        expires_in_s=expires_in_s,
+        expires_at=expires_at,
+        now=now,
+    )
     token = os.urandom(32).hex()
     token_hash = _hash_token(token)
-    now = int(time.time())
-    expires_at = now + expiry_s
     conn.execute(
         "INSERT INTO enrollment_tokens "
         "(token, token_preview, created_at, expires_at) VALUES (?, ?, ?, ?)",
@@ -61,6 +65,33 @@ def generate_enrollment_token(
     )
     _log.info("Enrollment token generated (expires in %ds)", expiry_s)
     return token
+
+
+def normalise_enrollment_token_expiration(
+    *,
+    expires_in_s: int | None = None,
+    expires_at: int | None = None,
+    now: int | None = None,
+) -> tuple[int, int]:
+    """Validate and return an enrollment token duration and expiration time."""
+    current_time = int(time.time()) if now is None else int(now)
+    if expires_in_s is not None and expires_at is not None:
+        raise ValueError(
+            "Specify enrollment token expiration as either a duration or timestamp, not both."
+        )
+    if expires_at is None:
+        expiry_s = normalise_enrollment_token_expiry_s(expires_in_s)
+        return expiry_s, current_time + expiry_s
+    try:
+        requested_expires_at = int(expires_at)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Enrollment token expiration must be a whole-number timestamp."
+        ) from exc
+    expiry_s = normalise_enrollment_token_expiry_s(
+        requested_expires_at - current_time
+    )
+    return expiry_s, requested_expires_at
 
 
 def normalise_enrollment_token_expiry_s(expires_in_s: int | None = None) -> int:

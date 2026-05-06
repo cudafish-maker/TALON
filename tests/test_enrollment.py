@@ -109,6 +109,15 @@ class TestGenerateEnrollmentToken:
         ).fetchone()
         assert row[1] - row[0] == 15 * 60
 
+    def test_token_accepts_absolute_expiration(self, tmp_db):
+        conn, _ = tmp_db
+        expires_at = int(time.time()) + 15 * 60
+        generate_enrollment_token(conn, expires_at=expires_at)
+        row = conn.execute(
+            "SELECT expires_at FROM enrollment_tokens ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        assert row[0] == expires_at
+
     def test_token_rejects_expiry_outside_bounds(self, tmp_db):
         conn, _ = tmp_db
 
@@ -116,6 +125,15 @@ class TestGenerateEnrollmentToken:
             generate_enrollment_token(conn, expires_in_s=ENROLLMENT_TOKEN_MIN_EXPIRY_S - 1)
         with pytest.raises(ValueError, match="no more than 7 days"):
             generate_enrollment_token(conn, expires_in_s=ENROLLMENT_TOKEN_MAX_EXPIRY_S + 1)
+
+    def test_token_rejects_ambiguous_expiration(self, tmp_db):
+        conn, _ = tmp_db
+        with pytest.raises(ValueError, match="either a duration or timestamp"):
+            generate_enrollment_token(
+                conn,
+                expires_in_s=15 * 60,
+                expires_at=int(time.time()) + 15 * 60,
+            )
 
 
 class TestListPendingTokens:

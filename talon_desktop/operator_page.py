@@ -398,19 +398,27 @@ class EnrollmentPage(QtWidgets.QWidget):
         self.server_hash_field.setReadOnly(True)
         self.i2p_peer_field = QtWidgets.QLineEdit()
         self.i2p_peer_field.setPlaceholderText("server-address.b32.i2p")
-        self.expiry_minutes_field = QtWidgets.QSpinBox()
-        self.expiry_minutes_field.setRange(
-            max(1, ENROLLMENT_TOKEN_MIN_EXPIRY_S // 60),
-            max(1, ENROLLMENT_TOKEN_MAX_EXPIRY_S // 60),
-        )
-        self.expiry_minutes_field.setValue(max(1, ENROLLMENT_TOKEN_EXPIRY_S // 60))
-        self.expiry_minutes_field.setSuffix(" min")
-        self.expiry_minutes_field.setMinimumWidth(120)
+        self.expiry_date_field = QtWidgets.QDateEdit()
+        self.expiry_date_field.setObjectName("enrollmentExpiryDate")
+        self.expiry_date_field.setCalendarPopup(True)
+        self.expiry_date_field.setDisplayFormat("yyyy-MM-dd")
+        self.expiry_date_field.setMinimumWidth(150)
+        self.expiry_time_field = QtWidgets.QTimeEdit()
+        self.expiry_time_field.setObjectName("enrollmentExpiryTime")
+        self.expiry_time_field.setDisplayFormat("HH:mm")
+        self.expiry_time_field.setMinimumWidth(100)
+        self.expiry_local_label = QtWidgets.QLabel("Local time")
+        self.expiry_local_label.setObjectName("enrollmentExpiryLocalTimeLabel")
+        self.expiry_remaining_label = QtWidgets.QLabel("")
+        self.expiry_remaining_label.setObjectName("enrollmentExpiryRemaining")
+        self.expiry_date_field.dateChanged.connect(self._on_expiry_date_changed)
+        self.expiry_time_field.timeChanged.connect(self._update_expiry_remaining)
         self.yggdrasil_address_field = QtWidgets.QLineEdit()
         self.yggdrasil_address_field.setPlaceholderText("200:...")
         self.yggdrasil_port_field = QtWidgets.QSpinBox()
         self.yggdrasil_port_field.setRange(1, 65535)
         self.yggdrasil_port_field.setValue(4343)
+        self._set_default_expiry_datetime()
 
         self.generate_button = QtWidgets.QPushButton("Generate Token")
         self.generate_button.clicked.connect(self._generate_token)
@@ -422,6 +430,12 @@ class EnrollmentPage(QtWidgets.QWidget):
         token_row = QtWidgets.QHBoxLayout()
         token_row.addWidget(self.token_field, stretch=1)
         token_row.addWidget(self.copy_button)
+
+        expiry_row = QtWidgets.QHBoxLayout()
+        expiry_row.addWidget(self.expiry_date_field)
+        expiry_row.addWidget(self.expiry_time_field)
+        expiry_row.addWidget(self.expiry_local_label)
+        expiry_row.addWidget(self.expiry_remaining_label, stretch=1)
 
         action_row = QtWidgets.QHBoxLayout()
         action_row.addWidget(self.heading)
@@ -438,7 +452,7 @@ class EnrollmentPage(QtWidgets.QWidget):
 
         form = QtWidgets.QFormLayout()
         form.addRow("Generated Token", token_row)
-        form.addRow("Token Expiration", self.expiry_minutes_field)
+        form.addRow("Token Expires", expiry_row)
         form.addRow("Server Hash", self.server_hash_field)
         form.addRow("I2P Peer", self.i2p_peer_field)
         form.addRow("Yggdrasil Address", self.yggdrasil_address_field)
@@ -451,8 +465,132 @@ class EnrollmentPage(QtWidgets.QWidget):
         layout.addWidget(self.table, stretch=1)
         layout.addWidget(self.status_label)
 
+    def _set_default_expiry_datetime(self) -> None:
+        self._refresh_expiry_bounds()
+        self._set_expiry_datetime(
+            QtCore.QDateTime.currentDateTime().addSecs(ENROLLMENT_TOKEN_EXPIRY_S)
+        )
+
+    def _set_expiry_datetime(self, value: QtCore.QDateTime) -> None:
+        value = self._with_minute_floor(value)
+        self.expiry_date_field.setDate(value.date())
+        self._update_expiry_time_bounds(clamp=True)
+        self.expiry_time_field.setTime(value.time())
+        self._update_expiry_remaining()
+
+    def _refresh_expiry_bounds(self) -> None:
+        minimum = self._minimum_expiry_datetime()
+        maximum = self._maximum_expiry_datetime()
+        self.expiry_date_field.setMinimumDate(minimum.date())
+        self.expiry_date_field.setMaximumDate(maximum.date())
+        self._update_expiry_time_bounds(clamp=True)
+
+    def _minimum_expiry_datetime(self) -> QtCore.QDateTime:
+        return self._with_minute_ceiling(
+            QtCore.QDateTime.currentDateTime().addSecs(ENROLLMENT_TOKEN_MIN_EXPIRY_S)
+        )
+
+    def _maximum_expiry_datetime(self) -> QtCore.QDateTime:
+        return self._with_minute_floor(
+            QtCore.QDateTime.currentDateTime().addSecs(ENROLLMENT_TOKEN_MAX_EXPIRY_S)
+        )
+
+    @staticmethod
+    def _with_minute_floor(value: QtCore.QDateTime) -> QtCore.QDateTime:
+        date = value.date()
+        time_value = value.time()
+        return QtCore.QDateTime(
+            date,
+            QtCore.QTime(time_value.hour(), time_value.minute()),
+        )
+
+    @classmethod
+    def _with_minute_ceiling(cls, value: QtCore.QDateTime) -> QtCore.QDateTime:
+        floored = cls._with_minute_floor(value)
+        time_value = value.time()
+        if time_value.second() or time_value.msec():
+            return floored.addSecs(60)
+        return floored
+
+    def _selected_expiry_datetime(self) -> QtCore.QDateTime:
+        return QtCore.QDateTime(
+            self.expiry_date_field.date(),
+            self.expiry_time_field.time(),
+        )
+
+    def _selected_expiry_epoch_s(self) -> int:
+        selected = self._selected_expiry_datetime()
+        remaining_s = QtCore.QDateTime.currentDateTime().secsTo(selected)
+        if remaining_s < ENROLLMENT_TOKEN_MIN_EXPIRY_S:
+            raise ValueError("Choose an expiration at least 1 minute from now.")
+        if remaining_s > ENROLLMENT_TOKEN_MAX_EXPIRY_S:
+            raise ValueError("Choose an expiration no more than 7 days from now.")
+        return int(selected.toSecsSinceEpoch())
+
+    def _on_expiry_date_changed(self, *_args: object) -> None:
+        self._update_expiry_time_bounds(clamp=True)
+        self._update_expiry_remaining()
+
+    def _update_expiry_time_bounds(self, *, clamp: bool) -> None:
+        minimum = self._minimum_expiry_datetime()
+        maximum = self._maximum_expiry_datetime()
+        selected_date = self.expiry_date_field.date()
+        if selected_date == minimum.date() and selected_date == maximum.date():
+            min_time = minimum.time()
+            max_time = maximum.time()
+        elif selected_date == minimum.date():
+            min_time = minimum.time()
+            max_time = QtCore.QTime(23, 59)
+        elif selected_date == maximum.date():
+            min_time = QtCore.QTime(0, 0)
+            max_time = maximum.time()
+        else:
+            min_time = QtCore.QTime(0, 0)
+            max_time = QtCore.QTime(23, 59)
+
+        blocker = QtCore.QSignalBlocker(self.expiry_time_field)
+        self.expiry_time_field.setMinimumTime(min_time)
+        self.expiry_time_field.setMaximumTime(max_time)
+        if clamp:
+            current = self.expiry_time_field.time()
+            if current < min_time:
+                self.expiry_time_field.setTime(min_time)
+            elif current > max_time:
+                self.expiry_time_field.setTime(max_time)
+        del blocker
+
+    def _update_expiry_remaining(self, *_args: object) -> None:
+        selected = self._selected_expiry_datetime()
+        remaining_s = QtCore.QDateTime.currentDateTime().secsTo(selected)
+        if remaining_s < ENROLLMENT_TOKEN_MIN_EXPIRY_S:
+            self.expiry_remaining_label.setText("Below 1 min minimum")
+        elif remaining_s > ENROLLMENT_TOKEN_MAX_EXPIRY_S:
+            self.expiry_remaining_label.setText("Above 7 day maximum")
+        else:
+            self.expiry_remaining_label.setText(
+                f"Remaining: {self._format_expiry_duration(remaining_s)}"
+            )
+
+    @staticmethod
+    def _format_expiry_duration(seconds: int) -> str:
+        minutes = max(0, int(seconds) // 60)
+        days, minutes = divmod(minutes, 24 * 60)
+        hours, minutes = divmod(minutes, 60)
+        if days:
+            unit = "day" if days == 1 else "days"
+            return f"{days} {unit} {hours} hr"
+        if hours:
+            return f"{hours} hr {minutes:02d} min"
+        return f"{minutes} min"
+
+    @staticmethod
+    def _format_expiry_datetime(value: QtCore.QDateTime) -> str:
+        return f"{value.toString('yyyy-MM-dd HH:mm')} local time"
+
     def refresh(self) -> None:
         try:
+            self._refresh_expiry_bounds()
+            self._update_expiry_remaining()
             self.server_hash_field.setText(self._core.read_model("enrollment.server_hash") or "")
             if not self.i2p_peer_field.text().strip():
                 try:
@@ -492,9 +630,15 @@ class EnrollmentPage(QtWidgets.QWidget):
 
     def _generate_token(self) -> None:
         try:
+            expires_at = self._selected_expiry_epoch_s()
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        expiry_label = self._format_expiry_datetime(self._selected_expiry_datetime())
+        try:
             result = self._core.command(
                 "enrollment.generate_token",
-                expires_in_minutes=int(self.expiry_minutes_field.value()),
+                expires_at=expires_at,
                 i2p_peer=self.i2p_peer_field.text().strip(),
                 yggdrasil_address=self.yggdrasil_address_field.text().strip(),
                 yggdrasil_port=int(self.yggdrasil_port_field.value()),
@@ -508,11 +652,11 @@ class EnrollmentPage(QtWidgets.QWidget):
         if transports:
             self.status_label.setText(
                 "Enrollment token generated with network settings. "
-                f"Expires in {self.expiry_minutes_field.value()} minutes."
+                f"Expires at {expiry_label}."
             )
         else:
             self.status_label.setText(
-                f"Enrollment token generated. Expires in {self.expiry_minutes_field.value()} minutes."
+                f"Enrollment token generated. Expires at {expiry_label}."
             )
         self.refresh()
 
