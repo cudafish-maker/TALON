@@ -1,21 +1,27 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 zero_sha=0000000000000000000000000000000000000000
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+
+# shellcheck source=../../tools/talon-publish-policy.sh
+. "$repo_root/tools/talon-publish-policy.sh"
+
 blocked_paths_file=$(mktemp)
 tag_errors_file=$(mktemp)
 branch_errors_file=$(mktemp)
 trap 'rm -f "$blocked_paths_file" "$tag_errors_file" "$branch_errors_file"' EXIT HUP INT TERM
 
-# Release policy:
-# - Only dev and main branch refs are intended for remote pushes.
-# - local-docs stays local-only.
-# - CHANGELOG.md and generated *-user-guide.pdf files are the only docs intended
-#   for remote pushes.
-# - Version tags are vX.Y.Z and must include a matching CHANGELOG.md section:
-#   ## [X.Y.Z] - YYYY-MM-DD
 while read -r local_ref local_sha remote_ref remote_sha
 do
+    case "$remote_ref" in
+        refs/heads/dev|refs/heads/main|refs/tags/*)
+            ;;
+        refs/heads/*)
+            echo "$remote_ref" >> "$branch_errors_file"
+            ;;
+    esac
+
     if [ -z "${local_ref:-}" ] || [ "$local_sha" = "$zero_sha" ]; then
         continue
     fi
@@ -24,14 +30,6 @@ do
     if [ -z "$local_commit" ]; then
         continue
     fi
-
-    case "$remote_ref" in
-        refs/heads/dev|refs/heads/main)
-            ;;
-        refs/heads/*)
-            echo "$remote_ref" >> "$branch_errors_file"
-            ;;
-    esac
 
     case "$remote_ref" in
         refs/tags/v*)
@@ -44,27 +42,15 @@ do
             ;;
     esac
 
-    commits=$(git rev-list "$local_commit" --not --remotes)
-
-    for commit in $commits
+    while IFS= read -r commit
     do
-        git diff-tree --root --no-commit-id --name-status -r "$commit" |
-            awk '
-                {
-                    status = substr($1, 1, 1)
-                    for (i = 2; i <= NF; i++) {
-                        path = tolower($i)
-                        allowed_md = (path == "changelog.md")
-                        allowed_pdf = (path ~ /(^|\/)[^\/]*-user-guide\.pdf$/)
-                        if (status != "D" && path ~ /\.(md|html)$/ && !allowed_md) {
-                            print $i
-                        } else if (status != "D" && path ~ /\.pdf$/ && !allowed_pdf) {
-                            print $i
-                        }
-                    }
-                }
-            ' >> "$blocked_paths_file"
-    done
+        while IFS= read -r -d '' path
+        do
+            if talon_is_blocked_remote_path "$path"; then
+                printf '%s\n' "$path" >> "$blocked_paths_file"
+            fi
+        done < <(git diff-tree --root --no-commit-id --name-only --no-renames -r -z "$commit")
+    done < <(git rev-list "$local_commit" --not --remotes)
 done
 
 if [ -s "$tag_errors_file" ]; then
@@ -89,13 +75,12 @@ fi
 
 if [ -s "$blocked_paths_file" ]; then
     {
-        echo "TALON policy: local docs may be committed locally but must not be pushed to remote."
-        echo "Allowed pushed docs: CHANGELOG.md and generated *-user-guide.pdf files."
+        talon_print_publish_policy
         echo
         echo "This push contains blocked paths:"
         sort -u "$blocked_paths_file" | sed 's/^/  - /'
         echo
-        echo "Remove these files from the commits being pushed."
+        echo "Use tools/promote-local-docs-release.sh to publish a clean dev/main tip."
     } >&2
     exit 1
 fi

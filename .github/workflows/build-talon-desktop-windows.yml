@@ -112,10 +112,12 @@ jobs:
 
       - name: Publish Windows release assets
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/talon-desktop-client-windows-setup.exe
-            dist/talon-desktop-client-windows-setup.exe.sha256
-            dist/talon-desktop-server-windows-setup.exe
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build/upload-release-assets.sh "$GITHUB_REF_NAME" \
+            dist/talon-desktop-client-windows-setup.exe \
+            dist/talon-desktop-client-windows-setup.exe.sha256 \
+            dist/talon-desktop-server-windows-setup.exe \
             dist/talon-desktop-server-windows-setup.exe.sha256
