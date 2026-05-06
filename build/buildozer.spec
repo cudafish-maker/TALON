@@ -6,7 +6,7 @@ source.dir = ..
 source.include_exts = py,kv,ini
 source.exclude_patterns = talon/server/*,talon/ui/screens/server/*
 
-version = 0.1.0
+version = 0.1.1
 requirements = python3,kivy==2.3.1,kivymd,rns,pynacl,argon2-cffi,sqlcipher3
 # Phase 4 notes:
 #   - Add 'pillow' here when document image re-encoding is needed on Android.

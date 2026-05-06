@@ -123,6 +123,9 @@ def test_update_manifest_workflow_signs_all_desktop_artifacts():
     assert "talon-desktop-server-windows-setup.exe" in text
     assert "build/generate-update-manifest.py" in text
     assert "build/sign-update-manifest.py" in text
+    assert "EVENT_NAME" in text
+    assert "fresh_after_epoch" in text
+    assert "updatedAt" in text
 
 
 def test_update_signing_key_generator_exists():

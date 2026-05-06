@@ -1,6 +1,6 @@
 from typing import Final
 
-APP_VERSION: Final = "0.1.0"
+APP_VERSION: Final = "0.1.1"
 APP_NAME: Final = "TALON"
 
 # SITREP importance levels — ordered lowest to highest

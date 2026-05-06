@@ -25,6 +25,9 @@ All notable user-facing changes to TALON are documented here.
 
 ### Fixed
 
+- Desktop release artifacts now report version `0.1.1` after installation so
+  the updater does not repeatedly offer the same release.
+
 ### Security
 
 ## [0.1.0] - 2026-05-04

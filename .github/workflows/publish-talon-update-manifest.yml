@@ -44,9 +44,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
           set -euo pipefail
+          fresh_after_epoch="$(date -u +%s)"
           required=(
             talon-desktop-client-linux.tar.gz
             talon-desktop-server-linux.tar.gz
@@ -54,12 +56,24 @@ jobs:
             talon-desktop-server-windows-setup.exe
           )
           for attempt in $(seq 1 60); do
-            names="$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null || true)"
             missing=0
             for name in "${required[@]}"; do
-              if ! grep -Fxq "$name" <<<"$names"; then
+              updated_at="$(
+                gh release view "$TAG" \
+                  --json assets \
+                  --jq ".assets[] | select(.name == \"$name\") | .updatedAt" \
+                  2>/dev/null || true
+              )"
+              if [ -z "$updated_at" ]; then
                 missing=1
                 break
+              fi
+              if [ "$EVENT_NAME" = "push" ]; then
+                updated_epoch="$(date -u -d "$updated_at" +%s)"
+                if [ "$updated_epoch" -lt "$fresh_after_epoch" ]; then
+                  missing=1
+                  break
+                fi
               fi
             done
             if [ "$missing" = "0" ]; then
