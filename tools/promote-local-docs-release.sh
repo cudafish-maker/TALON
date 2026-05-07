@@ -8,7 +8,7 @@ Usage:
 
 Promote publishable changes from local-docs into clean dev/main branch tips.
 local-docs remains local-only; dev and main receive only non-local-doc changes,
-plus CHANGELOG.md and generated *-user-guide.pdf files.
+plus README.md, CHANGELOG.md, and generated *-user-guide.pdf files.
 
 Arguments:
   TAG                         Optional version tag, for example v0.1.1.

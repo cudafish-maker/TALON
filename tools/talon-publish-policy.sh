@@ -10,7 +10,7 @@ talon_is_blocked_remote_path() {
     talon_policy_path_lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
 
     case "$talon_policy_path_lc" in
-        changelog.md|*-user-guide.pdf)
+        changelog.md|readme.md|*-user-guide.pdf)
             return 1
             ;;
     esac
@@ -35,8 +35,9 @@ talon_print_publish_policy() {
 TALON publish policy:
   - local-docs stays local-only.
   - Push only dev and main branch refs.
-  - Allowed published docs: CHANGELOG.md and generated *-user-guide.pdf files.
-  - Keep AGENTS.md, CLAUDE.md, README files, HTML guides, wiki files, guide
-    assets, and other local docs local-only unless explicitly overridden.
+  - Allowed published docs: README.md, CHANGELOG.md, and generated
+    *-user-guide.pdf files.
+  - Keep AGENTS.md, CLAUDE.md, other README files, HTML guides, wiki files,
+    guide assets, and other local docs local-only unless explicitly overridden.
 POLICY
 }
